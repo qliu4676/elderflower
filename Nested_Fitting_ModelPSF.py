@@ -60,6 +60,23 @@ image = noise + np.sum([m2d(xx,yy) for m2d in moffat2d_s] ,axis=0) \
               + np.sum([power2d(xx, yy, n, cen=(x0,y0),
                                 theta=theta*gamma, I_theta=m1d(theta*gamma)) 
                           for ((x0,y0),m1d) in zip(star_pos, moffat1d_s)], axis=0)
+print("Building Mock Image...Done!")
+
+plt.figure(figsize=(7,6))
+ax = plt.subplot(111)
+plt.imshow(image, cmap='gray', aspect='equal', norm=norm1, vmin=0, vmax=100, interpolation='None',origin='lower') # saturate at 100 to emphasize background
+plt.colorbar(fraction=0.045, pad=0.05) 
+
+from photutils import CircularAperture, CircularAnnulus
+aper1 = CircularAperture(star_pos, r=3*gamma)
+aper2 = CircularAperture(star_pos, r=5*gamma)
+aper1.plot(color='gold',ls="--",lw=2,alpha=0.5)
+aper2.plot(color='gold',lw=1,label="",alpha=0.5)
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.tight_layout()
+plt.savefig("Mock.png",dpi=150)
+plt.close()
 
 ###-----------------------------------------------------------------###
 
@@ -124,6 +141,7 @@ import time
 import os
 
 n_cpu = os.cpu_count()
+print("# of CPU: %d"%n_cpu)
 mypool = mp.Pool(n_cpu-1)
 mypool.size = n_cpu-1
 
@@ -135,6 +153,7 @@ pdsampler.run_nested(nlive_init=200, nlive_batch=200, maxbatch=4,
                       dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
 end = time.time()
 
+mypool.close()
 print("%.3gs"%(end-start))
 
 pdres = pdsampler.results
