@@ -53,7 +53,7 @@ moffat2d_s = [models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0, gamma=gamma, alpha=
               for (amp,(x0,y0)) in zip(Amps, star_pos)]
 moffat1d_s = [models.Moffat1D(amplitude=amp, x_0=0, gamma=gamma, alpha=alpha) 
               for (amp,(x0,y0)) in zip(Amps, star_pos)]
-mask  = ~np.logical_and.reduce([d_maps>3*gamma for d_maps in dist_maps])
+mask  = ~np.logical_and.reduce([d_maps>5*gamma for d_maps in dist_maps])
 
 # Generate Mock Image
 image = noise + np.sum([m2d(xx,yy) for m2d in moffat2d_s] ,axis=0) \
@@ -77,6 +77,34 @@ plt.ylabel("Y")
 plt.tight_layout()
 plt.savefig("Mock.png",dpi=150)
 plt.close()
+
+# Source Extraction and Masking
+fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
+im1 = ax1.imshow(image, origin='lower', cmap='gray', norm=norm1, vmin=0., vmax=100, aspect='auto')
+colorbar(im1)
+
+from photutils import detect_sources
+back, back_rms = background_sub_SE(image, b_size=25)
+threshold = back + (2.5 * back_rms)
+segm0 = detect_sources(image, threshold, npixels=5)
+
+from skimage import morphology
+segmap = segm0.data.copy()
+for i in range(5):
+    segmap = morphology.dilation(segmap)
+segmap2 = segm0.data.copy()
+segmap2[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
+
+ax2.imshow(segmap2, origin="lower", cmap="gnuplot2")
+
+image2 = image.copy()
+mask_deep = (segmap!=0)
+image2[mask_deep] = 0
+
+im3 = ax3.imshow(image2, cmap='gnuplot2', norm=norm2, aspect='auto', vmin=1e-2, vmax=0.07, interpolation='None',origin='lower') 
+colorbar(im3)
+plt.savefig("Seg+Mask.png",dpi=150)
+plt.tight_layout()
 
 ###-----------------------------------------------------------------###
 
@@ -113,8 +141,9 @@ def prior_transform(u):
     return v
 
 # Fix Moffat component while fitting
+mask_fit = mask_deep.copy()
 X = np.array([xx,yy])
-Y = image[~mask].ravel()
+Y = image[~mask_fit].ravel()
 xx, yy = X[0], X[1]
 mof_comp = np.sum([m(xx,yy) for m in moffat2d_s] ,axis=0)
     
@@ -124,7 +153,7 @@ def loglike(v):
     pow_comp = np.sum([power2d(xx, yy, n, cen=(x0,y0), 
                                theta=theta*gamma, I_theta=m1d(theta*gamma))
                        for ((x0,y0),m1d) in zip(star_pos, moffat1d_s)], axis=0)
-    ypred = (mof_comp + pow_comp + mu)[~mask].ravel()
+    ypred = (mof_comp + pow_comp + mu)[~mask_fit].ravel()
     residsq = (ypred - Y)**2 / sigma**2
     loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
     
@@ -141,7 +170,7 @@ import time
 import os
 
 n_cpu = os.cpu_count()
-print("# of CPU: %d"%n_cpu)
+print("# of CPU used: %d"%(n_cpu-1))
 mypool = mp.Pool(n_cpu-1)
 mypool.size = n_cpu-1
 
