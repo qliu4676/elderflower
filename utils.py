@@ -32,7 +32,7 @@ def power1d(x, n, theta, I_theta):
     y = a * np.power(x, -n)
     return y
 
-def power2d(x, y, n, theta, I_theta, cen=cen): 
+def power2d(x, y, n, theta, I_theta, cen): 
     d = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
     a = I_theta/(theta)**(-n)
     d[d<=0] = d[d>0].min()
