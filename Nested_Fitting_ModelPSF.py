@@ -103,8 +103,9 @@ image2[mask_deep] = 0
 
 im3 = ax3.imshow(image2, cmap='gnuplot2', norm=norm2, aspect='auto', vmin=1e-2, vmax=0.07, interpolation='None',origin='lower') 
 colorbar(im3)
-plt.savefig("Seg+Mask.png",dpi=150)
+
 plt.tight_layout()
+plt.savefig("Seg+Mask.png",dpi=150)
 
 ###-----------------------------------------------------------------###
 
@@ -178,11 +179,12 @@ dlogz = 1e-3 * (200 - 1) + 0.01
 start = time.time()
 pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, 4,
                                           pool=mypool, use_pool={'update_bound': False})
-pdsampler.run_nested(nlive_init=200, nlive_batch=200, maxbatch=4,
+pdsampler.run_nested(nlive_init=200, nlive_batch=200, maxbatch=3,
                       dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
 end = time.time()
 
 mypool.close()
+mypool.join()
 print("%.3gs"%(end-start))
 
 pdres = pdsampler.results
