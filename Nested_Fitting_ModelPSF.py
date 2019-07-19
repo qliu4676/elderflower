@@ -14,13 +14,13 @@ norm3 = ImageNormalize(stretch=SqrtStretch())
 from utils import *
 
 # Params of Run
-SHOW_MOCK, SHOW_MASK = False, False
+SHOW_MOCK, SHOW_MASK = True, True
 MOCK_CONV, RUN_FITTING = True, True
-version = 2.4
-n_cpu = os.cpu_count()
+version = '2.4'
+n_cpu = 4 #os.cpu_count()
 
 tshape = (201, 201)
-psf_size = tshape[0]//2+1
+psf_size = tshape[0]
 n_star = 50
 mu, sigma = 1e-2, 1e-2
 
@@ -60,7 +60,6 @@ dist_maps = [np.sqrt((xx-x0)**2+(yy-y0)**2) for (x0,y0) in star_pos]
 if not MOCK_CONV: 
     start=time.time()
     # 2D & 1D Moffat
-    np.random.seed(512)
     moffat2d_s = [models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0, gamma=gamma, alpha=alpha) 
                   for (amp,(x0,y0)) in zip(Amps, star_pos)]
     moffat1d_s = [models.Moffat1D(amplitude=amp, x_0=0, gamma=gamma, alpha=alpha) 
@@ -85,7 +84,7 @@ else:
     Mof_mod_2d = models.Moffat2D(amplitude=1, x_0=cen_psf[0], y_0=cen_psf[1], gamma=gamma, alpha=alpha) 
     Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
     psf_model = Mof_mod_2d(xx_psf, yy_psf) + \
-                power2d(xx_psf, yy_psf, n, cen=cen_psf, theta=theta*gamma, I_theta=Mof_mod_1d(theta*gamma)) 
+                power2d(xx_psf, yy_psf, n=n, cen=cen_psf, theta=theta*gamma, I_theta=Mof_mod_1d(theta*gamma)) 
    
     from astropy.convolution import Kernel,convolve_fft
     psf_kernel = Kernel(psf_model)
@@ -125,13 +124,13 @@ if SHOW_MOCK:
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.tight_layout()
-    plt.savefig("Mock.png"+version,dpi=150)
+    plt.savefig("Mock%s.png"%version,dpi=150)
     plt.close()
 
 # Source Extraction and Masking
 from photutils import detect_sources
 back, back_rms = background_sub_SE(image, b_size=25)
-threshold = back + (2.5 * back_rms)
+threshold = back + (3 * back_rms)
 segm0 = detect_sources(image, threshold, npixels=5)
 
 from skimage import morphology
@@ -156,7 +155,7 @@ if SHOW_MASK:
     colorbar(im3)
 
     plt.tight_layout()
-    plt.savefig("Seg+Mask.png"+version,dpi=150)
+    plt.savefig("Seg+Mask%s.png"%version,dpi=150)
 
 ###-----------------------------------------------------------------###
 
@@ -199,7 +198,7 @@ if RUN_FITTING:
     Y = image[~mask_fit].ravel()
     xx, yy = X[0], X[1]
     
-    if not MOCK_CONV: 
+    if MOCK_CONV is False:
         mof_comp = np.sum([m(xx,yy) for m in moffat2d_s] ,axis=0)
     else:
         Mof_mod_2d = models.Moffat2D(amplitude=1, x_0=cen_psf[0], y_0=cen_psf[1], gamma=gamma, alpha=alpha) 
@@ -250,7 +249,7 @@ def loglike_conv(v):
 import multiprocess as mp
 
 def Run_Nested_Fitting():
-    if not MOCK_CONV: 
+    if MOCK_CONV is False: 
         loglike = loglike_sum
     else:
         loglike = loglike_conv
@@ -278,7 +277,7 @@ def Run_Nested_Fitting():
                                   title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
                                   label_kwargs={'fontsize':22},
                                   fig=plt.subplots(4, 4, figsize=(18, 16)))
-    plt.savefig("Result%s.png"+version,dpi=150)
+    plt.savefig("Result%s.png"%version,dpi=150)
     plt.close()
 
 if RUN_FITTING:
