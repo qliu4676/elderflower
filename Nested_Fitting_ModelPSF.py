@@ -20,7 +20,7 @@ version = 2.4
 n_cpu = os.cpu_count()
 
 tshape = (201, 201)
-psf_size = tshape//2+1
+psf_size = tshape[0]//2+1
 n_star = 50
 mu, sigma = 1e-2, 1e-2
 
@@ -140,6 +140,7 @@ for i in range(5):
     segmap = morphology.dilation(segmap)
 segmap2 = segm0.data.copy()
 segmap2[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
+mask_deep = (segmap!=0)
 
 if SHOW_MASK:
     
@@ -150,7 +151,6 @@ if SHOW_MASK:
     ax2.imshow(segmap2, origin="lower", cmap="gnuplot2")
 
     image2 = image.copy()
-    mask_deep = (segmap!=0)
     image2[mask_deep] = 0
     im3 = ax3.imshow(image2, cmap='gnuplot2', norm=norm2, vmin=1e-2, vmax=0.07, origin='lower', aspect='auto') 
     colorbar(im3)
@@ -264,7 +264,7 @@ def Run_Nested_Fitting():
         start = time.time()
         pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, 4,
                                                   pool=pool, use_pool={'update_bound': False})
-        pdsampler.run_nested(nlive_init=200, nlive_batch=200, maxbatch=3,
+        pdsampler.run_nested(nlive_init=200, nlive_batch=100, maxbatch=3,
                               dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
         end = time.time()
 
