@@ -26,18 +26,59 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
-def power1d(x, n, theta, I_theta): 
+def power1d(x, n, theta0, I_theta0): 
     x[x<=0] = x[x>0].min()
-    a = I_theta/(theta)**(-n)
+    a = I_theta0/(theta0)**(-n)
     y = a * np.power(x, -n)
     return y
 
-def power2d(x, y, n, theta, I_theta, cen): 
-    d = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
-    a = I_theta/(theta)**(-n)
-    d[d<=0] = d[d>0].min()
-    z = a * np.power(d, -n) 
+def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
+    ind_slice = [np.argmin(x<theta_i) for theta_i in theta_s]
+    x_s = np.split(x, ind_slice)
+    a0 = I_theta0/(theta0)**(-n0)
+    y = a0 * np.power(x_s[0], -n0)
+    I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
+    for i, (x_i, n_i, theta_i) in enumerate(zip(x_s[1:], n_s, theta_s)):
+        a_i = I_theta_i/(theta_i)**(-n_i)
+        y_i = a_i * np.power(x_i, -n_i)
+        y = np.append(y, y_i)
+        try:
+            I_theta_i = a_i * np.power(1.*theta_s[i+1], -n_i)
+        except IndexError:
+            pass
+    return y
+
+def power2d(x, y, n, theta0, I_theta0, cen): 
+    r = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
+    r[r<=0] = r[r>0].min()
+    a = I_theta0/(theta0)**(-n)
+    z = a * np.power(r, -n) 
     return z 
+
+def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
+    r = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
+    r[r<=0] = r[r>0].min()
+    a0 = I_theta0/(theta0)**(-n0)
+    z = a0 * np.power(r, -n0) 
+    I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
+    for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
+        a_i = I_theta_i/(theta_i)**(-n_i)
+        z_i = a_i * np.power(r, -n_i)
+        z[r>theta_i] = z_i[r>theta_i]
+        try:
+            I_theta_i = a_i * np.power(1.*theta_s[i+1], -n_i)
+        except IndexError:
+            pass
+    return z
+
+
+def vmin_3mad(img):
+    # lower limit of visual imshow defined by 3 mad above median
+    return np.median(img)-3*mad_std(img)
+
+def vmax_2sig(img):
+    # upper limit of visual imshow defined by 2 sigma above median
+    return np.median(img)+2*np.std(img)
 
 def colorbar(mappable, pad=0.2):
     ax = mappable.axes
@@ -45,6 +86,7 @@ def colorbar(mappable, pad=0.2):
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=pad)
     return fig.colorbar(mappable, cax=cax)
+
 
 def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
     # Subtract background using SE estimator with mask
@@ -69,14 +111,6 @@ def display_background_sub(field, back):
     ax3.imshow(field - back, origin='lower', aspect="auto", cmap='gray', vmin=0., vmax=vmax_2sig(field - back),norm=norm2)
     plt.tight_layout()
 
-def vmin_3mad(img):
-    # lower limit of visual imshow defined by 3 mad above median
-    return np.median(img)-3*mad_std(img)
-
-def vmax_2sig(img):
-    # upper limit of visual imshow defined by 2 sigma above median
-    return np.median(img)+2*np.std(img)
-
 def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3, 
                      morph_oper=morphology.dilation,
                      sub_background=True, mask=None):
@@ -96,3 +130,56 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
     data_ma[segm_sm!=0] = np.nan
 
     return data_ma, segm_sm
+
+def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3):    
+    from photutils import detect_sources
+    back, back_rms = background_sub_SE(image, b_size=b_size)
+    threshold = back + (sn_thre * back_rms)
+    segm0 = detect_sources(image, threshold, npixels=5)
+
+    from skimage import morphology
+    segmap = segm0.data.copy()
+    for i in range(n_dilation):
+        segmap = morphology.dilation(segmap)
+    segmap2 = segm0.data.copy()
+    segmap2[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
+    mask_deep = (segmap!=0)
+    
+    return mask_deep
+
+def save_nested_fitting_result(res, filename='fit.res'):
+    import dill
+    with open(filename,'wb') as file:
+        dill.dump(pdres, file)
+        
+def plot_fitting_vs_truth_PSF(pdres, true_pars, n_bootsrap=100):
+    samples = pdres.samples  # samples
+    weights = np.exp(pdres.logwt - pdres.logz[-1])  # normalized weights
+    # Resample weighted samples.
+    samples_eq = dyfunc.resample_equal(samples, weights)
+    
+    from astropy.stats import bootstrap
+    samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootsrap)[0]
+    
+    gamma, alpha, n, theta, mu, sigma = true_pars.values()
+    
+    Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
+    
+    r = np.logspace(0.,3,100)
+    plt.figure(figsize=(8,6))
+    plt.semilogy(r, Mof_mod_1d(r), label="Moffat", ls="--", color="orange", lw=2, zorder=1)
+    plt.semilogy(r, power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
+                 label="Power", color="g", lw=2, ls="--",zorder=1)
+    plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
+                 label="Moffat+Power", color="steelblue", lw=3, zorder=2)
+    for n_k, theta_k in zip(samples_eq_bs[:,0].T, samples_eq_bs[:,1].T):
+        plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n_k, theta0=theta_k*gamma, I_theta0=Mof_mod_1d(theta_k*gamma)),
+                    color="lightblue",alpha=0.1,zorder=1)
+    plt.axhline(mu/1e7,color="k",ls=":")
+    plt.ylim(3e-9,3)
+    plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
+    plt.ylabel(r"$\rm Intersity$",fontsize=18)
+    plt.xscale("log")
+    plt.tight_layout()
+    plt.savefig("PSF%s.png"%version,dpi=150)
+    plt.close()
