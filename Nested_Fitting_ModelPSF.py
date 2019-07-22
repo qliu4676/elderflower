@@ -18,7 +18,7 @@ SHOW_MOCK, SHOW_MASK = True, True
 MOCK_CONV, RUN_FITTING = True, True
 LIN_BKG = True
 version = '_linbkg'
-n_cpu = 11 #os.cpu_count()
+n_cpu = 5 #os.cpu_count()
 
 tshape = (1001, 1001)
 psf_size = tshape[0]
@@ -32,6 +32,7 @@ if LIN_BKG:
     mu, sigma = 885, 5
     Amps = 10**stats.lognorm.rvs(s=0.58, loc=1.66, scale=1.15, size=n_star)
     cut = Amps > 1e7
+    np.random.seed(512)
     Amps[cut] = 10**stats.lognorm.rvs(s=0.5, loc=1., scale=1.15, size=len(Amps[cut]))
 else:
     mu, sigma = 1e-2, 1e-2
@@ -131,20 +132,22 @@ if SHOW_MOCK:
 print("Build Mock Image...Done!")
     
 # Source Extraction and Masking
-mask_deep = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3)
+mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3)
 
 if SHOW_MASK:
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
     im1 = ax1.imshow(image, origin='lower', cmap='gray', norm=norm1, vmin=mu, vmax=mu+100, aspect='auto')
+    ax1.set_title("Mock")
     colorbar(im1)
 
-    ax2.imshow(segmap2, origin="lower", cmap="gnuplot2")
-
+    ax2.imshow(seg_map, origin="lower", cmap="gnuplot2")
+    ax2.set_title("Deep Mask")
+    
     image2 = image.copy()
     image2[mask_deep] = 0
     im3 = ax3.imshow(image2, cmap='gnuplot2', norm=norm2, vmin=mu, vmax=mu+10*sigma, origin='lower', aspect='auto') 
+    ax3.set_title("'Sky'")
     colorbar(im3)
-
     plt.tight_layout()
     plt.savefig("Seg+Mask%s.png"%version,dpi=150)
 
@@ -178,7 +181,7 @@ else:
     labels = [r'$n$', r'$\theta$', r'$\log\,\,\mu$', r'$\log\,\,\sigma$']
     
 
-def prior_transform(u):
+def prior_transform_logbkg(u):
     """Priors for the Params of Outer PSF"""
     v = u.copy()
     v[0] = u[0] * 4 + 1  # n : 1-5
@@ -207,7 +210,6 @@ if RUN_FITTING:
     else:
         Mof_mod_2d = models.Moffat2D(amplitude=1, x_0=cen_psf[0], y_0=cen_psf[1], gamma=gamma, alpha=alpha) 
         Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
-
     
 def loglike_sum(v):
     """Log Likelihood for Outer PSF in summation"""
@@ -238,7 +240,7 @@ def loglike_conv(v):
     
     image_conv = convolve_fft(image_spot, psf_kernel)
     
-    ypred = convolve_fft(image_spot, psf_kernel)[~mask_fit].ravel()
+    ypred = image_conv[~mask_fit].ravel()
     residsq = (ypred + mu - Y)**2 / sigma**2
     loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
     
@@ -272,17 +274,22 @@ def loglike_conv_linbkg(v):
 # Run in multiprocess
 import multiprocess as mp
 
-def Run_Nested_Fitting(truths=truths, nlive_init=200, nlive_batch=200, maxbatch=4, ndim=4):
-    if MOCK_CONV: 
-        if LIN_BKG:
-            print("Fit Background in Linear.")
-            prior_transform = prior_transform_linbkg
-            loglike = loglike_conv_linbkg   
-        else:
-            loglike = loglike_conv
+if MOCK_CONV: 
+    if LIN_BKG:
+        print("Fit Background in Linear")
+        prior_transform = prior_transform_linbkg
+        loglike = loglike_conv_linbkg   
     else:
-        print("Fit Models in Real Space.")
-        loglike = loglike_sum
+        print("Fit Background in Log")
+        prior_transform = prior_transform_logbkg
+        loglike = loglike_conv
+else:
+    print("Fit Models in Real Space")
+    prior_transform = prior_transform_logbkg
+    loglike = loglike_sum
+
+def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=truths,
+                       nlive_init=200, nlive_batch=100, maxbatch=3, ndim=4):
         
     with mp.Pool(n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu-1))
@@ -291,13 +298,13 @@ def Run_Nested_Fitting(truths=truths, nlive_init=200, nlive_batch=200, maxbatch=
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
 
         start = time.time()
-            pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
-                                                      pool=pool, use_pool={'update_bound': False})
-            pdsampler.run_nested(nlive_init=nlive_init, nlive_batch=nlive_batch, maxbatch=maxbatch,
-                                  dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
+        pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
+                                                  pool=pool, use_pool={'update_bound': False})
+        pdsampler.run_nested(nlive_init=nlive_init, nlive_batch=nlive_batch, maxbatch=maxbatch,
+                             print_progress=False, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
         end = time.time()
 
-    print("Total time elapsed: %.3gs"%(end-start))
+    
 
     pdres = pdsampler.results
 
@@ -310,10 +317,14 @@ def Run_Nested_Fitting(truths=truths, nlive_init=200, nlive_batch=200, maxbatch=
     plt.savefig("Result%s.png"%version,dpi=150)
     plt.close()
     
-    return pdsampler
+    return pdsampler,(end-start)
 
 if RUN_FITTING:
-    pdsampler = Run_Nested_Fitting(truths=truths)
+    pdsampler, time_tot = Run_Nested_Fitting(loglike, prior_transform, truths)
+    print("Finish fitting! Total time elapsed: %.3gs"%time_tot)
     pdres = pdsampler.results
     
-save_nested_fitting_result(pdres, filename='fit%s.res'%version)
+    save_nested_fitting_result(pdres, filename='fit%s.res'%version)
+    plot_fitting_vs_truth_PSF(pdres, n_bootsrap=100,
+                              true_pars = {"gamma":gamma, "alpha":alpha, "n":n, 
+                                           "theta":theta, "mu":mu, "sigma":sigma})

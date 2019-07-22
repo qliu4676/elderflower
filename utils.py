@@ -1,20 +1,16 @@
+import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from astropy.io import fits
-import numpy as np
 from astropy.table import Table
+from astropy.modeling import models
+from astropy.stats import SigmaClip, mad_std, gaussian_fwhm_to_sigma
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
-from skimage import morphology, transform
-
-
-from photutils import Background2D, SExtractorBackground
-from photutils import detect_threshold, detect_sources, deblend_sources
-from astropy.stats import SigmaClip, mad_std, gaussian_fwhm_to_sigma
-from astropy.convolution import Gaussian2DKernel 
+from skimage import morphology
 
 def cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
@@ -34,14 +30,13 @@ def power1d(x, n, theta0, I_theta0):
 
 def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
     ind_slice = [np.argmin(x<theta_i) for theta_i in theta_s]
-    x_s = np.split(x, ind_slice)
     a0 = I_theta0/(theta0)**(-n0)
-    y = a0 * np.power(x_s[0], -n0)
+    y = a0 * np.power(x, -n0)
     I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
-    for i, (x_i, n_i, theta_i) in enumerate(zip(x_s[1:], n_s, theta_s)):
+    for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
         a_i = I_theta_i/(theta_i)**(-n_i)
-        y_i = a_i * np.power(x_i, -n_i)
-        y = np.append(y, y_i)
+        y_i = a_i * np.power(x, -n_i)
+        y[x>theta_i] = y_i[x>theta_i]
         try:
             I_theta_i = a_i * np.power(1.*theta_s[i+1], -n_i)
         except IndexError:
@@ -90,6 +85,7 @@ def colorbar(mappable, pad=0.2):
 
 def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
     # Subtract background using SE estimator with mask
+    from photutils import Background2D, SExtractorBackground
     Bkg = Background2D(field, mask=mask, bkg_estimator=SExtractorBackground(),
                        box_size=(b_size, b_size), filter_size=(f_size, f_size),
                        sigma_clip=SigmaClip(sigma=3., maxiters=n_iter))
@@ -114,6 +110,9 @@ def display_background_sub(field, back):
 def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3, 
                      morph_oper=morphology.dilation,
                      sub_background=True, mask=None):
+    from astropy.convolution import Gaussian2DKernel 
+    from photutils import detect_sources
+
     if sub_background:
         back, back_rms = background_sub_SE(data, b_size=b_size)
         threshold = back + (sn * back_rms)
@@ -131,8 +130,8 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
 
     return data_ma, segm_sm
 
-def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3):    
-    from photutils import detect_sources
+def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 5):    
+    from photutils import detect_sources 
     back, back_rms = background_sub_SE(image, b_size=b_size)
     threshold = back + (sn_thre * back_rms)
     segm0 = detect_sources(image, threshold, npixels=5)
@@ -143,18 +142,22 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3):
         segmap = morphology.dilation(segmap)
     segmap2 = segm0.data.copy()
     segmap2[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
-    mask_deep = (segmap!=0)
+    mask_deep = (segmap2!=0)
     
-    return mask_deep
+    return mask_deep, segmap2
 
 def save_nested_fitting_result(res, filename='fit.res'):
     import dill
     with open(filename,'wb') as file:
-        dill.dump(pdres, file)
+        dill.dump(res, file)
         
-def plot_fitting_vs_truth_PSF(pdres, true_pars, n_bootsrap=100):
-    samples = pdres.samples  # samples
-    weights = np.exp(pdres.logwt - pdres.logz[-1])  # normalized weights
+def plot_fitting_vs_truth_PSF(res, true_pars, n_bootsrap=100, save=False, version=""):
+    from dynesty import utils as dyfunc
+    
+    samples = res.samples  # samples
+    weights = np.exp(res.logwt - res.logz[-1])  # normalized weights
+    # Compute weighted mean and covariance.
+    mean, cov = dyfunc.mean_and_cov(samples, weights)
     # Resample weighted samples.
     samples_eq = dyfunc.resample_equal(samples, weights)
     
@@ -165,21 +168,27 @@ def plot_fitting_vs_truth_PSF(pdres, true_pars, n_bootsrap=100):
     
     Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
     
-    r = np.logspace(0.,3,100)
+    
     plt.figure(figsize=(8,6))
-    plt.semilogy(r, Mof_mod_1d(r), label="Moffat", ls="--", color="orange", lw=2, zorder=1)
-    plt.semilogy(r, power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
-                 label="Power", color="g", lw=2, ls="--",zorder=1)
+    r = np.logspace(0.,3,100)
     plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
-                 label="Moffat+Power", color="steelblue", lw=3, zorder=2)
+                 label="Truth", color="steelblue", lw=3, zorder=2)
     for n_k, theta_k in zip(samples_eq_bs[:,0].T, samples_eq_bs[:,1].T):
         plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n_k, theta0=theta_k*gamma, I_theta0=Mof_mod_1d(theta_k*gamma)),
-                    color="lightblue",alpha=0.1,zorder=1)
-    plt.axhline(mu/1e7,color="k",ls=":")
+                     color="lightblue",alpha=0.1,zorder=1)
+    else:
+        plt.semilogy(r, Mof_mod_1d(r) + power1d(r, mean[0], theta0=mean[1]*gamma, I_theta0=Mof_mod_1d(mean[1]*gamma)),
+                     label="Fit", color="mediumblue",ls="--",lw=2,alpha=0.75,zorder=2)
+    plt.semilogy(r, Mof_mod_1d(r), label="Moffat", ls=":", color="orange", lw=2, alpha=0.7,zorder=1)
+    plt.semilogy(r, power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
+                 label="Power", color="g", lw=2, ls=":",alpha=0.7,zorder=1)
+#     plt.axhline(mu/1e6,color="k",ls=":")
     plt.ylim(3e-9,3)
     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
-    plt.ylabel(r"$\rm Intersity$",fontsize=18)
+    plt.ylabel(r"$\rm Intensity$",fontsize=18)
     plt.xscale("log")
     plt.tight_layout()
-    plt.savefig("PSF%s.png"%version,dpi=150)
-    plt.close()
+    plt.legend(fontsize=12)
+    if save:
+        plt.savefig("./tmp/PSF%s.png"%version,dpi=150)
+    plt.show()
