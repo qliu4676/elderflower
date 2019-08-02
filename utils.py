@@ -1,16 +1,39 @@
+import sys
+import os
 import numpy as np
+import math
+from scipy.special import gamma as Gamma
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from astropy.io import fits
+from astropy import wcs
 from astropy.table import Table
 from astropy.modeling import models
-from astropy.stats import SigmaClip, mad_std, gaussian_fwhm_to_sigma
+from astropy.stats import SigmaClip, mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
 from skimage import morphology
+
+
+### Baisc Funcs ###
+def coord_Im2Array(X_IMAGE, Y_IMAGE):
+    """ Convert image coordniate to numpy array coordinate """ 
+    x_arr, y_arr = Y_IMAGE-1, X_IMAGE-1
+    return x_arr, y_arr
+
+def coord_Array2Im(x_arr, y_arr):
+    """ Convert image coordniate to numpy array coordinate """ 
+    X_IMAGE, Y_IMAGE = y_arr+1, x_arr+1
+    return X_IMAGE, Y_IMAGE
+
+def Intensity2SB(y, BKG, ZP, pix_scale):
+    """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """ 
+    I_SB = -2.5*np.log10(y - BKG) + ZP + 2.5 * np.log10(pix_scale**2)
+    return I_SB
 
 def cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
@@ -44,15 +67,21 @@ def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
     return y
 
 def power2d(x, y, n, theta0, I_theta0, cen): 
-    r = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
-    r[r<=0] = r[r>0].min()
-    a = I_theta0/(theta0)**(-n)
+    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
+#     r[r<=0] = r[r>0].min()
+    a = I_theta0 / (theta0)**(-n)
     z = a * np.power(r, -n) 
     return z 
 
+def trunc_power2d(x, y, n, theta0, I_theta0, cen): 
+    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
+    a = I_theta0 / (theta0)**(-n)
+    z = a * np.power(r, -n) 
+    z[r<theta0] = I_theta0
+    return z
+
 def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
-    r = np.sqrt((x-cen[0])**2+(y-cen[1])**2)
-    r[r<=0] = r[r>0].min()
+    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
     a0 = I_theta0/(theta0)**(-n0)
     z = a0 * np.power(r, -n0) 
     I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
@@ -66,41 +95,60 @@ def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
+def Moffat_Flux2Amp(r_core, beta, F=1, pix_scale=1):
+    """ Calculate the (astropy) amplitude of 2d Moffat profile given the core width, power index, and total flux F.
+    Note in astropy unit (x,y) the amplitude should be scaled with pixel_scale / 2sqrt(pi)."""
+    return  pixel_scale / (np.pi) * F * Gamma(beta) / ( r_core * np.sqrt(np.pi) * Gamma(beta-1./2) )
+
+### Plotting Helpers ###
 
 def vmin_3mad(img):
-    # lower limit of visual imshow defined by 3 mad above median
+    """ lower limit of visual imshow defined by 3 mad above median """ 
     return np.median(img)-3*mad_std(img)
 
 def vmax_2sig(img):
-    # upper limit of visual imshow defined by 2 sigma above median
+    """ upper limit of visual imshow defined by 2 sigma above median """ 
     return np.median(img)+2*np.std(img)
 
-def colorbar(mappable, pad=0.2):
+def colorbar(mappable, pad=0.2, size="5%", loc="right", **args):
     ax = mappable.axes
     fig = ax.figure
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=pad)
-    return fig.colorbar(mappable, cax=cax)
+    if loc=="bottom":
+        orent = "horizontal"
+        pad = 1.5*pad
+        rot = 75
+    else:
+        orent = "vertical"
+        rot = 0
+    cax = divider.append_axes(loc, size=size, pad=pad)
+    cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
+    cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
+    return cb
 
+### Photometry Funcs ###
 
 def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
-    # Subtract background using SE estimator with mask
-    from photutils import Background2D, SExtractorBackground
-    Bkg = Background2D(field, mask=mask, bkg_estimator=SExtractorBackground(),
-                       box_size=(b_size, b_size), filter_size=(f_size, f_size),
-                       sigma_clip=SigmaClip(sigma=3., maxiters=n_iter))
-    back = Bkg.background
-    back_rms = Bkg.background_rms
+    """ Subtract background using SE estimator with mask """ 
+    from photutils import Background2D, SExtractorBackground, MedianBackground
+    try:
+        Bkg = Background2D(field, mask=mask, bkg_estimator=SExtractorBackground(),
+                           box_size=(b_size, b_size), filter_size=(f_size, f_size),
+                           sigma_clip=SigmaClip(sigma=3., maxiters=n_iter))
+        back = Bkg.background
+        back_rms = Bkg.background_rms
+    except ValueError:
+        back, back_rms = np.nanmedian(field) * np.ones_like(field), mad_std(field) * np.ones_like(field)
     if mask is not None:
         back *= ~mask
-    field_sub = field - back
+        back_rms *= ~mask
     return back, back_rms
 
 def display_background_sub(field, back):
     norm1 = ImageNormalize(stretch=LogStretch())
     norm2 = ImageNormalize(stretch=LogStretch())
     # Display and save background subtraction result with comparison 
-    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(17,6))
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(14,4))
     ax1.imshow(field, origin="lower", aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=norm1)
     im2 = ax2.imshow(back, origin='lower', aspect="auto", cmap='gray')
     colorbar(im2)
@@ -146,6 +194,91 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 5):
     
     return mask_deep, segmap2
 
+
+def cal_profile_1d(img, cen=None, mask=None, back=None, color="steelblue", xunit="pix", yunit="intensity",
+                   seeing=2.5, pix_scale=1., ZP=0, mu=0, plot_line=False, label=None):
+    """Calculate 1d radial profile of a given star postage"""
+    if mask is None:
+        mask =  np.zeros_like(img).astype("bool")
+    if back is None:     
+        back = np.ones_like(img) * mu
+    if cen is None:
+        cen = (img.shape[0]-1)/2., (img.shape[1]-1)/2.
+        
+    yy, xx = np.indices((img.shape))
+    rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
+    r = rr[~mask].ravel()  # radius in pix
+    z = img[~mask].ravel()  # pixel intensity
+    r_core = 5 * seeing
+
+    # Decide the outermost radial bin r_max before going into the background
+    bkg_cumsum = np.arange(1, len(z)+1, 1) * np.median(back)
+    z_diff =  abs(z.cumsum() - bkg_cumsum)
+    n_pix_max = len(z) - np.argmin(abs(z_diff - 0.0001 * z_diff[-1]))
+    r_max = np.sqrt(n_pix_max/np.pi)
+    r_max = np.min([img.shape[0]//2, r_max])
+    print("Maximum R: %d (pix)"%np.int(r_max))    
+    
+    if xunit == "arcsec":
+        r = r * pix_scale   # radius in arcsec
+        r_core = r_core * pix_scale
+        r_max = r_max * pix_scale
+        plt.xlabel("r [acrsec]")
+    elif xunit == "pix":
+        plt.xlabel("r [pix]")
+        
+    d_r = 1 * pix_scale if xunit == "arcsec" else 1
+    
+    # Radial bins: linear within r_core + log beyond it
+    bins_inner = np.linspace(d_r, r_core, np.int(r_core/d_r))
+    n_bin_outer = np.min([np.int(r_max/d_r/8), 25])
+    if r_max > (r_core+d_r):
+        bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max), n_bin_outer)
+    else:
+        bins_outer = []
+    bins = np.concatenate([bins_inner, bins_outer])
+    n_pix_rbin, bins = np.histogram(r, bins=bins)
+    
+    r_rbin = np.array([])
+    z_rbin = np.array([])
+    logzerr_rbin = np.array([])
+    for k,b in enumerate(bins[:-1]):
+        in_bin = (r>bins[k])&(r<bins[k+1])
+        r_rbin = np.append(r_rbin, np.median(r[in_bin]))
+        z_rbin = np.append(z_rbin, np.median(z[in_bin]))
+        logzerr_rbin = np.append(logzerr_rbin, 0.434 * (mad_std(z[in_bin]) / np.median(z[in_bin])))
+
+    if yunit == "intensity":  # plot radius in Intensity
+        plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", color=color, alpha=0.9,zorder=3, label=label)   
+        plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
+                         color=color, alpha=0.2, zorder=1)
+        plt.ylabel("log Intensity")
+        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]-0.5, r_rbin[np.isfinite(r_rbin)][-1]+1)
+        
+    elif yunit == "SB":  # plot radius in Surface Brightness
+        B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
+        
+        plt.plot(r_rbin, B_rbin, "-o", mec="k", color=color, alpha=0.9, zorder=3, label=label)   
+        plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
+        plt.gca().invert_yaxis()
+        plt.xscale("log")
+        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
+    
+    # Decide the radius where the intensity saturated for bright stars
+    slope_rbin = np.diff(np.log10(z_rbin[r_rbin.argsort()]))/np.diff(r_rbin)
+    
+    if plot_line:
+        r_satr = r_rbin[np.argmin(abs(slope_rbin)<1e-2)+1]+0.1
+        plt.axvline(r_satr,color="k",ls="--")
+        plt.axvline(r_core,color="k",ls=":")
+        
+        use_range = (r_rbin>r_satr)&(r_rbin<r_core)
+    else:
+        use_range = True
+    return r_rbin, z_rbin, logzerr_rbin, use_range
+
+
+### Nested Fitting Helper ###
 def save_nested_fitting_result(res, filename='fit.res'):
     import dill
     with open(filename,'wb') as file:
