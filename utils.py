@@ -11,7 +11,7 @@ from astropy.io import fits
 from astropy import wcs
 from astropy.table import Table
 from astropy.modeling import models
-from astropy.stats import SigmaClip, mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
+from astropy.stats import sigma_clip, SigmaClip, mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
@@ -46,7 +46,7 @@ def pol2cart(rho, phi):
     return(x, y)
 
 def power1d(x, n, theta0, I_theta0): 
-    x[x<=0] = x[x>0].min()
+#     x[x<=0] = x[x>0].min()
     a = I_theta0/(theta0)**(-n)
     y = a * np.power(x, -n)
     return y
@@ -68,7 +68,7 @@ def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
 
 def power2d(x, y, n, theta0, I_theta0, cen): 
     r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
-#     r[r<=0] = r[r>0].min()
+    r[r<=1] = r[r>1].min()
     a = I_theta0 / (theta0)**(-n)
     z = a * np.power(r, -n) 
     return z 
@@ -95,10 +95,19 @@ def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
-def Moffat_Flux2Amp(r_core, beta, F=1, pix_scale=1):
+def moffat_flux2amp(r_core, beta, F=1, pixel_scale=1):
     """ Calculate the (astropy) amplitude of 2d Moffat profile given the core width, power index, and total flux F.
-    Note in astropy unit (x,y) the amplitude should be scaled with pixel_scale / 2sqrt(pi)."""
-    return  pixel_scale / (np.pi) * F * Gamma(beta) / ( r_core * np.sqrt(np.pi) * Gamma(beta-1./2) )
+    Note in astropy unit (x,y) the amplitude should be scaled with 1/sqrt(pi)."""
+#     C = np.sqrt(np.pi) * pixel_scale**psf_beta  # Extra scaling factor
+    Amp = 1 / np.pi * F * Gamma(beta) / ( r_core * np.sqrt(np.pi) * Gamma(beta-1./2) ) # Derived scaling factor
+    return  Amp
+
+def moffat_amp2flux(r_core, beta, Amp=1, pixel_scale=1):
+    """ Calculate the (astropy) amplitude of 2d Moffat profile given the core width, power index, and total flux F.
+    Note in astropy unit (x,y) the amplitude should be scaled with 1/sqrt(pi)."""
+#     C = np.sqrt(np.pi) * pixel_scale**psf_beta  # Extra scaling factor
+    F = np.pi * Amp *  r_core * np.sqrt(np.pi) * Gamma(beta-1./2) / Gamma(beta) # Derived scaling factor
+    return  F
 
 ### Plotting Helpers ###
 
@@ -195,13 +204,15 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 5):
     return mask_deep, segmap2
 
 
-def cal_profile_1d(img, cen=None, mask=None, back=None, color="steelblue", xunit="pix", yunit="intensity",
-                   seeing=2.5, pix_scale=1., ZP=0, mu=0, plot_line=False, label=None):
+def cal_profile_1d(img, cen=None, mask=None, back=None, 
+                   color="steelblue", xunit="pix", yunit="intensity",
+                   seeing=1, pix_scale=2.5, ZP=0, sky_mean=0, sky_std=1,
+                   core_undersample=True, plot_line=False, label=None):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img).astype("bool")
     if back is None:     
-        back = np.ones_like(img) * mu
+        back = np.ones_like(img) * sky_mean
     if cen is None:
         cen = (img.shape[0]-1)/2., (img.shape[1]-1)/2.
         
@@ -209,7 +220,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, color="steelblue", xunit
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
     r = rr[~mask].ravel()  # radius in pix
     z = img[~mask].ravel()  # pixel intensity
-    r_core = 5 * seeing
+    r_core = np.int(3 * seeing/pix_scale) # core radisu in pix
 
     # Decide the outermost radial bin r_max before going into the background
     bkg_cumsum = np.arange(1, len(z)+1, 1) * np.median(back)
@@ -229,50 +240,65 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, color="steelblue", xunit
         
     d_r = 1 * pix_scale if xunit == "arcsec" else 1
     
-    # Radial bins: linear within r_core + log beyond it
-    bins_inner = np.linspace(d_r, r_core, np.int(r_core/d_r))
-    n_bin_outer = np.min([np.int(r_max/d_r/8), 25])
+    # Radial bins: discrete/linear within r_core + log beyond it
+    if core_undersample:  
+        # for undersampled core, bin in individual pixels 
+        bins_inner = np.unique(r[r<r_core]) + 1e-3
+    else: 
+        bins_inner = np.linspace(0, r_core, np.int(r_core/d_r)) + 1e-3
+        
+    n_bin_outer = np.max([10, np.min([np.int(r_max/d_r/10), 50])])
     if r_max > (r_core+d_r):
-        bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max), n_bin_outer)
+        bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max-d_r), n_bin_outer)
     else:
         bins_outer = []
     bins = np.concatenate([bins_inner, bins_outer])
     n_pix_rbin, bins = np.histogram(r, bins=bins)
     
+    # Calculate binned 1d profile
     r_rbin = np.array([])
     z_rbin = np.array([])
     logzerr_rbin = np.array([])
     for k,b in enumerate(bins[:-1]):
         in_bin = (r>bins[k])&(r<bins[k+1])
         r_rbin = np.append(r_rbin, np.median(r[in_bin]))
-        z_rbin = np.append(z_rbin, np.median(z[in_bin]))
-        logzerr_rbin = np.append(logzerr_rbin, 0.434 * (mad_std(z[in_bin]) / np.median(z[in_bin])))
+      
+        z_clip = sigma_clip(z[in_bin], sigma=5, maxiters=10)
+        zb = np.mean(z_clip)
+        sigma_zb = np.std(z_clip)
+        z_rbin = np.append(z_rbin, zb)
+        logzerr_rbin = np.append(logzerr_rbin, 0.434 * ( sigma_zb / zb))
 
-    if yunit == "intensity":  # plot radius in Intensity
+    if yunit == "intensity":  
+        # plot radius in Intensity
         plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", color=color, alpha=0.9,zorder=3, label=label)   
         plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
                          color=color, alpha=0.2, zorder=1)
         plt.ylabel("log Intensity")
-        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]-0.5, r_rbin[np.isfinite(r_rbin)][-1]+1)
+        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]-0.1, r_rbin[np.isfinite(r_rbin)][-1] + 2)
         
-    elif yunit == "SB":  # plot radius in Surface Brightness
+    elif yunit == "SB":  
+        # plot radius in Surface Brightness
         B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
+        B_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
         
         plt.plot(r_rbin, B_rbin, "-o", mec="k", color=color, alpha=0.9, zorder=3, label=label)   
         plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
         plt.gca().invert_yaxis()
         plt.xscale("log")
+        plt.axhline(B_sky,color="gray",ls="-.",alpha=0.7)
         plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
     
-    # Decide the radius where the intensity saturated for bright stars
-    slope_rbin = np.diff(np.log10(z_rbin[r_rbin.argsort()]))/np.diff(r_rbin)
+    # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
+    dz_rbin = np.diff(np.log10(z_rbin)) 
+    dz_cum = np.cumsum(dz_rbin)
     
     if plot_line:
-        r_satr = r_rbin[np.argmin(abs(slope_rbin)<1e-2)+1]+0.1
+        r_satr = r_rbin[np.argmax(dz_cum<-0.3)] + 1e-3
         plt.axvline(r_satr,color="k",ls="--")
         plt.axvline(r_core,color="k",ls=":")
         
-        use_range = (r_rbin>r_satr)&(r_rbin<r_core)
+        use_range = (r_rbin>r_satr) & (r_rbin<r_core)
     else:
         use_range = True
     return r_rbin, z_rbin, logzerr_rbin, use_range

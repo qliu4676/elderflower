@@ -41,6 +41,7 @@ else:
 ###-----------------------------------------------------###
 
 cen = ((tshape[0]-1)/2., (tshape[0]-1)/2.)
+yy, xx = np.mgrid[:tshape[0], :tshape[1]]
 
 # Generate noise background
 np.random.seed(39)
@@ -60,9 +61,6 @@ if Add_Poisson_Noise:
 # Generate stars w/ known amplitude and position
 np.random.seed(42)
 star_pos = tshape[0]*np.random.random(size=(n_star,2))
-
-yy, xx = np.mgrid[:tshape[0], :tshape[1]]
-dist_maps = [np.sqrt((xx-x0)**2+(yy-y0)**2) for (x0,y0) in star_pos]
 
 
 # Generate Mock Image
@@ -132,7 +130,7 @@ if SHOW_MOCK:
 print("Build Mock Image...Done!")
     
 # Source Extraction and Masking
-mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 3)
+mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=np.min([tshape[0]//5, 50]), n_dilation = 5)
 
 if SHOW_MASK:
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
@@ -291,7 +289,7 @@ else:
 def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=truths,
                        nlive_init=200, nlive_batch=100, maxbatch=3, ndim=4):
         
-    with mp.Pool(n_cpu-1) as pool:
+    with mp.Pool(processes=n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu-1))
         pool.size = n_cpu-1
 
@@ -301,7 +299,7 @@ def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=
         pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                   pool=pool, use_pool={'update_bound': False})
         pdsampler.run_nested(nlive_init=nlive_init, nlive_batch=nlive_batch, maxbatch=maxbatch,
-                             print_progress=False, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
+                             print_progress=True, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
         end = time.time()
 
     
