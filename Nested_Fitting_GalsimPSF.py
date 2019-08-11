@@ -34,9 +34,13 @@ dir_name = "./run"
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
 else:
-    dir_name = input("Enter a directory name for saving:")
-    os.makedirs(dir_name)
-    
+    if len(os.listdir(dir_name)) != 0:
+        while os.path.exists(dir_name):
+            dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
+        os.makedirs(dir_name)
+print("Results will be saved in %s"%dir_name)
+
+# Fitting Parameter
 n_cpu = 3
 RUN_FITTING = True
 mask_strip = True
@@ -51,19 +55,21 @@ pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
 beta_psf = 3                                     # moffat beta, in arcsec
 fwhm = 2.2 * pixel_scale                         # moffat fwhm, in arcsec
+
 gamma = fwhm / 2. / np.sqrt(2**(1./beta_psf)-1)  # moffat core width, in arcsec
 gamma_pix = gamma / pixel_scale                  # moffat core width, in pix
 
 n = 2.7                     # true power index
 frac = 0.15                 # fraction of power law component
 theta_t = 6.                # radius at which power law is flattened, in arcsec
+
 theta_t_pix = theta_t/pixel_scale          # in pix
 theta_t_psf_pix = theta_t/psf_pixel_scale  # in pix
 a = (theta_t_psf_pix)**n                   # normalization
 
-noise_variance = 25
-mu = 884
-sigma = np.sqrt(noise_variance)
+noise_variance = 25                        # sky variance
+mu = 884                                   # sky mean
+sigma = np.sqrt(noise_variance)            # sky stddev
 
 def Generate_PSF_pow_Galsim(contrast, psf_scale=psf_pixel_scale, n=n,
                             psf_size=None, min_psf_size=None, max_psf_size=None,
@@ -165,38 +171,43 @@ def get_center_offset(pos):
     return (ix_nominal, iy_nominal), offset       
 
 # Setup the noise background
-noise_image = galsim.ImageF(image_size, image_size)
-random_seed = 24783923
-rng = galsim.BaseDeviate(random_seed)
-gauss_noise = galsim.GaussianNoise(rng, sigma=math.sqrt(noise_variance))
-noise_image.addNoise(gauss_noise)  
+def make_noise(image_size, noise_var, random_seed=42)
+    noise_image = galsim.ImageF(image_size, image_size)
+    rng = galsim.BaseDeviate(random_seed)
+    gauss_noise = galsim.GaussianNoise(rng, sigma=math.sqrt(noise_var))
+    noise_image.addNoise(gauss_noise)  
+    return noise_image.array
 
+print("Generate noise background w/ stddev = %.2g."%sigma)
+noise = make_noise(image_size, noise_variance)
+    
 # Setup the base image for faint stars (Moffat only):
-print("Generate base image of stars w/ flux < %.2g."%(Fluxs[~bright].max()))
-start = time.time()
-full_image0 = galsim.ImageF(image_size, image_size)
-for k, (pos, flux) in enumerate(zip(star_pos[~bright], Fluxs[~bright])): 
-       
-    psf_star = psf_mof    
-    star = psf_star.withFlux(flux)
-    
-    (ix_nominal, iy_nominal), offset = get_center_offset(pos)
-    
-    stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
-    stamp.setCenter(ix_nominal,iy_nominal)
-    
-    bounds = stamp.bounds & full_image0.bounds
-    full_image0[bounds] += stamp[bounds]
-    
-image_gs0 = full_image0.array
+def make_base_image(image_size, star_pos, Fluxs):
+    start = time.time()
+    full_image0 = galsim.ImageF(image_size, image_size)
+    for k, (pos, flux) in enumerate(zip(star_pos, Fluxs)): 
 
-end = time.time()
-print("Total Time: %.3fs"%(end-start))
+        psf_star = psf_mof    
+        star = psf_star.withFlux(flux)
+
+        (ix_nominal, iy_nominal), offset = get_center_offset(pos)
+
+        stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
+        stamp.setCenter(ix_nominal,iy_nominal)
+
+        bounds = stamp.bounds & full_image0.bounds
+        full_image0[bounds] += stamp[bounds]
+
+    image_gs0 = full_image0.array
+    end = time.time()
+    print("Total Time: %.3fs"%(end-start))
+    return image_gs0
+
+print("Generate base image of stars w/ flux < %.2g."%(Fluxs[~bright].max()))
+image_gs0 = make_base_image(image_size, star_pos=star_pos[~bright], Fluxs=Fluxs[~bright])
 
 # Make the truth image to be fitted (Moffat+power):
-print("Generate the truth image.")
-
-def make_truth_image(image_size, noise, star_pos, Fluxs,
+def make_truth_image(image_size, star_pos, Fluxs, noise,
                      method="Real", saturation=4.5e4):
     start = time.time()
     if method == "Galsim":
@@ -225,7 +236,7 @@ def make_truth_image(image_size, noise, star_pos, Fluxs,
 
     elif method == "Real":
         # Convert Fluxs to Astropy Moffat Amplitude (pixel)
-        Amps = np.array([moffat2d_Flux2Amp(gamma_pix, beta_psf, F=(1-frac)*F) for F in Fluxs])
+        Amps = np.array([moffat2d_Flux2Amp(gamma_pix, beta_psf, Flux=(1-frac)*F) for F in Fluxs])
         moffat2d_s = [models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0, gamma=gamma_pix, alpha=beta_psf) 
                       for (amp, (x0,y0)) in zip(Amps, star_pos)]
         power2d_s = [lambda xx, yy, flux=flux, cen=cen: trunc_power2d(xx, yy, n, cen=cen, theta0=theta_t_pix, 
@@ -244,8 +255,9 @@ def make_truth_image(image_size, noise, star_pos, Fluxs,
     
     return image
 
-image = make_truth_image(image_size, noise=noise_image.array, 
-                         star_pos=star_pos, Fluxs=Fluxs, method="Real")
+print("Generate the truth image.")
+image = make_truth_image(image_size, star_pos=star_pos, Fluxs=Fluxs, 
+                         noise=noise, method="Real")
 
 if draw:
     plt.figure(figsize=(8,7))
@@ -284,6 +296,7 @@ if draw:
     plt.close()
 
 if mask_strip:
+    print("Use sky strips crossing very bright stars")
     mask_strip_s = make_mask_strip(image_size, star_pos[verybright], Fluxs[verybright], width=5, n_strip=12)
     mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
     seg_comb = seg_map.copy()
@@ -373,7 +386,7 @@ import multiprocess as mp
 
 truths = np.log10(frac), n, mu, sigma
 labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
-print("Truths: ", truths)
+print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
@@ -387,6 +400,7 @@ if mask_strip is True:
     mask_fit = mask_comb
 else:
     mask_fit = mask_deep
+    
 X = np.array([xx,yy])
 Y = image[~mask_fit].copy().ravel()
 
@@ -418,10 +432,11 @@ def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=
         pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                   pool=pool, use_pool={'update_bound': False})
         pdsampler.run_nested(nlive_init=nlive_init, nlive_batch=nlive_batch, maxbatch=maxbatch,
-                             print_progress=True, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
+                             print_progress=False, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
         end = time.time()
 
     pdres = pdsampler.results
+    print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
 
     # Plot Result
     fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
@@ -432,7 +447,7 @@ def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=
     plt.savefig("%s/Result.png"%dir_name,dpi=150)
     plt.close('all')
     
-    return pdsampler, (end-start)
+    return pdsampler
 
 def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, n_bootsrap=100, save=False, dir_name="."):
     from dynesty import utils as dyfunc
@@ -491,12 +506,11 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, n_bootsrap=
     plt.tight_layout()
     plt.legend(fontsize=12)
     if save:
-        plt.savefig("%s/Fitted_PSF.png"%dir_name,dpi=150)
+        plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
     plt.close()
 
 if RUN_FITTING:
-    pdsampler, time_tot = Run_Nested_Fitting(loglike, prior_transform, truths)
-    print("Finish fitting! Total time elapsed: %.3gs"%time_tot)
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths)
     pdres = pdsampler.results
     
     save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
