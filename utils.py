@@ -3,6 +3,8 @@ import os
 import numpy as np
 import math
 from scipy.special import gamma as Gamma
+from scipy.integrate import quad
+from scipy import stats
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -22,7 +24,7 @@ from skimage import morphology
 ### Baisc Funcs ###
 def coord_Im2Array(X_IMAGE, Y_IMAGE):
     """ Convert image coordniate to numpy array coordinate """ 
-    x_arr, y_arr = Y_IMAGE-1, X_IMAGE-1
+    x_arr, y_arr = int(round(Y_IMAGE-1)), int(round(X_IMAGE-1))
     return x_arr, y_arr
 
 def coord_Array2Im(x_arr, y_arr):
@@ -34,6 +36,11 @@ def Intensity2SB(y, BKG, ZP, pix_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """ 
     I_SB = -2.5*np.log10(y - BKG) + ZP + 2.5 * np.log10(pix_scale**2)
     return I_SB
+
+def SB2Intensity(I_SB, BKG, ZP, pix_scale):
+    """ Convert surface brightness (mag/arcsec^2)to intensity given the background value, zero point and pixel scale """ 
+    y = 10** ((I_SB - ZP - 2.5 * np.log10(pix_scale**2))/ (-2.5)) + BKG
+    return y
 
 def cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
@@ -51,7 +58,34 @@ def power1d(x, n, theta0, I_theta0):
     y = a * np.power(x, -n)
     return y
 
+def trunc_pow(x, n, theta0, I_theta0=1):
+    """ Truncated power law for single element, normalized = I_theta0 at theta0 """
+    a = I_theta0 / (theta0)**(-n)
+    y = a * x**(-n) if x > theta0 else I_theta0
+    return y
+
+def trunc_power1d(x, n, theta0, I_theta0=1): 
+    """ Truncated power law for 1d array, normalized = I_theta0 at theta0 """
+    a = I_theta0 / (theta0)**(-n)
+    y = a * np.power(x, -n) 
+    y[x<theta0] = I_theta0
+    return y
+
+def trunc_power1d_normed(x, n, theta0):
+    """ Truncated power law for 1d array, flux normalized = 1 """
+    norm_pow = quad(trunc_pow, 0, np.inf, args=(n, theta0, 1))[0]
+    y = trunc_power1d(x, n, theta0, 1) / norm_pow  
+    return y
+
+def moffat1d_normed(x, gamma, alpha):
+    """ Truncated Moffat for 1d array, flux normalized = 1 """
+    Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
+    norm_mof = quad(Mof_mod_1d, 0, np.inf)[0] 
+    y = Mof_mod_1d(x) / norm_mof
+    return y
+
 def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
+#     n_s, theta_s = np.atleast1d(n_s), np.atleast1d(theta_s)
     ind_slice = [np.argmin(x<theta_i) for theta_i in theta_s]
     a0 = I_theta0/(theta0)**(-n0)
     y = a0 * np.power(x, -n0)
@@ -66,14 +100,15 @@ def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
             pass
     return y
 
-def power2d(x, y, n, theta0, I_theta0, cen): 
-    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
-    r[r<=1] = r[r>1].min()
+def power2d(xx, yy, n, theta0, I_theta0, cen): 
+    rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
+    rr[rr<=1] = rr[rr>1].min()
     a = I_theta0 / (theta0)**(-n)
-    z = a * np.power(r, -n) 
+    z = a * np.power(rr, -n) 
     return z 
 
 def trunc_power2d(x, y, n, theta0, I_theta0, cen): 
+    """ Truncated power law for 2d array, normalized = I_theta0 at theta0 """
     r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
     a = I_theta0 / (theta0)**(-n)
     z = a * np.power(r, -n) 
@@ -95,19 +130,28 @@ def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
-def moffat_flux2amp(r_core, beta, F=1, pixel_scale=1):
-    """ Calculate the (astropy) amplitude of 2d Moffat profile given the core width, power index, and total flux F.
+def moffat1d_Flux2Amp(r_core, beta, Flux=1):
+    """ Calculate the (astropy) amplitude of 1d Moffat profile given the core width, power index, and total flux F.
     Note in astropy unit (x,y) the amplitude should be scaled with 1/sqrt(pi)."""
-#     C = np.sqrt(np.pi) * pixel_scale**psf_beta  # Extra scaling factor
-    Amp = 1 / np.pi * F * Gamma(beta) / ( r_core * np.sqrt(np.pi) * Gamma(beta-1./2) ) # Derived scaling factor
+    Amp = Flux * Gamma(beta) / ( r_core * np.sqrt(np.pi) * Gamma(beta-1./2) ) # Derived scaling factor
     return  Amp
 
-def moffat_amp2flux(r_core, beta, Amp=1, pixel_scale=1):
-    """ Calculate the (astropy) amplitude of 2d Moffat profile given the core width, power index, and total flux F.
+def moffat1d_Amp2Flux(r_core, beta, Amp=1):
+    """ Calculate the (astropy) amplitude of 1d Moffat profile given the core width, power index, and total flux F.
     Note in astropy unit (x,y) the amplitude should be scaled with 1/sqrt(pi)."""
-#     C = np.sqrt(np.pi) * pixel_scale**psf_beta  # Extra scaling factor
-    F = np.pi * Amp *  r_core * np.sqrt(np.pi) * Gamma(beta-1./2) / Gamma(beta) # Derived scaling factor
+    F = Amp *  r_core * np.sqrt(np.pi) * Gamma(beta-1./2) / Gamma(beta) # Derived scaling factor
     return  F
+
+def moffat2d_Flux2Amp(r_core, beta, Flux=1):
+    return Flux * (beta-1) / r_core**2 / np.pi
+
+def moffat2d_Amp2Flux(r_core, beta, Amp=1):
+    return Amp * r_core**2 * np.pi / (beta-1)
+
+def power2d_Flux2Amp(n, theta0, Flux=1):
+    I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
+    return I_theta0
+
 
 ### Plotting Helpers ###
 
@@ -187,7 +231,7 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
 
     return data_ma, segm_sm
 
-def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 5):    
+def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):    
     from photutils import detect_sources 
     back, back_rms = background_sub_SE(image, b_size=b_size)
     threshold = back + (sn_thre * back_rms)
@@ -203,10 +247,24 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation = 5):
     
     return mask_deep, segmap2
 
+def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12):    
+    yy, xx = np.mgrid[:image_size, :image_size]
+    phi_s = np.linspace(-90, 90, n_strip+1)
+    a_s = np.tan(phi_s*np.pi/180)
+    mask_strip_s = np.empty((len(star_pos), image_size, image_size))
+    
+    for k, (x_b, y_b) in enumerate(star_pos[fluxs.argsort()]):
+        m_s = (y_b-a_s*x_b)
+        mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < width 
+                                           for (a, m) in zip(a_s, m_s)])
+        mask_strip_s[k] = mask_strip
+        
+    return mask_strip_s
 
+    
 def cal_profile_1d(img, cen=None, mask=None, back=None, 
                    color="steelblue", xunit="pix", yunit="intensity",
-                   seeing=1, pix_scale=2.5, ZP=0, sky_mean=0, sky_std=1,
+                   seeing=2.5, pix_scale=2.5, ZP=0, sky_mean=0, sky_std=1,
                    core_undersample=True, plot_line=False, label=None):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
@@ -261,7 +319,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     logzerr_rbin = np.array([])
     for k,b in enumerate(bins[:-1]):
         in_bin = (r>bins[k])&(r<bins[k+1])
-        r_rbin = np.append(r_rbin, np.median(r[in_bin]))
+        r_rbin = np.append(r_rbin, np.mean(r[in_bin]))
       
         z_clip = sigma_clip(z[in_bin], sigma=5, maxiters=10)
         zb = np.mean(z_clip)
@@ -310,44 +368,44 @@ def save_nested_fitting_result(res, filename='fit.res'):
     with open(filename,'wb') as file:
         dill.dump(res, file)
         
-def plot_fitting_vs_truth_PSF(res, true_pars, n_bootsrap=100, save=False, version=""):
-    from dynesty import utils as dyfunc
+# def plot_fitting_vs_truth_PSF(res, true_pars, n_bootsrap=100, save=False, version=""):
+#     from dynesty import utils as dyfunc
     
-    samples = res.samples  # samples
-    weights = np.exp(res.logwt - res.logz[-1])  # normalized weights
-    # Compute weighted mean and covariance.
-    mean, cov = dyfunc.mean_and_cov(samples, weights)
-    # Resample weighted samples.
-    samples_eq = dyfunc.resample_equal(samples, weights)
+#     samples = res.samples  # samples
+#     weights = np.exp(res.logwt - res.logz[-1])  # normalized weights
+#     # Compute weighted mean and covariance.
+#     mean, cov = dyfunc.mean_and_cov(samples, weights)
+#     # Resample weighted samples.
+#     samples_eq = dyfunc.resample_equal(samples, weights)
     
-    from astropy.stats import bootstrap
-    samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootsrap)[0]
+#     from astropy.stats import bootstrap
+#     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootsrap)[0]
     
-    gamma, alpha, n, theta, mu, sigma = true_pars.values()
+#     gamma, alpha, n, theta, mu, sigma = true_pars.values()
     
-    Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
+#     Mof_mod_1d = models.Moffat1D(amplitude=1, x_0=0, gamma=gamma, alpha=alpha)
     
     
-    plt.figure(figsize=(8,6))
-    r = np.logspace(0.,3,100)
-    plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
-                 label="Truth", color="steelblue", lw=3, zorder=2)
-    for n_k, theta_k in zip(samples_eq_bs[:,0].T, samples_eq_bs[:,1].T):
-        plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n_k, theta0=theta_k*gamma, I_theta0=Mof_mod_1d(theta_k*gamma)),
-                     color="lightblue",alpha=0.1,zorder=1)
-    else:
-        plt.semilogy(r, Mof_mod_1d(r) + power1d(r, mean[0], theta0=mean[1]*gamma, I_theta0=Mof_mod_1d(mean[1]*gamma)),
-                     label="Fit", color="mediumblue",ls="--",lw=2,alpha=0.75,zorder=2)
-    plt.semilogy(r, Mof_mod_1d(r), label="Moffat", ls=":", color="orange", lw=2, alpha=0.7,zorder=1)
-    plt.semilogy(r, power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
-                 label="Power", color="g", lw=2, ls=":",alpha=0.7,zorder=1)
-#     plt.axhline(mu/1e6,color="k",ls=":")
-    plt.ylim(3e-9,3)
-    plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
-    plt.ylabel(r"$\rm Intensity$",fontsize=18)
-    plt.xscale("log")
-    plt.tight_layout()
-    plt.legend(fontsize=12)
-    if save:
-        plt.savefig("./tmp/PSF%s.png"%version,dpi=150)
-    plt.show()
+#     plt.figure(figsize=(8,6))
+#     r = np.logspace(0.,3,100)
+#     plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
+#                  label="Truth", color="steelblue", lw=3, zorder=2)
+#     for n_k, theta_k in zip(samples_eq_bs[:,0].T, samples_eq_bs[:,1].T):
+#         plt.semilogy(r, Mof_mod_1d(r) + power1d(r, n_k, theta0=theta_k*gamma, I_theta0=Mof_mod_1d(theta_k*gamma)),
+#                      color="lightblue",alpha=0.1,zorder=1)
+#     else:
+#         plt.semilogy(r, Mof_mod_1d(r) + power1d(r, mean[0], theta0=mean[1]*gamma, I_theta0=Mof_mod_1d(mean[1]*gamma)),
+#                      label="Fit", color="mediumblue",ls="--",lw=2,alpha=0.75,zorder=2)
+#     plt.semilogy(r, Mof_mod_1d(r), label="Moffat", ls=":", color="orange", lw=2, alpha=0.7,zorder=1)
+#     plt.semilogy(r, power1d(r, n, theta0=theta*gamma, I_theta0=Mof_mod_1d(theta*gamma)),
+#                  label="Power", color="g", lw=2, ls=":",alpha=0.7,zorder=1)
+# #     plt.axhline(mu/1e6,color="k",ls=":")
+#     plt.ylim(3e-9,3)
+#     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
+#     plt.ylabel(r"$\rm Intensity$",fontsize=18)
+#     plt.xscale("log")
+#     plt.tight_layout()
+#     plt.legend(fontsize=12)
+#     if save:
+#         plt.savefig("./tmp/PSF%s.png"%version,dpi=150)
+#     plt.show()
