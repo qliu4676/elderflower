@@ -38,9 +38,13 @@ else:
     os.makedirs(dir_name)
     
 n_cpu = 3
-RUN_FITTING = False
+RUN_FITTING = True
 mask_strip = True
-draw = False
+draw = True
+
+# Image Parameter
+image_size = 400
+n_star = 350
 
 # PSF Parameters
 pixel_scale = 2.5                                # arcsec/pixel
@@ -122,15 +126,12 @@ if draw:
     plt.close()
 
 ############################################
-
-# Image Parameter
-image_size = 400
+# Generate Grid
 yy, xx = np.mgrid[:image_size, :image_size]
 cen = ((image_size-1)/2., (image_size-1)/2.)
 
 # Generate randomn star positions
 np.random.seed(88)
-n_star = 350
 star_pos = (image_size-2) * np.random.random(size=(n_star,2)) + 1
 
 # Read SE measurement based on APASS
@@ -499,6 +500,7 @@ if RUN_FITTING:
     pdres = pdsampler.results
     
     save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
+    
     plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=True, dir_name=dir_name,
                               true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac, "n":n})
     
