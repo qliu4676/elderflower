@@ -29,30 +29,37 @@ rcParams.update({'legend.title_fontsize': 16})
 rcParams.update({'axes.titlesize': 16})
 
 from utils import *
+
 ############################################
-dir_name = "./run"
-if not os.path.exists(dir_name):
-    os.makedirs(dir_name)
-else:
-    if len(os.listdir(dir_name)) != 0:
-        while os.path.exists(dir_name):
-            dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
-        os.makedirs(dir_name)
-print("Results will be saved in %s"%dir_name)
+# Setup
+############################################
 
 # Fitting Parameter
 n_cpu = 3
 RUN_FITTING = True
 mask_strip = True
 draw = True
+save = False
 
+dir_name = "./run"
+if save:
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    else:
+        if len(os.listdir(dir_name)) != 0:
+            while os.path.exists(dir_name):
+                dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
+            os.makedirs(dir_name)
+    print("Results will be saved in %s"%dir_name)
+
+    
 # Image Parameter
 image_size = 400
 n_star = 350
-
-# PSF Parameters
 pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
+
+# PSF Parameters
 beta_psf = 3                                     # moffat beta, in arcsec
 fwhm = 2.2 * pixel_scale                         # moffat fwhm, in arcsec
 
@@ -71,12 +78,19 @@ noise_variance = 25                        # sky variance
 mu = 884                                   # sky mean
 sigma = np.sqrt(noise_variance)            # sky stddev
 
-def Generate_PSF_pow_Galsim(contrast, psf_scale=psf_pixel_scale, n=n,
+
+############################################
+# Setup PSF
+############################################
+
+def Generate_PSF_pow_Galsim(contrast, n=n, psf_scale=psf_pixel_scale, 
                             psf_size=None, min_psf_size=None, max_psf_size=None,
                             x_interpolant="lanczos3", k_interpolant="lanczos3"):
     if psf_size is None:
         a = (theta_t/psf_scale)**n
-        psf_size = max(min_psf_size, min(2 * int((contrast * a) ** (1./n)) + 1, max_psf_size))
+        opt_psf_size = 2 * int((contrast * a) ** (1./n))
+        opt_psf_size = round_good_fft(opt_psf_size)
+        psf_size = max(min_psf_size, min(opt_psf_size, max_psf_size))
 
     cen_psf = ((psf_size-1)/2., (psf_size-1)/2.)
     yy_psf, xx_psf = np.mgrid[:psf_size, :psf_size]
@@ -86,11 +100,15 @@ def Generate_PSF_pow_Galsim(contrast, psf_scale=psf_pixel_scale, n=n,
     
     psf_pow = galsim.InterpolatedImage(image_psf, flux=1, scale=psf_scale,
                                        x_interpolant=x_interpolant, k_interpolant=k_interpolant)
-    return psf_pow
+    return psf_pow, psf_size
 
-# Define the Power PSF profile.
-psf_pow_1 = Generate_PSF_pow_Galsim(contrast=1e4, psf_size=768, psf_scale=psf_pixel_scale, n=n)
-psf_pow_2 = Generate_PSF_pow_Galsim(contrast=1e5, psf_size=1536, psf_scale=psf_pixel_scale, n=n)
+# Define the Power PSF profile, one for making truth in galsim, one for display.
+psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
+                                                psf_size=512,
+                                                psf_scale=psf_pixel_scale)
+psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e5, n=n,
+                                                psf_size=image_size*2, 
+                                                psf_scale=psf_pixel_scale)
 
 # Define the Moffat PSF profile.
 gsparams = galsim.GSParams(folding_threshold=1.e-6)
@@ -125,13 +143,19 @@ if draw:
 
     plt.xscale("log")
     plt.axvline(theta_t_pix,color="k",ls="--")
-
+    plt.title("Model PSF to be Fit",fontsize=14)
+    
     plt.legend(fontsize=12)
     plt.ylim(-7,-1)
-    plt.savefig("%s/Profile.png"%dir_name,dpi=150)
-    plt.close()
+    if save:
+        plt.savefig("%s/Model.png"%dir_name,dpi=150)
+        plt.close()
 
+        
 ############################################
+# Setup Image
+############################################
+
 # Generate Grid
 yy, xx = np.mgrid[:image_size, :image_size]
 cen = ((image_size-1)/2., (image_size-1)/2.)
@@ -144,10 +168,14 @@ star_pos = (image_size-2) * np.random.random(size=(n_star,2)) + 1
 SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor").to_pandas()
 Flux_Auto_SE = SE_cat_full[(SE_cat_full.FLAGS<8)]["FLUX_AUTO"]
 
-# Generate star fluxs from SE catalog
+# Star flux sampling from SE catalog
 np.random.seed(512)
 Fluxs = Flux_Auto_SE.sample(n=n_star).values
        
+# Thresholds affecting speed and accuracy depending on the
+# actual PSF, noise level, and magnitude distribution of stars.
+# Non-bright stars are rendered with moffat only in advance.
+# Very bright stars are rendered in real space.
 F_bright = 5e4
 F_verybright = 8e5
 bright = Fluxs > F_bright
@@ -171,7 +199,7 @@ def get_center_offset(pos):
     return (ix_nominal, iy_nominal), offset       
 
 # Setup the noise background
-def make_noise(image_size, noise_var, random_seed=42)
+def make_noise_image(image_size, noise_var, random_seed=42):
     noise_image = galsim.ImageF(image_size, image_size)
     rng = galsim.BaseDeviate(random_seed)
     gauss_noise = galsim.GaussianNoise(rng, sigma=math.sqrt(noise_var))
@@ -179,17 +207,15 @@ def make_noise(image_size, noise_var, random_seed=42)
     return noise_image.array
 
 print("Generate noise background w/ stddev = %.2g."%sigma)
-noise = make_noise(image_size, noise_variance)
+noise_image = make_noise_image(image_size, noise_variance)
     
 # Setup the base image for faint stars (Moffat only):
 def make_base_image(image_size, star_pos, Fluxs):
     start = time.time()
     full_image0 = galsim.ImageF(image_size, image_size)
     for k, (pos, flux) in enumerate(zip(star_pos, Fluxs)): 
-
-        psf_star = psf_mof    
-        star = psf_star.withFlux(flux)
-
+  
+        star = psf_mof.withFlux(flux)
         (ix_nominal, iy_nominal), offset = get_center_offset(pos)
 
         stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
@@ -222,7 +248,6 @@ def make_truth_image(image_size, star_pos, Fluxs, noise,
                 psf_star = (1-frac) * psf_mof + frac * psf_pow_2
 
             star = psf_star.withFlux(flux)
-
             (ix_nominal, iy_nominal), offset = get_center_offset(pos)
 
             stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
@@ -257,19 +282,24 @@ def make_truth_image(image_size, star_pos, Fluxs, noise,
 
 print("Generate the truth image.")
 image = make_truth_image(image_size, star_pos=star_pos, Fluxs=Fluxs, 
-                         noise=noise, method="Real")
+                         noise=noise_image, method="Real")
 
 if draw:
     plt.figure(figsize=(8,7))
     im = plt.imshow(image, vmin=mu, vmax=mu+10*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
     colorbar(im)
-    plt.savefig("%s/Truth.png"%dir_name,dpi=150) 
     plt.tight_layout()
-    plt.close()
+    if save:
+        plt.savefig("%s/Truth.png"%dir_name,dpi=150) 
+        plt.close()
     
+    
+############################################
+# Make Mask
 ############################################
 
 # Make mask map for fitting
+print("Mask inner regions of stars (threshold: S/N = 2.5)")
 mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=3)
 
 if draw:
@@ -287,13 +317,13 @@ if draw:
     ax3.set_title("'Sky'")
     colorbar(im3)
 
-    from photutils import CircularAperture, CircularAnnulus 
     aper = CircularAperture(star_pos[bright], r=10)
     aper.plot(color='c',lw=2,label="",alpha=0.9, ax=ax3)
 
     plt.tight_layout()
-    plt.savefig("%s/Mask.png"%dir_name,dpi=150)
-    plt.close()
+    if save:
+        plt.savefig("%s/Mask.png"%dir_name,dpi=150)
+        plt.close()
 
 if mask_strip:
     print("Use sky strips crossing very bright stars")
@@ -306,15 +336,17 @@ if mask_strip:
     if draw:
         fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
         ax1.imshow(mask_strip_s[-1], origin="lower", cmap="gray_r")
-        ax1.plot(star_pos[verybright][-1][0], star_pos[verybright][-1][1], "r*",ms=15)
+        ax1.plot(star_pos[Fluxs.argsort()][-1][0], star_pos[Fluxs.argsort()][-1][1], "r*",ms=15)
         ax1.set_title("Mask Strip")
 
         ax2.imshow(seg_comb, origin="lower", cmap="gnuplot2")
+        ax2.plot(star_pos[verybright][:,0], star_pos[verybright][:,1], "r*",ms=15)
         ax2.set_title("Mask Comb.")
 
         image3 = image.copy()
         image3[mask_comb] = 0
         im3 = ax3.imshow(image3, cmap='gnuplot2', norm=norm1, aspect='auto', vmin=mu, vmax=mu+10*sigma, origin='lower') 
+        ax3.plot(star_pos[verybright][:,0], star_pos[verybright][:,1], "r*",ms=15)
         ax3.set_title("'Sky'")
         colorbar(im3)
         
@@ -322,17 +354,24 @@ if mask_strip:
         aper.plot(color='c',lw=2,label="",alpha=0.9, ax=ax3)
 
         plt.tight_layout()
-        plt.savefig("%s/Mask_strip.png"%dir_name,dpi=150)
-        plt.close()
+        if save:
+            plt.savefig("%s/Mask_strip.png"%dir_name,dpi=150)
+            plt.close()
 
+            
+############################################
+# Make Mock Image
 ############################################
 
 def generate_image_galsim(frac, n, mu, sigma, 
                           image_size=image_size, 
+                          bright=bright, verybright=verybright,
                           min_psf_size=32, max_psf_size=384):
 
-    psf_pow = Generate_PSF_pow_Galsim(contrast=1e4, psf_size=None, min_psf_size=32, max_psf_size=384,
-                                      psf_scale=pixel_scale, n=n, x_interpolant="linear", k_interpolant="linear",)
+    psf_pow, psf_size = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
+                                                psf_scale=pixel_scale, psf_size=None,  
+                                                min_psf_size=min_psf_size, max_psf_size=max_psf_size,
+                                                x_interpolant="linear", k_interpolant="linear")
     
     full_image = galsim.ImageF(image_size, image_size)
        
@@ -341,11 +380,10 @@ def generate_image_galsim(frac, n, mu, sigma,
         psf_star = (1-frac) * psf_mof + frac * psf_pow
         star = psf_star.withFlux(flux)
               
-        x_pos, y_pos = pos[0] + 1, pos[1] + 1 
-
         (ix_nominal, iy_nominal), offset = get_center_offset(pos)
-
-        stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
+        
+        stamp = star.drawImage(nx=psf_size, ny=psf_size, scale=pixel_scale, 
+                               offset=offset, method='no_pixel')
         stamp.setCenter(ix_nominal, iy_nominal)
 
         bounds = stamp.bounds & full_image.bounds
@@ -372,10 +410,13 @@ if draw:
     im = plt.imshow(image_tri, vmin=mu, vmax=mu+10*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
     plt.title("Galsim Image (Moffat+Power)")
     colorbar(im)
-    plt.savefig("%s/Mock.png"%dir_name,dpi=150)
     plt.tight_layout()   
-    plt.close()
+    if save:
+        plt.savefig("%s/Mock.png"%dir_name,dpi=150)
+        plt.close()
     
+############################################
+# Priors and Models for Fitting
 ############################################
 
 import dynesty
@@ -395,6 +436,26 @@ def prior_transform(u):
     v[2] = 888 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
     v[3] = stats.norm.ppf(u[3], loc=5, scale=0.5)  # sigma : N(5, 0.5)
     return v
+
+if draw:
+    dist1=stats.uniform()
+    dist2=stats.rayleigh(loc=0, scale=3)
+    dist3=stats.norm(loc=5, scale=0.5)
+
+    x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
+
+    fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
+    ax0.plot((x0 * 2.5 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
+    ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
+    ax2.plot(888-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
+    ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
+    for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
+        ax.legend()
+        ax.set_xlabel(xlab, fontsize=12)
+    if save:
+        plt.savefig("%s/Prior.png"%dir_name,dpi=150)
+        plt.close('all')
+        
 
 if mask_strip is True:
     mask_fit = mask_comb
@@ -419,20 +480,27 @@ def loglike(v):
         
     return loglike
 
-def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=truths,
-                       nlive_init=200, nlive_batch=100, maxbatch=3, ndim=4):
+def Run_Nested_Fitting(loglike=loglike, 
+                       prior_transform=prior_transform, 
+                       ndim=4, truths=truths, 
+                       nlive_init=200, nlive_batch=100, maxbatch=3,
+                       print_progress=False):
         
     with mp.Pool(processes=n_cpu-1) as pool:
-        print("Opening pool: # of CPU used: %d"%(n_cpu-1))
-        pool.size = n_cpu-1
+        print("Opening pool: # of CPU used: %d"%(n_cpu))
+        pool.size = n_cpu
 
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
 
         start = time.time()
         pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                   pool=pool, use_pool={'update_bound': False})
-        pdsampler.run_nested(nlive_init=nlive_init, nlive_batch=nlive_batch, maxbatch=maxbatch,
-                             print_progress=False, dlogz_init=dlogz, wt_kwargs={'pfrac': 0.8})
+        pdsampler.run_nested(nlive_init=nlive_init, 
+                             nlive_batch=nlive_batch, 
+                             maxbatch=maxbatch,
+                             print_progress=print_progress, 
+                             dlogz_init=dlogz, 
+                             wt_kwargs={'pfrac': 0.8})
         end = time.time()
 
     pdres = pdsampler.results
@@ -444,20 +512,26 @@ def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, truths=
                                   title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
                                   label_kwargs={'fontsize':22},
                                   fig=plt.subplots(ndim, ndim, figsize=(18, 16)))
-    plt.savefig("%s/Result.png"%dir_name,dpi=150)
-    plt.close('all')
+    if save:
+        plt.savefig("%s/Result.png"%dir_name,dpi=150)
+        plt.close('all')
     
     return pdsampler
 
-def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, n_bootsrap=100, save=False, dir_name="."):
+############################################
+# Plotting Results
+############################################
+
+def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, 
+                              n_bootsrap=100, save=False, dir_name="."):
     from dynesty import utils as dyfunc
     
-    samples = res.samples  # samples
-    weights = np.exp(res.logwt - res.logz[-1])  # normalized weights
-    mean, cov = dyfunc.mean_and_cov(samples, weights)  # Compute weighted mean and covariance.
-    MAP = samples[weights.argmax()]
-    samples_eq = dyfunc.resample_equal(samples, weights)  # Resample weighted samples.
-    med = np.median(samples_eq,axis=0)
+    samples = res.samples                                 # samples
+    weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
+    mean, cov = dyfunc.mean_and_cov(samples, weights)     # weighted mean and covariance
+    samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
+    med = np.median(samples_eq,axis=0)                    # median sample
+    MAP = samples[weights.argmax()]                       # sample contributing most weights
     
     print("Fitting (mean): ", mean)
     print("Fitting (median): ", med)
@@ -478,7 +552,6 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, n_bootsrap=
     
     plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
                  label="Truth", color="steelblue", lw=4, zorder=2)
-    
     for logfrac_k, n_k in zip(samples_eq_bs[:,0].T, samples_eq_bs[:,1].T):
         frac_k = 10**logfrac_k
         comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) * C_pow1Dto2D
@@ -486,28 +559,31 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, n_bootsrap=
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
                      color="lightblue", lw=1.5,alpha=0.1,zorder=1)
     else:
-        f_map, f_med, f_mean = 10**MAP[0], 10**med[0], 10**mean[0]
-        plt.semilogy(r, (1-f_map) * comp1 + f_map * trunc_power1d_normed(r, MAP[1], theta_t_pix) * C_pow1Dto2D,
-                 color="darkblue", lw=3, ls=":", alpha=0.8, label="MAP",zorder=4)
-        plt.semilogy(r, (1-f_mean) * comp1 + f_mean * trunc_power1d_normed(r, mean[1], theta_t_pix) * C_pow1Dto2D,
-                 color="royalblue", lw=3, ls="-.", alpha=0.8, label="mean",zorder=4)
-        plt.semilogy(r, (1-f_med) * comp1 + f_med * trunc_power1d_normed(r, med[1], theta_t_pix) * C_pow1Dto2D,
-                 color="b", lw=3, ls="--", alpha=0.8, label="med",zorder=4)
+        for fits, c, ls, l in zip([MAP, med, mean], ["darkblue", "royalblue", "b"],
+                                  [":","-.","--"], ["MAP", "mean", "med"]):
+            f_fit = 10**fits[0]
+            plt.semilogy(r, (1-f_fit) * comp1 + f_fit * trunc_power1d_normed(r, fits[1], theta_t_pix) * C_pow1Dto2D,
+                 color=c, lw=2.5, ls=ls, alpha=0.8, label=l, zorder=4)
+        
         plt.semilogy(r, (1-f_med) * comp1,
                  color="orange", lw=2, ls="--", alpha=0.7, label="med mof",zorder=4)
         plt.semilogy(r, f_med * trunc_power1d_normed(r, med[1], theta_t_pix)/C_pow2Dto1D,
                  color="seagreen", lw=2, ls="--", alpha=0.7, label="med pow",zorder=4)
-        
+    
+    plt.legend(fontsize=12)    
     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
     plt.ylabel(r"$\rm Intensity$",fontsize=18)
     plt.title("Recovered PSF from Fitting",fontsize=18)
     plt.xscale("log")
-    plt.ylim(1e-8, 1)
+    plt.ylim(1e-8, 1)    
     plt.tight_layout()
-    plt.legend(fontsize=12)
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
-    plt.close()
+        plt.close()
+
+############################################
+# Fitting
+############################################
 
 if RUN_FITTING:
     pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths)

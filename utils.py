@@ -52,6 +52,9 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+def round_good_fft(x):
+    return min(2**math.ceil(math.log2(x)), 3 * 2**math.floor(math.log2(x)-1))
+
 def power1d(x, n, theta0, I_theta0): 
 #     x[x<=0] = x[x>0].min()
     a = I_theta0/(theta0)**(-n)
