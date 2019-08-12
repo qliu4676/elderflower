@@ -452,6 +452,7 @@ if draw:
     for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
         ax.legend()
         ax.set_xlabel(xlab, fontsize=12)
+    plt.tight_layout()
     if save:
         plt.savefig("%s/Prior.png"%dir_name,dpi=150)
         plt.close('all')
@@ -492,7 +493,6 @@ def Run_Nested_Fitting(loglike=loglike,
 
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
 
-        start = time.time()
         pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                   pool=pool, use_pool={'update_bound': False})
         pdsampler.run_nested(nlive_init=nlive_init, 
@@ -501,10 +501,8 @@ def Run_Nested_Fitting(loglike=loglike,
                              print_progress=print_progress, 
                              dlogz_init=dlogz, 
                              wt_kwargs={'pfrac': 0.8})
-        end = time.time()
 
     pdres = pdsampler.results
-    print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
 
     # Plot Result
     fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
@@ -586,9 +584,12 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
 ############################################
 
 if RUN_FITTING:
-    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths)
-    pdres = pdsampler.results
+    start = time.time()
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths=truths)
+    end = time.time()
+    print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
+    pdres = pdsampler.results
     save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
     
     plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=True, dir_name=dir_name,

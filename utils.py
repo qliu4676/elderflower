@@ -194,7 +194,10 @@ def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
         back = Bkg.background
         back_rms = Bkg.background_rms
     except ValueError:
-        back, back_rms = np.nanmedian(field) * np.ones_like(field), mad_std(field) * np.ones_like(field)
+        img = field.copy()
+        if mask is not None:
+            img[mask] = np.nan
+        back, back_rms = np.nanmedian(field) * np.ones_like(field), np.nanstd(field) * np.ones_like(field)
     if mask is not None:
         back *= ~mask
         back_rms *= ~mask
