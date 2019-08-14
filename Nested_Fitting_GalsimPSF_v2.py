@@ -425,7 +425,7 @@ def generate_image_galsim(frac, n, mu, sigma,
                           image_size=image_size,
                           min_psf_size=32, 
                           max_psf_size=384,
-                          parallel=False):
+                          parallel=parallel):
     
     psf_pow, psf_size = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
                                                 psf_scale=pixel_scale, psf_size=None,  
@@ -436,6 +436,9 @@ def generate_image_galsim(frac, n, mu, sigma,
     
     # Draw medium bright stars with galsim in Fourier space
     psf_star = (1-frac) * psf_mof + frac * psf_pow               
+    
+    if n <= 2.5:
+        parallel = False
     
     if not parallel:
         # Draw in serial
@@ -491,7 +494,7 @@ def generate_image_galsim(frac, n, mu, sigma,
 
 if draw:
     start = time.time()
-    image_tri = generate_image_galsim(frac=frac, n=n, mu=mu, sigma=sigma, parallel=True)
+    image_tri = generate_image_galsim(frac=frac, n=n, mu=mu, sigma=sigma, parallel=parallel)
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
 
@@ -577,6 +580,7 @@ def Run_Nested_Fitting(loglike=loglike,
                        print_progress=False):
     if not len(truths) == len(labels) == ndim:
         raise ValueError("Dimension of fitting, truths and labels don't match.")
+        
     with mp.Pool(processes=n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
         pool.size = n_cpu
@@ -674,7 +678,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
 
 if RUN_FITTING:
     start = time.time()
-    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths=truths)
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform, ndim=4, truths=truths)
     end = time.time()
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
