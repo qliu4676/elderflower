@@ -6,7 +6,9 @@ from astropy.table import Table
 import matplotlib.pyplot as plt
 from scipy import stats
 from skimage.transform import resize
-from photutils import CircularAperture, CircularAnnulus
+from photutils import CircularAperture
+from usid_processing import parallel_compute
+from functools import partial
 
 import galsim
 
