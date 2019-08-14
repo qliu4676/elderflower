@@ -23,12 +23,12 @@ from skimage import morphology
 
 ### Baisc Funcs ###
 def coord_Im2Array(X_IMAGE, Y_IMAGE):
-    """ Convert image coordniate to numpy array coordinate """ 
+    """ Convert image coordniate to numpy array coordinate """
     x_arr, y_arr = int(round(Y_IMAGE-1)), int(round(X_IMAGE-1))
     return x_arr, y_arr
 
 def coord_Array2Im(x_arr, y_arr):
-    """ Convert image coordniate to numpy array coordinate """ 
+    """ Convert image coordniate to numpy array coordinate """
     X_IMAGE, Y_IMAGE = y_arr+1, x_arr+1
     return X_IMAGE, Y_IMAGE
 
@@ -102,6 +102,10 @@ def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
         except IndexError:
             pass
     return y
+
+
+def map2d(f, xx=None, yy=None):
+    return f(xx,yy)
 
 def power2d(xx, yy, n, theta0, I_theta0, cen): 
     rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
@@ -217,9 +221,9 @@ def display_background_sub(field, back):
 def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3, 
                      morph_oper=morphology.dilation,
                      sub_background=True, mask=None):
-    from astropy.convolution import Gaussian2DKernel 
+    from astropy.convolution import Gaussian2DKernel
     from photutils import detect_sources
-
+    
     if sub_background:
         back, back_rms = background_sub_SE(data, b_size=b_size)
         threshold = back + (sn * back_rms)
@@ -230,23 +234,25 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
     kernel = Gaussian2DKernel(sigma, x_size=k_size, y_size=k_size)
     kernel.normalize()
     segm_sm = detect_sources(data, threshold, npixels=5, filter_kernel=kernel, mask=mask)
-    
+
     segm_sm = morph_oper(segm_sm.data)
     data_ma = data.copy() - back
     data_ma[segm_sm!=0] = np.nan
 
     return data_ma, segm_sm
 
-def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):    
+def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):
+    
     from photutils import detect_sources 
     back, back_rms = background_sub_SE(image, b_size=b_size)
     threshold = back + (sn_thre * back_rms)
     segm0 = detect_sources(image, threshold, npixels=5)
-
+    
     from skimage import morphology
     segmap = segm0.data.copy()
     for i in range(n_dilation):
         segmap = morphology.dilation(segmap)
+        
     segmap2 = segm0.data.copy()
     segmap2[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
     mask_deep = (segmap2!=0)
@@ -270,7 +276,7 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12):
     
 def cal_profile_1d(img, cen=None, mask=None, back=None, 
                    color="steelblue", xunit="pix", yunit="intensity",
-                   seeing=2.5, pix_scale=2.5, ZP=0, sky_mean=0, sky_std=1,
+                   seeing=2.5, pix_scale=2.5, ZP=27.1, sky_mean=884, sky_std=5,
                    core_undersample=True, plot_line=False, label=None):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
@@ -374,6 +380,12 @@ def save_nested_fitting_result(res, filename='fit.res'):
     with open(filename,'wb') as file:
         dill.dump(res, file)
         
+def open_nested_fitting_result(filename='fit.res'):        
+    import dill
+    with open(filename, "rb") as file:
+        res = dill.load(file)
+    return res
+
 # def plot_fitting_vs_truth_PSF(res, true_pars, n_bootsrap=100, save=False, version=""):
 #     from dynesty import utils as dyfunc
     
