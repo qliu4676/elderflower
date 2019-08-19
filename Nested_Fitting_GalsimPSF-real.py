@@ -39,6 +39,7 @@ from utils import *
 # Fitting Parameter
 n_cpu = 3
 RUN_FITTING = True
+print_progress = True
 draw = True
 save = True
 use_SE_seg = False
@@ -58,11 +59,14 @@ if save:
 
 # Image Parameter
 image_size = 1000
+patch_xmin, patch_ymin = 1800, 800  # patch range, in array
+patch_xmax, patch_ymax = patch_xmin + 1000, patch_ymin + 1000
+
 pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
 
 # PSF Parameters
-beta_psf = 3                                     # moffat beta, in arcsec
+beta_psf = 10                                     # moffat beta, in arcsec
 fwhm = 2.28 * pixel_scale                         # moffat fwhm, in arcsec
 
 gamma = fwhm / 2. / np.sqrt(2**(1./beta_psf)-1)  # moffat core width, in arcsec
@@ -93,14 +97,12 @@ mu, std, = np.float(hdu.header["BACKVAL"]), 4
 ZP, pix_scale = np.float(hdu.header["REFZP"]), np.float(hdu.header["PIXSCALE"])
 print("mu: %.2f , std: %.2f , ZP: %.2f , pix_scale: %.2f" %(mu, std, ZP, pix_scale))
 
-patch_xmin, patch_xmax, patch_ymin, patch_ymax = 1800, 2800, 800, 1800  #array
+patch_Xmin, patch_Ymin = coord_Array2Im(patch_xmin,patch_ymin)
+patch_Xmax, patch_Ymax = coord_Array2Im(patch_xmax,patch_ymax)
 patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
 
 seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
 seg_patch = np.copy(seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
-
-patch_Xmin, patch_Ymin = coord_Array2Im(patch_xmin,patch_ymin)
-patch_Xmax, patch_Ymax = coord_Array2Im(patch_xmax,patch_ymax)
 
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -526,7 +528,7 @@ def Run_Nested_Fitting(loglike=loglike,
                        prior_transform=prior_transform, 
                        ndim=4, truths=truths, 
                        nlive_init=200, nlive_batch=100, maxbatch=3,
-                       print_progress=True):
+                       print_progress=print_progress):
         
     with mp.Pool(processes=n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
