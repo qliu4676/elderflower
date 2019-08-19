@@ -6,7 +6,7 @@ from astropy.table import Table
 import matplotlib.pyplot as plt
 from scipy import stats
 from skimage.transform import resize
-from photutils import CircularAperture
+from photutils import CircularAperture, CircularAnnulus
 from usid_processing import parallel_compute
 from functools import partial
 
@@ -41,8 +41,9 @@ n_cpu = 3
 RUN_FITTING = True
 draw = True
 save = True
+use_SE_seg = False
 mask_strip = True
-wid_strip, n_strip = 5, 12
+wid_strip, n_strip = 5, 10
 
 dir_name = "./run"
 if save:
@@ -55,32 +56,67 @@ if save:
             os.makedirs(dir_name)
     print("Results will be saved in %s"%dir_name)
 
-    
 # Image Parameter
-image_size = 400
-n_star = 350
+image_size = 1000
 pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
 
 # PSF Parameters
 beta_psf = 3                                     # moffat beta, in arcsec
-fwhm = 2.2 * pixel_scale                         # moffat fwhm, in arcsec
+fwhm = 2.28 * pixel_scale                         # moffat fwhm, in arcsec
 
 gamma = fwhm / 2. / np.sqrt(2**(1./beta_psf)-1)  # moffat core width, in arcsec
 gamma_pix = gamma / pixel_scale                  # moffat core width, in pix
 
-n = 2.7                     # true power index
-frac = 0.15                 # fraction of power law component
-theta_t = 6.                # radius at which power law is flattened, in arcsec
+n = 3                     # true power index
+frac = 0.3                 # fraction of power law component
+theta_t = 5.                # radius at which power law is flattened, in arcsec
 
 theta_t_pix = theta_t/pixel_scale          # flattened radius, in pix
 theta_t_psf_pix = theta_t/psf_pixel_scale  # flattened radius in psf, in pix
 a = (theta_t_psf_pix)**n                   # normalization
 
-noise_variance = 25                        # sky variance
+noise_variance = 10                        # sky variance
 mu = 884                                   # sky mean
 sigma = np.sqrt(noise_variance)            # sky stddev
 
+############################################
+# Read
+############################################
+
+hdu = fits.open("./coadd_SloanR_NGC_5907.fits")[0]
+data = hdu.data
+header = hdu.header
+seeing = 2.5
+
+mu, std, = np.float(hdu.header["BACKVAL"]), 4 
+ZP, pix_scale = np.float(hdu.header["REFZP"]), np.float(hdu.header["PIXSCALE"])
+print("mu: %.2f , std: %.2f , ZP: %.2f , pix_scale: %.2f" %(mu, std, ZP, pix_scale))
+
+patch_xmin, patch_xmax, patch_ymin, patch_ymax = 1800, 2800, 800, 1800  #array
+patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+
+seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
+seg_patch = np.copy(seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+
+patch_Xmin, patch_Ymin = coord_Array2Im(patch_xmin,patch_ymin)
+patch_Xmax, patch_Ymax = coord_Array2Im(patch_xmax,patch_ymax)
+
+def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
+    Xmin, Ymin, Xmax, Ymax = bounds
+    A, B = keys
+    crop = (cat[A]>=Xmin) & (cat[A]<=Xmax) & (cat[B]>=Ymin) & (cat[B]<=Ymax)
+    return cat[crop]
+
+# Read measurement
+SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor")
+SE_cat = crop_catalog(SE_cat_full, bounds=(patch_Xmin,patch_Ymin,patch_Xmax,patch_Ymax))
+SE_cat = SE_cat[SE_cat['FLUX_AUTO']>=15]
+
+# Read measurement
+table_res_Rnorm = Table.read("./Rnorm_8pix_15mag_p2.txt", format="ascii")
+table_res_Rnorm = crop_catalog(table_res_Rnorm, 
+                               bounds=(patch_Xmin-25,patch_Ymin-25,patch_Xmax+25,patch_Ymax+25))
 
 ############################################
 # Setup PSF
@@ -89,7 +125,6 @@ sigma = np.sqrt(noise_variance)            # sky stddev
 def Generate_PSF_pow_Galsim(contrast, n=n, psf_scale=psf_pixel_scale, 
                             psf_size=None, min_psf_size=None, max_psf_size=None,
                             x_interpolant="lanczos3", k_interpolant="lanczos3"):
-    # if no psf_size is given, generate according to a giving contrast and round it to 2^k or 3*2^k
     if psf_size is None:
         a = (theta_t/psf_scale)**n
         opt_psf_size = 2 * int((contrast * a) ** (1./n))
@@ -106,127 +141,91 @@ def Generate_PSF_pow_Galsim(contrast, n=n, psf_scale=psf_pixel_scale,
                                        x_interpolant=x_interpolant, k_interpolant=k_interpolant)
     return psf_pow, psf_size
 
-# Define the Power PSF profile with two contrast
+# Define the Power PSF profile, one for making truth in galsim, one for display.
 psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
-                                                psf_size=round_good_fft(image_size),
+                                                psf_size=512,
                                                 psf_scale=psf_pixel_scale)
 psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n,
-                                                psf_size=round_good_fft(image_size*2),
+                                                psf_size=image_size*2, 
                                                 psf_scale=psf_pixel_scale)
 
 # Define the Moffat PSF profile.
 gsparams = galsim.GSParams(folding_threshold=1.e-6)
 psf_mof = galsim.Moffat(beta=beta_psf, flux=1., fwhm=fwhm, gsparams=gsparams) # in arcsec
 
-if draw:
-    frac = 0.15
-    star_psf_2 = (1-frac) * psf_mof + frac * psf_pow_2 
-    
-    img_pow_2 = psf_pow_2.drawImage(scale=pixel_scale, method="no_pixel").array
-    img_mof = psf_mof.drawImage(scale=pixel_scale, method="fft").array
-    img_gs_2 = star_psf_2.drawImage(scale=pixel_scale, method="no_pixel").array
-    
-    plt.figure(figsize=(7,6))
-    r = np.logspace(0.1,2.5,100)
-    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
 
-    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta_psf) / C_mof2Dto1D
-    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
-    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
-  
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d((1-frac)*img_mof, pix_scale=pixel_scale, seeing=2.5, 
-                                                             xunit="arcsec", yunit="intensity", color="orange")
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
-                                                             xunit="arcsec", yunit="intensity", color="g")
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
-                                                             xunit="arcsec", yunit="intensity", label="Galsim PSF")
-
-    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, label="Mof + Pow 1D",zorder=5)
-    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1), ls="--", lw=3, label="Moffat1D",zorder=1)
-    plt.plot(r*pixel_scale, np.log10(comp2 * frac), ls="--",lw=3,  label="Power1D")
-
-    plt.xscale("log")
-    plt.axvline(theta_t_pix,color="k",ls="--")
-    plt.title("Model PSF to be Fit",fontsize=14)
-    
-    plt.legend(fontsize=12)
-    plt.ylim(np.log10(z_rbin[-1]),-1)
-    if save:
-        plt.savefig("%s/Model.png"%dir_name,dpi=150)
-        plt.close()
-
-        
 ############################################
-# Setup Image
+# Distribution
 ############################################
 
 # Generate Grid
 yy, xx = np.mgrid[:image_size, :image_size]
 cen = ((image_size-1)/2., (image_size-1)/2.)
 
-# Generate randomn star positions
-np.random.seed(88)
-star_pos = (image_size-2) * np.random.random(size=(n_star,2)) + 1
+# Read measurement
+star_pos1 = np.vstack([SE_cat['X_IMAGE'],SE_cat['Y_IMAGE']]).T - [patch_Xmin,patch_Ymin]
+Flux1 = np.array(SE_cat['FLUX_AUTO'])
+star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],table_res_Rnorm['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
 
-# Read SE measurement based on APASS
-SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor").to_pandas()
-Flux_Auto_SE = SE_cat_full[(SE_cat_full.FLAGS<8)]["FLUX_AUTO"]
-
-# Star flux sampling from SE catalog
-np.random.seed(512)
-Flux = Flux_Auto_SE.sample(n=n_star).values
-
-# Convert Flux to Astropy Moffat Amplitude (pixel)
-Amps = np.array([moffat2d_Flux2Amp(gamma_pix, beta_psf, Flux=(1-frac)*F) for F in Flux])
+z_norm = table_res_Rnorm['mean'].data - mu   # <15 mag
+Amp_pow = z_norm * (8/theta_t_pix)**n
+Flux_pow = power2d_Amp2Flux(n, theta_t_pix, Amp=Amp_pow)
+Flux2 = Flux_pow / frac * (1-frac)
 
 # Thresholds affecting speed and accuracy depending on the
 # actual PSF, noise level, and magnitude distribution of stars.
 # Non-bright stars are rendered with moffat only in advance.
 # Very bright stars are rendered in real space.
 F_bright = 5e4
-F_very_bright = 8e5
+F_verybright = 1e6
+
+out_of_field = np.logical_or.reduce((star_pos2<-10)|(star_pos2>image_size+10), axis=1) \
+                & (Flux2>F_bright) & (Flux2<F_verybright)
+z_norm = z_norm[~out_of_field]
+star_pos2 = star_pos2[~out_of_field]
+Flux2 = Flux2[~out_of_field]
+
+star_pos = np.vstack([star_pos1, star_pos2])
+Flux = np.concatenate([Flux1, Flux2])
+
+# Convert Flux to Astropy Moffat Amplitude (pixel)
+Amps = np.array([moffat2d_Flux2Amp(gamma_pix, beta_psf, Flux=(1-frac)*F) for F in Flux])
 
 bright = Flux > F_bright
-very_bright = Flux > F_very_bright
-med_bright = bright & (~very_bright)
-
-num_bright = len(Flux[bright])
-num_med_bright = len(Flux[med_bright])
-num_very_bright = len(Flux[very_bright])
-print("# of medium bright (flux:%.2g~%.2g) stars: %d "%(Flux[bright].min(), Flux[very_bright].min(), num_med_bright))
-print("# of very bright (flux>%.2g) stars : %d"%(Flux[very_bright].min(), num_very_bright))
+verybright = Flux > F_verybright
+medbright = bright & (~verybright)
+num_medbright = len(Flux[medbright])
+num_verybright = len(Flux[verybright])
+print("# of medium bright (flux:%.2g~%.2g) stars: %d "%(Flux[bright].min(), Flux[verybright].min(), num_medbright))
+print("# of very bright (flux>%.2g) stars : %d"%(Flux[verybright].min(), num_verybright))
 
 # Rendering stars in parallel if number of bright stars exceeds 50
-if num_bright < 50:
+if num_medbright < 50:
     print("Not many bright stars, truth and mock will be generated in serial.")
     parallel = False 
 else: 
-    print("Crowded fields with bright stars > 50, truth and mock will be generated in parallel.")
     parallel = True
+    print("Crowded fields with bright stars > 50, truth and mock will be generated in parallel.")
+
+    def map2d(f, xx, yy):
+        return f(xx,yy)
+
     p_map2d = partial(map2d, xx=xx, yy=yy)
 
-
-# if draw:
-#     import seaborn as sns
-#     sns.distplot(np.log10(Amps),label="log Amp")
-#     sns.distplot(np.log10(Flux),label="log Flux")
-#     plt.axvline(np.log10(F_bright), color="orange", ls="-",alpha=0.6)
-#     plt.axvline(np.log10(F_very_bright), color="orange", ls="--",alpha=0.8)
-#     plt.title("Flux & Amp from $create{\_}APASS{\_}photometric$")
-#     plt.legend()
-
-
-# Setup the noise background
-def make_noise_image(image_size, noise_var, random_seed=42):
-    noise_image = galsim.ImageF(image_size, image_size)
-    rng = galsim.BaseDeviate(random_seed)
-    gauss_noise = galsim.GaussianNoise(rng, sigma=math.sqrt(noise_var))
-    noise_image.addNoise(gauss_noise)  
-    return noise_image.array
-
-print("Generate noise background w/ stddev = %.2g."%sigma)
-noise_image = make_noise_image(image_size, noise_variance)
-
+if draw:
+    import seaborn as sns
+    sns.distplot(np.log10(z_norm),label="log Norm")
+    sns.distplot(np.log10(Amps),label="log Amp (tot)")
+    Amp_pow_s = power2d_Flux2Amp(n, theta_t_pix, Flux=frac*Flux)                     
+    sns.distplot(np.log10(Flux),label="log Flux (tot)")
+    plt.axvline(np.log10(F_bright), color="orange", ls="-",alpha=0.6)
+    plt.axvline(np.log10(F_verybright), color="orange", ls="--",alpha=0.8)
+    plt.title("Flux & Amp from $create{\_}APASS{\_}photometric$")
+    plt.legend()
+    
+############################################
+# Setup Image
+############################################
 
 # Shift center for the purpose pf accuracy (by default galsim round to integer!)
 def get_center_offset(pos):
@@ -263,10 +262,12 @@ def get_stamp_bounds(k, star_pos, Flux, psf_star, psf_size, full_image):
     
 # Setup the base image for faint stars (Moffat only):
 def make_base_image(image_size, star_pos, Flux):
+    if len(star_pos) == 0:
+        return np.zeros((image_size, image_size))
     start = time.time()
     full_image0 = galsim.ImageF(image_size, image_size)
     
-    # draw faint stars in Moffat with galsim in Fourier space
+    # draw faint stars in Moffat with galsim in Fourier space   
     for k in range(len(star_pos)):
         draw_star(k, star_pos=star_pos, Flux=Flux,
                   psf_star=psf_mof, psf_size=64, full_image=full_image0)
@@ -279,91 +280,22 @@ def make_base_image(image_size, star_pos, Flux):
 print("Generate base image of faint stars (flux < %.2g)."%(Flux[~bright].max()))
 image_gs0 = make_base_image(image_size, star_pos=star_pos[~bright], Flux=Flux[~bright])
 
-                   
-# Make the truth image to be fitted (Moffat+power):
-def make_truth_image(image_size, star_pos, Flux, noise,
-                     method="Real", saturation=4.5e4):
-    """ Build Truth image with the position, flux and noise. 
-        Two methods provided: 1) Galsim convolution in FFT and 2) Astropy model in real space. 
-        [xx, yy, frac, bright, psf_mof, psf_pow is defined in the main.] """
-    start = time.time()
-    if method == "Galsim":
-        full_image = galsim.ImageF(image_size, image_size)
-                   
-        for (pos, flux) in zip(star_pos, Flux): 
+image = patch.copy()
 
-            if flux < 1e3:  # very faint stars, just assume truth is mofffat
-                psf_star = psf_mof
-            elif flux < F_very_bright: 
-                psf_star = (1-frac) * psf_mof + frac * psf_pow_1
-            else:
-                psf_star = (1-frac) * psf_mof + frac * psf_pow_2
-
-            star = psf_star.withFlux(flux)
-            (ix_nominal, iy_nominal), offset = get_center_offset(pos)
-
-            stamp = star.drawImage(scale=pixel_scale, offset=offset, method='no_pixel')
-            stamp.setCenter(ix_nominal,iy_nominal)
-
-            bounds = stamp.bounds & full_image.bounds
-            full_image[bounds] += stamp[bounds]
-
-        image_gs = full_image.array
-        image = image_gs.copy()
-
-    elif method == "Real":
-        
-        moffat2d_s = np.array([models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0, gamma=gamma_pix, alpha=beta_psf) 
-                      for (amp, (x0,y0)) in zip(Amps, star_pos)])
-        power2d_s = np.array([lambda xx, yy, cen=cen, flux=flux: trunc_power2d(xx, yy, n, 
-                                                                               cen=cen, theta0=theta_t_pix,
-                                                                               I_theta0=power2d_Flux2Amp(n, theta_t_pix, frac*flux))
-                              for (flux, cen) in zip(Flux, star_pos)])
-  
-        # Draw stars in real space, draw in parallel if too many
-        if not parallel:
-            print("Rendering bright stars in serial...")
-            image_real = np.sum([m2d(xx,yy) + p2d(xx,yy) 
-                                for (m2d,p2d) in zip(moffat2d_s[Flux>1e3], power2d_s[Flux>1e3])], axis=0)
-        else:
-            print("Rendering bright stars in parallel...")
-            func2d_s = np.concatenate([moffat2d_s[Flux>1e3], power2d_s[Flux>1e3]])
-            
-            image_star_s = parallel_compute(func2d_s, p_map2d, cores=10, lengthy_computation=False, verbose=True)
-            image_real = np.sum(image_star_s, axis=0)
-            
-        image = image_real.copy()
-        image += image_gs0  # add faint star base
-        
-    image += mu + noise # add background and noise
-    image[image>saturation] = saturation
-        
-    end = time.time()
-    print("Total Time: %.3fs"%(end-start))
-    
-    return image
-
-print("Generate the truth image (faint stars with Moffat only).")
-image = make_truth_image(image_size, star_pos=star_pos, Flux=Flux, 
-                         noise=noise_image, method="Real")
-
-if draw:
-    plt.figure(figsize=(8,7))
-    im = plt.imshow(image, vmin=mu, vmax=mu+10*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
-    colorbar(im)
-    plt.tight_layout()
-    if save:
-        plt.savefig("%s/Truth.png"%dir_name,dpi=150) 
-        plt.close()
-    
-    
 ############################################
 # Make Mask
 ############################################
 
 # Make mask map for fitting
-print("Mask inner regions of stars (threshold: S/N = 2.5)")
-mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=3)
+if use_SE_seg:
+    print("Mask inner regions of stars. Use segmentation based on APASS")
+    seg_map = seg_patch.copy()
+    for i in range(5):
+        seg_map = morphology.dilation(seg_map)
+    mask_deep = (seg_map!=0)
+else:
+    print("Mask inner regions of stars (threshold: S/N = 2.5)")
+    mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=3)
 
 if draw:
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
@@ -381,7 +313,7 @@ if draw:
     colorbar(im3)
 
     aper = CircularAperture(star_pos[bright], r=10)
-    aper.plot(color='c',lw=2,label="",alpha=0.9, ax=ax3)
+    aper.plot(color='c',lw=2,label="",alpha=0.9, axes=ax3)
 
     plt.tight_layout()
     if save:
@@ -390,7 +322,7 @@ if draw:
 
 if mask_strip:
     print("Use sky strips crossing very bright stars")
-    mask_strip_s = make_mask_strip(image_size, star_pos[very_bright], Flux[very_bright], width=wid_strip, n_strip=n_strip)
+    mask_strip_s = make_mask_strip(image_size, star_pos[verybright], Flux[verybright], width=wid_strip, n_strip=n_strip)
     mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
     seg_comb = seg_map.copy()
     seg_comb[mask_strip_all&(seg_map==0)] = seg_map.max()+1
@@ -403,18 +335,22 @@ if mask_strip:
         ax1.set_title("Mask Strip")
 
         ax2.imshow(seg_comb, origin="lower", cmap="gnuplot2")
-        ax2.plot(star_pos[very_bright][:,0], star_pos[very_bright][:,1], "r*",ms=15)
+        ax2.plot(star_pos[verybright][:,0], star_pos[verybright][:,1], "r*",ms=15)
+        ax2.set_xlim(0,image_size)
+        ax2.set_ylim(0,image_size)
         ax2.set_title("Mask Comb.")
 
         image3 = image.copy()
         image3[mask_comb] = 0
         im3 = ax3.imshow(image3, cmap='gnuplot2', norm=norm1, aspect='auto', vmin=mu, vmax=mu+10*sigma, origin='lower') 
-        ax3.plot(star_pos[very_bright][:,0], star_pos[very_bright][:,1], "r*",ms=15)
+        ax3.plot(star_pos[verybright][:,0], star_pos[verybright][:,1], "r*",ms=15)
+        ax3.set_xlim(-25,image_size+25)
+        ax3.set_ylim(-25,image_size+25)
         ax3.set_title("'Sky'")
         colorbar(im3)
         
         aper = CircularAperture(star_pos[bright], r=10)
-        aper.plot(color='c',lw=2,label="",alpha=0.9, ax=ax3)
+        aper.plot(color='c',lw=2,label="",alpha=0.9, axes=ax3)
 
         plt.tight_layout()
         if save:
@@ -423,14 +359,16 @@ if mask_strip:
 
             
 ############################################
-# Make Mock Image
+# Generate Image
 ############################################
-    
-def generate_image_galsim(frac, n, mu, sigma, 
-                          image_size=image_size,
-                          min_psf_size=32, 
-                          max_psf_size=384,
-                          parallel=parallel):
+
+def generate_image_galsim_norm(frac, n, mu, sigma,
+                               star_pos=star_pos, 
+                               norm=z_norm,
+                               image_size=image_size,
+                               min_psf_size=32, 
+                               max_psf_size=256,
+                               parallel=False):
     
     psf_pow, psf_size = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
                                                 psf_scale=pixel_scale, psf_size=None,  
@@ -442,50 +380,57 @@ def generate_image_galsim(frac, n, mu, sigma,
     # Draw medium bright stars with galsim in Fourier space
     psf_star = (1-frac) * psf_mof + frac * psf_pow               
     
-    if (parallel is False) | (n > 2.5):
+    # Recompute flux for stars < 15 mag:
+    Amp_pow = norm * (8/theta_t_pix)**n
+    Flux_pow = power2d_Amp2Flux(n, theta_t_pix, Amp=Amp_pow)
+    Flux2 = Flux_pow / frac * (1-frac)
+ 
+    Flux = np.concatenate([Flux1, Flux2])
+    
+    if not parallel:
         # Draw in serial
-        for k in range(num_med_bright):
-            draw_star(k, star_pos=star_pos[med_bright], Flux=Flux[med_bright],
+        for k in range(num_medbright):
+            draw_star(k, star_pos=star_pos[medbright], Flux=Flux[medbright],
                       psf_star=psf_star, psf_size=psf_size,
                       full_image=full_image)
     else:
         # Draw in parallel, automatically back to serial computing if too few jobs 
         p_get_stamp_bounds = partial(get_stamp_bounds,
-                                     star_pos=star_pos[med_bright],
-                                     Flux=Flux[med_bright],
+                                     star_pos=star_pos[medbright],
+                                     Flux=Flux[medbright],
                                      psf_star=psf_star,
                                      psf_size=psf_size,
                                      full_image=full_image)
         
-        results = parallel_compute(np.arange(num_med_bright), p_get_stamp_bounds, 
+        results = parallel_compute(np.arange(num_medbright), p_get_stamp_bounds, 
                                    lengthy_computation=False, verbose=False)
 
         for (stamp, bounds) in results:
             full_image[bounds] += stamp[bounds]
            
     # Draw very bright star in real space / Fourier space       
-    if (n < 3.) | (image_size<500):
+    if (n < 2.5) | (image_size<500):
         draw_real = True
     else: 
         draw_real = False
-                   
+        
     if draw_real:
         # Draw very bright star (if highter cost in FFT) in real space
         image_gs = full_image.array
-        for (pos, flux) in zip(star_pos[very_bright], Flux[very_bright]):
+        for (pos, flux) in zip(star_pos[verybright], Flux[verybright]):
             p2d_vb = trunc_power2d(xx, yy, n, cen=(pos[0],pos[1]),
                                    theta0=theta_t_pix, I_theta0=frac*flux * (n-2)/n /theta_t_pix**2/np.pi)
             image_gs += p2d_vb
     else:
         # Draw very bright star in Fourier space 
-        psf_pow_vb , psf_size = Generate_PSF_pow_Galsim(contrast=1e6, n=n, 
+        psf_pow_vb , psf_size = Generate_PSF_pow_Galsim(contrast=5e5, n=n, 
                                                         psf_scale=pixel_scale, psf_size=None,  
                                                         min_psf_size=2*min_psf_size, max_psf_size=2*max_psf_size,
-                                                        x_interpolant="cubic", k_interpolant="cubic")
+                                                        x_interpolant="linear", k_interpolant="linear")
         psf_star = (1-frac) * psf_mof + frac * psf_pow_vb 
                               
-        for k in range(num_very_bright):
-            draw_star(k, star_pos=star_pos[very_bright], Flux=Flux[very_bright],
+        for k in range(num_verybright):
+            draw_star(k, star_pos=star_pos[verybright], Flux=Flux[verybright],
                       psf_star=psf_star, psf_size=psf_size, full_image=full_image)
             
         image_gs = full_image.array
@@ -496,7 +441,8 @@ def generate_image_galsim(frac, n, mu, sigma,
 
 if draw:
     start = time.time()
-    image_tri = generate_image_galsim(frac=frac, n=n, mu=mu, sigma=sigma, parallel=parallel)
+    image_tri = generate_image_galsim_norm(frac=frac, n=3., mu=mu, sigma=sigma, 
+                                           star_pos=star_pos, norm=z_norm, parallel=True)
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
 
@@ -508,7 +454,7 @@ if draw:
     if save:
         plt.savefig("%s/Mock.png"%dir_name,dpi=150)
         plt.close()
-    
+
 ############################################
 # Priors and Likelihood Models for Fitting
 ############################################
@@ -525,23 +471,23 @@ print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
-    v[0] = u[0] * 2.5 - 3 # frac : 0.001-0.5
+    v[0] = u[0] * 2.7 - 3 # frac : 0.001-0.5
     v[1] = u[1] * 2 + 2  # n : 2-4
-    v[2] = 888 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
-    v[3] = stats.norm.ppf(u[3], loc=5, scale=0.5)  # sigma : N(5, 0.5)
+    v[2] = 886 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
+    v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(5, 0.5)
     return v
 
 if draw:
     dist1=stats.uniform()
     dist2=stats.rayleigh(loc=0, scale=3)
-    dist3=stats.norm(loc=5, scale=0.5)
+    dist3=stats.truncnorm(a=-2, b=1, loc=4, scale=1)
 
     x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
 
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
     ax0.plot((x0 * 2.5 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
     ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
-    ax2.plot(888-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
+    ax2.plot(886-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
     for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
         ax.legend()
@@ -564,7 +510,8 @@ def loglike(v):
     logfrac, n, mu, sigma = v
     frac = 10**logfrac
     
-    image_tri = generate_image_galsim(frac, n, mu, sigma, image_size=image_size)
+    image_tri = generate_image_galsim_norm(frac, n, mu, sigma, star_pos=star_pos, norm=z_norm,
+                                           image_size=image_size, parallel=True)
     
     ypred = image_tri[~mask_fit].ravel()
     residsq = (ypred - Y)**2 / sigma**2
@@ -577,12 +524,9 @@ def loglike(v):
 
 def Run_Nested_Fitting(loglike=loglike, 
                        prior_transform=prior_transform, 
-                       ndim=4, truths=truths, labels=labels,
+                       ndim=4, truths=truths, 
                        nlive_init=200, nlive_batch=100, maxbatch=3,
-                       print_progress=False):
-    
-    if not len(truths) == len(labels) == ndim:
-        raise ValueError("Dimension of fitting, truths and labels don't match.")
+                       print_progress=True):
         
     with mp.Pool(processes=n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
@@ -598,19 +542,6 @@ def Run_Nested_Fitting(loglike=loglike,
                              print_progress=print_progress, 
                              dlogz_init=dlogz, 
                              wt_kwargs={'pfrac': 0.8})
-        
-    pdres = pdsampler.results
-        
-    # Plot Result
-    fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
-                                  color="royalblue", truth_color="indianred",
-                                  title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
-                                  label_kwargs={'fontsize':22},
-                                  fig=plt.subplots(ndim, ndim, figsize=(18, 16)))
-    if save:
-        plt.savefig("%s/Result.png"%dir_name,dpi=150)
-        plt.close('all')
-        
     return pdsampler
 
 ############################################
@@ -678,20 +609,29 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
         plt.close()
 
-
 ############################################
 # Fitting
 ############################################
 
 if RUN_FITTING:
     start = time.time()
-    pdsampler = Run_Nested_Fitting(loglike, prior_transform, ndim=4, truths=truths)
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths=truths)
     end = time.time()
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
     pdres = pdsampler.results
     save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
+    pdres = pdsampler.results
+
+    # Plot Result
+    fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
+                                  color="royalblue", truth_color="indianred",
+                                  title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
+                                  label_kwargs={'fontsize':22},
+                                  fig=plt.subplots(4, 4, figsize=(18, 16)))
+    if save:
+        plt.savefig("%s/Result.png"%dir_name,dpi=150)
+        plt.close('all')
                    
-    plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=True, dir_name=dir_name,
+    plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=False, dir_name=dir_name,
                               true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac, "n":n})
-    

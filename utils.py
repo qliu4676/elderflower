@@ -18,13 +18,15 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
+from photutils import detect_sources
 from skimage import morphology
 
 
 ### Baisc Funcs ###
+
 def coord_Im2Array(X_IMAGE, Y_IMAGE):
     """ Convert image coordniate to numpy array coordinate """
-    x_arr, y_arr = int(round(Y_IMAGE-1)), int(round(X_IMAGE-1))
+    x_arr, y_arr = Y_IMAGE-1, X_IMAGE-1
     return x_arr, y_arr
 
 def coord_Array2Im(x_arr, y_arr):
@@ -33,7 +35,9 @@ def coord_Array2Im(x_arr, y_arr):
     return X_IMAGE, Y_IMAGE
 
 def Intensity2SB(y, BKG, ZP, pix_scale):
-    """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """ 
+    """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
+#     y = np.atleast_1d(y)
+#     y[y<BKG] = np.nan
     I_SB = -2.5*np.log10(y - BKG) + ZP + 2.5 * np.log10(pix_scale**2)
     return I_SB
 
@@ -52,11 +56,14 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+def counter(i, number):
+    if np.mod((i+1), number//10) == 0:
+        print("completed: %d/%d"%(i+1, number))
+
 def round_good_fft(x):
     return min(2**math.ceil(math.log2(x)), 3 * 2**math.floor(math.log2(x)-1))
 
-def power1d(x, n, theta0, I_theta0): 
-#     x[x<=0] = x[x>0].min()
+def power1d(x, n, theta0, I_theta0):
     a = I_theta0/(theta0)**(-n)
     y = a * np.power(x, -n)
     return y
@@ -103,6 +110,12 @@ def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
             pass
     return y
 
+def moffat_power1d(x, gamma, alpha, n, theta0, A=1):
+    """ Moffat + Power for 1d array, flux normalized = 1 """
+    Mof_mod_1d = models.Moffat1D(amplitude=A, x_0=0, gamma=gamma, alpha=alpha)
+    y = Mof_mod_1d(x)
+    y[x>theta0] = power1d(x[x>theta0], n, theta0, Mof_mod_1d(theta0))
+    return y
 
 def map2d(f, xx=None, yy=None):
     return f(xx,yy)
@@ -137,6 +150,9 @@ def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
+
+### Flux/Amplitude Convertion ###
+
 def moffat1d_Flux2Amp(r_core, beta, Flux=1):
     """ Calculate the (astropy) amplitude of 1d Moffat profile given the core width, power index, and total flux F.
     Note in astropy unit (x,y) the amplitude should be scaled with 1/sqrt(pi)."""
@@ -149,15 +165,45 @@ def moffat1d_Amp2Flux(r_core, beta, Amp=1):
     F = Amp *  r_core * np.sqrt(np.pi) * Gamma(beta-1./2) / Gamma(beta) # Derived scaling factor
     return  F
 
+def power1d_Flux2Amp(n, theta0, Flux=1, truc=True):
+    if truc:
+        I_theta0 = Flux * (n-1)/n / theta0
+    else:
+        I_theta0 = Flux * (n-1) / theta0
+    return I_theta0
+
+def power1d_Amp2Flux(n, theta0, Amp=1, truc=True):
+    if truc:
+        Flux = Amp * n/(n-1) * theta0
+    else:
+        Flux = Amp * 1./(n-1) * theta0
+    return Flux
+
 def moffat2d_Flux2Amp(r_core, beta, Flux=1):
     return Flux * (beta-1) / r_core**2 / np.pi
 
 def moffat2d_Amp2Flux(r_core, beta, Amp=1):
     return Amp * r_core**2 * np.pi / (beta-1)
 
-def power2d_Flux2Amp(n, theta0, Flux=1):
-    I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
+def power2d_Flux2Amp(n, theta0, Flux=1, truc=True):
+    if truc:
+        I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
+    else:
+        I_theta0 = (1./np.pi) * Flux * (n-2)/2 / theta0**2
     return I_theta0
+
+def power2d_Amp2Flux(n, theta0, Amp=1, truc=True):
+    if truc:
+        Flux = np.pi * Amp * n/(n-2) * theta0**2
+    else:
+        Flux = np.pi * Amp * 2/(n-2) * theta0**2
+    return Flux
+
+def Ir2Flux_tot(frac, n, theta0, r, Ir):
+    """ Convert Intensity Ir at r to total flux with frac = fraction of power law """
+    Flux_pow = power2d_Amp2Flux(n, theta0, Amp=Ir * (r/theta0)**n)
+    Flux_tot = Flux_pow / frac
+    return Flux_tot
 
 
 ### Plotting Helpers ###
@@ -185,6 +231,7 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right", **args):
     cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
     cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
     return cb
+
 
 ### Photometry Funcs ###
 
@@ -243,12 +290,10 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
 
 def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):
     
-    from photutils import detect_sources 
     back, back_rms = background_sub_SE(image, b_size=b_size)
     threshold = back + (sn_thre * back_rms)
     segm0 = detect_sources(image, threshold, npixels=5)
     
-    from skimage import morphology
     segmap = segm0.data.copy()
     for i in range(n_dilation):
         segmap = morphology.dilation(segmap)
@@ -277,7 +322,8 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12):
 def cal_profile_1d(img, cen=None, mask=None, back=None, 
                    color="steelblue", xunit="pix", yunit="intensity",
                    seeing=2.5, pix_scale=2.5, ZP=27.1, sky_mean=884, sky_std=5,
-                   core_undersample=True, plot_line=False, label=None):
+                   core_undersample=False, dr=1, alpha=0.7, label=None, 
+                   draw=True, scatter=False, plot_line=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img).astype("bool")
@@ -290,7 +336,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
     r = rr[~mask].ravel()  # radius in pix
     z = img[~mask].ravel()  # pixel intensity
-    r_core = np.int(3 * seeing/pix_scale) # core radisu in pix
+    r_core = np.int(3 * seeing/pix_scale) # core radius in pix
 
     # Decide the outermost radial bin r_max before going into the background
     bkg_cumsum = np.arange(1, len(z)+1, 1) * np.median(back)
@@ -298,7 +344,8 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     n_pix_max = len(z) - np.argmin(abs(z_diff - 0.0001 * z_diff[-1]))
     r_max = np.sqrt(n_pix_max/np.pi)
     r_max = np.min([img.shape[0]//2, r_max])
-    print("Maximum R: %d (pix)"%np.int(r_max))    
+    if verbose:
+        print("Maximum R: %d (pix)"%np.int(r_max))    
     
     if xunit == "arcsec":
         r = r * pix_scale   # radius in arcsec
@@ -308,7 +355,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     elif xunit == "pix":
         plt.xlabel("r [pix]")
         
-    d_r = 1 * pix_scale if xunit == "arcsec" else 1
+    d_r = dr * pix_scale if xunit == "arcsec" else dr
     
     # Radial bins: discrete/linear within r_core + log beyond it
     if core_undersample:  
@@ -333,45 +380,54 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
         in_bin = (r>bins[k])&(r<bins[k+1])
         r_rbin = np.append(r_rbin, np.mean(r[in_bin]))
       
-        z_clip = sigma_clip(z[in_bin], sigma=5, maxiters=10)
+        z_clip = sigma_clip(z[in_bin], sigma=3, maxiters=10)
         zb = np.mean(z_clip)
         sigma_zb = np.std(z_clip)
         z_rbin = np.append(z_rbin, zb)
         logzerr_rbin = np.append(logzerr_rbin, 0.434 * ( sigma_zb / zb))
 
-    if yunit == "intensity":  
-        # plot radius in Intensity
-        plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", color=color, alpha=0.9,zorder=3, label=label)   
-        plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
-                         color=color, alpha=0.2, zorder=1)
-        plt.ylabel("log Intensity")
-        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]-0.1, r_rbin[np.isfinite(r_rbin)][-1] + 2)
-        
-    elif yunit == "SB":  
-        # plot radius in Surface Brightness
-        B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
-        B_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
-        
-        plt.plot(r_rbin, B_rbin, "-o", mec="k", color=color, alpha=0.9, zorder=3, label=label)   
-        plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
-        plt.gca().invert_yaxis()
-        plt.xscale("log")
-        plt.axhline(B_sky,color="gray",ls="-.",alpha=0.7)
-        plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
-    
-    # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
-    dz_rbin = np.diff(np.log10(z_rbin)) 
-    dz_cum = np.cumsum(dz_rbin)
-    
-    if plot_line:
-        r_satr = r_rbin[np.argmax(dz_cum<-0.3)] + 1e-3
-        plt.axvline(r_satr,color="k",ls="--")
-        plt.axvline(r_core,color="k",ls=":")
-        
-        use_range = (r_rbin>r_satr) & (r_rbin<r_core)
-    else:
-        use_range = True
-    return r_rbin, z_rbin, logzerr_rbin, use_range
+    if draw:
+        if yunit == "intensity":  
+            # plot radius in Intensity
+            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", color=color, alpha=alpha, zorder=3, label=label) 
+            if scatter:
+                plt.scatter(r[r<3*r_core], np.log10(z[r<3*r_core]), color=color, s=6, alpha=0.2, zorder=1)
+                plt.scatter(r[r>3*r_core], np.log10(z[r>3*r_core]), color=color, s=3, alpha=0.1, zorder=1)
+            plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
+                             color=color, alpha=0.2, zorder=1)
+            plt.ylabel("log Intensity")
+            plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8, r_rbin[np.isfinite(r_rbin)][-1]*1.2)
+
+        elif yunit == "SB":  
+            # plot radius in Surface Brightness
+            B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
+            B_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
+
+            plt.plot(r_rbin, B_rbin, "-o", mec="k", color=color, alpha=alpha, zorder=3, label=label)   
+            if scatter:
+                B = Intensity2SB(y=z, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
+                plt.scatter(r[r<3*r_core], B[r<3*r_core], color=color, s=6, alpha=0.2, zorder=1)
+                plt.scatter(r[r>3*r_core], B[r>3*r_core], color=color, s=3, alpha=0.1, zorder=1)
+            plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
+            plt.gca().invert_yaxis()
+            plt.xscale("log")
+            plt.axhline(B_sky,color="gray",ls="-.",alpha=0.7)
+            plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
+            plt.ylim(31,17)
+
+        # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
+        dz_rbin = np.diff(np.log10(z_rbin)) 
+        dz_cum = np.cumsum(dz_rbin)
+
+        if plot_line:
+            r_satr = r_rbin[np.argmax(dz_cum<-0.3)] + 1e-3
+            plt.axvline(r_satr,color="k",ls="--",alpha=0.9)
+            plt.axvline(r_core,color="k",ls=":",alpha=0.9)
+
+            use_range = (r_rbin>r_satr) & (r_rbin<r_core)
+        else:
+            use_range = True
+    return r_rbin, z_rbin, logzerr_rbin
 
 
 ### Nested Fitting Helper ###
