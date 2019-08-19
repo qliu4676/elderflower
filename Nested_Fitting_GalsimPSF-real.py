@@ -58,9 +58,9 @@ if save:
     print("Results will be saved in %s"%dir_name)
 
 # Image Parameter
-image_size = 1000
-patch_xmin, patch_ymin = 1800, 800  # patch range, in array
-patch_xmax, patch_ymax = patch_xmin + 1000, patch_ymin + 1000
+image_size = 600
+patch_xmin, patch_ymin = 2000, 1000  # patch range, in array
+patch_xmax, patch_ymax = patch_xmin + image_size, patch_ymin + image_size
 
 pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
@@ -116,7 +116,7 @@ SE_cat = crop_catalog(SE_cat_full, bounds=(patch_Xmin,patch_Ymin,patch_Xmax,patc
 SE_cat = SE_cat[SE_cat['FLUX_AUTO']>=15]
 
 # Read measurement
-table_res_Rnorm = Table.read("./Rnorm_8pix_15mag_p2.txt", format="ascii")
+table_res_Rnorm = Table.read("./Rnorm_8pix.txt", format="ascii")
 table_res_Rnorm = crop_catalog(table_res_Rnorm, 
                                bounds=(patch_Xmin-25,patch_Ymin-25,patch_Xmax+25,patch_Ymax+25))
 
@@ -369,7 +369,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
                                norm=z_norm,
                                image_size=image_size,
                                min_psf_size=32, 
-                               max_psf_size=256,
+                               max_psf_size=384,
                                parallel=False):
     
     psf_pow, psf_size = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
@@ -467,13 +467,15 @@ from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 import multiprocess as mp
 
-truths = np.log10(frac), n, mu, sigma
-labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
+# truths = np.log10(frac), n, mu, sigma
+# labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
+labels = [r'$f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
 print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
-    v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
+#     v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
+    v[0] = u[0] * 0.5 + 0.01 # frac : 0.01-0.5
     v[1] = u[1] * 2 + 2  # n : 2-4
     v[2] = 886 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
     v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(5, 0.5)
@@ -509,8 +511,9 @@ X = np.array([xx,yy])
 Y = image[~mask_fit].copy().ravel()
 
 def loglike(v):
-    logfrac, n, mu, sigma = v
-    frac = 10**logfrac
+#     logfrac, n, mu, sigma = v
+#     frac = 10**logfrac
+    frac, n, mu, sigma = v
     
     image_tri = generate_image_galsim_norm(frac, n, mu, sigma, star_pos=star_pos, norm=z_norm,
                                            image_size=image_size, parallel=True)
@@ -551,7 +554,7 @@ def Run_Nested_Fitting(loglike=loglike,
 ############################################
 
 def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, 
-                              n_bootsrap=200, save=True, dir_name="."):
+                              n_bootstrap=200, save=False, dir_name="."):
     from dynesty import utils as dyfunc
     
     samples = res.samples                                 # samples
@@ -569,12 +572,12 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     gamma, alpha, frac, n = true_pars.values()
-    
-    C_pow1Dto2D = (n-2) / (n-1) / np.pi / theta_t_pix
+    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2)
+    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2) / C_mof2Dto1D
     
     r = np.logspace(0., np.log10(image_size//2), 100)
-    comp1 = moffat1d_normed(r, gamma=gamma, alpha=alpha)
-    comp2 = trunc_power1d_normed(r, n, theta_t_pix) * C_pow1Dto2D
+    comp1 = moffat1d_normed(r, gamma=gamma, alpha=alpha) / C_mof2Dto1D
+    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
     
     plt.figure(figsize=(7,6))
     
@@ -582,7 +585,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
                  label="Truth", color="steelblue", lw=4, zorder=2)
     for (logfrac_k, n_k, _, _) in samples_eq_bs:
         frac_k = 10**logfrac_k
-        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) * C_pow1Dto2D
+        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / C_pow2Dto1D
 
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
                      color="lightblue", lw=1.5,alpha=0.1,zorder=1)
@@ -590,7 +593,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
         for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
                                   [":","-.","--"], ["max_w", "mean", "med"]):
             f_fit = 10**fits[0]
-            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) * C_pow1Dto2D
+            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
             
             plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls, alpha=0.8, label=l, zorder=4)
@@ -605,7 +608,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     plt.ylabel(r"$\rm Intensity$",fontsize=18)
     plt.title("Recovered PSF from Fitting",fontsize=18)
     plt.xscale("log")
-    plt.ylim(y_fit.min(), 1)    
+    plt.ylim(1e-7, 1)    
     plt.tight_layout()
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
@@ -622,15 +625,15 @@ if RUN_FITTING:
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
     pdres = pdsampler.results
-    save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
+    save_nested_fitting_result(pdres, filename='%s/fit_real.res'%dir_name)
     pdres = pdsampler.results
 
     # Plot Result
-    fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
-                                  color="royalblue", truth_color="indianred",
-                                  title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
+    fig, axes = dyplot.cornerplot(pdres, show_titles=True, 
+                                  color="royalblue", labels=labels,
+                                  title_kwargs={'fontsize':24, 'y': 1.04}, 
                                   label_kwargs={'fontsize':22},
-                                  fig=plt.subplots(4, 4, figsize=(18, 16)))
+                                  fig=plt.subplots(4, 4, figsize=(16, 15)))
     if save:
         plt.savefig("%s/Result.png"%dir_name,dpi=150)
         plt.close('all')
