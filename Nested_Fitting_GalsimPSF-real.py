@@ -37,16 +37,16 @@ from utils import *
 ############################################
 
 # Fitting Parameter
-n_cpu = 3
+n_cpu = 10
 RUN_FITTING = True
-print_progress = True
+print_progress = False
 draw = True
 save = True
 use_SE_seg = False
 mask_strip = True
 wid_strip, n_strip = 5, 10
 
-dir_name = "./run"
+dir_name = "./real"
 if save:
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
@@ -88,7 +88,7 @@ sigma = np.sqrt(noise_variance)            # sky stddev
 # Read
 ############################################
 
-hdu = fits.open("./coadd_SloanR_NGC_5907.fits")[0]
+hdu = fits.open("./SE_APASS/coadd_SloanR_NGC_5907.fits")[0]
 data = hdu.data
 header = hdu.header
 seeing = 2.5
@@ -172,7 +172,7 @@ star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],table_res_Rnorm['Y_IMAGE']]).T
 z_norm = table_res_Rnorm['mean'].data - mu   # <15 mag
 Amp_pow = z_norm * (8/theta_t_pix)**n
 Flux_pow = power2d_Amp2Flux(n, theta_t_pix, Amp=Amp_pow)
-Flux2 = Flux_pow / frac * (1-frac)
+Flux2 = Flux_pow / frac
 
 # Thresholds affecting speed and accuracy depending on the
 # actual PSF, noise level, and magnitude distribution of stars.
@@ -385,7 +385,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
     # Recompute flux for stars < 15 mag:
     Amp_pow = norm * (8/theta_t_pix)**n
     Flux_pow = power2d_Amp2Flux(n, theta_t_pix, Amp=Amp_pow)
-    Flux2 = Flux_pow / frac * (1-frac)
+    Flux2 = Flux_pow / frac
  
     Flux = np.concatenate([Flux1, Flux2])
     
@@ -470,7 +470,6 @@ import multiprocess as mp
 # truths = np.log10(frac), n, mu, sigma
 # labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
 labels = [r'$f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
-print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
@@ -489,7 +488,7 @@ if draw:
     x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
 
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
-    ax0.plot((x0 * 2.5 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
+    ax0.plot((x0 * 0.5 + 0.01), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
     ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
     ax2.plot(886-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
@@ -529,7 +528,7 @@ def loglike(v):
 
 def Run_Nested_Fitting(loglike=loglike, 
                        prior_transform=prior_transform, 
-                       ndim=4, truths=truths, 
+                       ndim=4, 
                        nlive_init=200, nlive_batch=100, maxbatch=3,
                        print_progress=print_progress):
         
@@ -583,8 +582,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     
     plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
                  label="Truth", color="steelblue", lw=4, zorder=2)
-    for (logfrac_k, n_k, _, _) in samples_eq_bs:
-        frac_k = 10**logfrac_k
+    for (frac_k, n_k, _, _) in samples_eq_bs:
         comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / C_pow2Dto1D
 
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
@@ -592,7 +590,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     else:
         for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
                                   [":","-.","--"], ["max_w", "mean", "med"]):
-            f_fit = 10**fits[0]
+            f_fit = fits[0]
             comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
             
@@ -620,7 +618,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
 
 if RUN_FITTING:
     start = time.time()
-    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths=truths)
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform)
     end = time.time()
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
