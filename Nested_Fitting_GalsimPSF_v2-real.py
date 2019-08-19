@@ -471,7 +471,7 @@ print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
-    v[0] = u[0] * 2.7 - 3 # frac : 0.001-0.5
+    v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
     v[1] = u[1] * 2 + 2  # n : 2-4
     v[2] = 886 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
     v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(5, 0.5)
