@@ -134,12 +134,12 @@ if draw:
     C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
     comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
   
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d((1-frac)*img_mof, pix_scale=pixel_scale, seeing=2.5, 
-                                                             xunit="arcsec", yunit="intensity", color="orange")
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
-                                                             xunit="arcsec", yunit="intensity", color="g")
-    r_rbin, z_rbin, logzerr_rbin, use_range = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
-                                                             xunit="arcsec", yunit="intensity", label="Galsim PSF")
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d((1-frac)*img_mof, pix_scale=pixel_scale, seeing=2.5, 
+                                                 xunit="arcsec", yunit="intensity", color="orange")
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
+                                                 xunit="arcsec", yunit="intensity", color="g")
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
+                                                 xunit="arcsec", yunit="intensity", label="Galsim PSF")
 
     plt.plot(r*pixel_scale, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, label="Mof + Pow 1D",zorder=5)
     plt.plot(r*pixel_scale, np.log10((1-frac) * comp1), ls="--", lw=3, label="Moffat1D",zorder=1)
@@ -618,7 +618,7 @@ def Run_Nested_Fitting(loglike=loglike,
 ############################################
 
 def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, 
-                              n_bootsrap=200, save=True, dir_name="."):
+                              n_bootstrap=200, save=True, dir_name="."):
     from dynesty import utils as dyfunc
     
     samples = res.samples                                 # samples
@@ -637,42 +637,43 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     
     gamma, alpha, frac, n = true_pars.values()
     
-    C_pow1Dto2D = (n-2) / (n-1) / np.pi / theta_t_pix
+    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
+    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
     
     r = np.logspace(0., np.log10(image_size//2), 100)
-    comp1 = moffat1d_normed(r, gamma=gamma, alpha=alpha)
-    comp2 = trunc_power1d_normed(r, n, theta_t_pix) * C_pow1Dto2D
+    comp1 = moffat1d_normed(r, gamma=gamma, alpha=alpha) / C_mof2Dto1D
+    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
     
     plt.figure(figsize=(7,6))
     
-    plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
+    plt.plot(r, np.log10((1-frac) * comp1 + frac * comp2),
                  label="Truth", color="steelblue", lw=4, zorder=2)
     for (logfrac_k, n_k, _, _) in samples_eq_bs:
         frac_k = 10**logfrac_k
-        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) * C_pow1Dto2D
+        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / C_pow2Dto1D
 
-        plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
+        plt.plot(r, np.log10((1-frac_k) * comp1 + frac_k * comp2_k),
                      color="lightblue", lw=1.5,alpha=0.1,zorder=1)
     else:
         for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
                                   [":","-.","--"], ["max_w", "mean", "med"]):
             f_fit = 10**fits[0]
-            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) * C_pow1Dto2D
+            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
             
-            plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls, alpha=0.8, label=l, zorder=4)
+            plt.plot(r, np.log10(y_fit), color=c, lw=2.5, ls=ls, alpha=0.8, label=l, zorder=4)
             if l=="med":
-                plt.semilogy(r, (1-f_fit) * comp1,
+                plt.plot(r, np.log10((1-f_fit) * comp1),
                              color="orange", lw=2, ls="--", alpha=0.7, label="med mof",zorder=4)
-                plt.semilogy(r, f_fit * comp2,
+                plt.plot(r, np.log10(f_fit * comp2),
                              color="seagreen", lw=2, ls="--", alpha=0.7, label="med pow",zorder=4)
     
     plt.legend(fontsize=12)    
     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
-    plt.ylabel(r"$\rm Intensity$",fontsize=18)
+    plt.ylabel(r"$\rm \log\,Intensity$",fontsize=18)
     plt.title("Recovered PSF from Fitting",fontsize=18)
     plt.xscale("log")
-    plt.ylim(y_fit.min(), 1)    
+    plt.ylim(-7, -0.5)
     plt.tight_layout()
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)

@@ -37,9 +37,9 @@ from utils import *
 ############################################
 
 # Fitting Parameter
-n_cpu = 10
+n_cpu = 3
 RUN_FITTING = True
-print_progress = False
+print_progress = True
 draw = True
 save = True
 use_SE_seg = False
@@ -112,8 +112,9 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
 
 # Read measurement
 SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor")
+SE_cat_full["RMAG_AUTO"] = -2.5*np.log10(SE_cat_full["FLUX_AUTO"]) + ZP
 SE_cat = crop_catalog(SE_cat_full, bounds=(patch_Xmin,patch_Ymin,patch_Xmax,patch_Ymax))
-SE_cat = SE_cat[SE_cat['FLUX_AUTO']>=15]
+SE_cat = SE_cat[SE_cat['RMAG_AUTO']>=15]
 
 # Read measurement
 table_res_Rnorm = Table.read("./Rnorm_8pix.txt", format="ascii")
@@ -152,8 +153,41 @@ psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n,
                                                 psf_scale=psf_pixel_scale)
 
 # Define the Moffat PSF profile.
-gsparams = galsim.GSParams(folding_threshold=1.e-6)
+gsparams = galsim.GSParams(folding_threshold=1e-7)
 psf_mof = galsim.Moffat(beta=beta_psf, flux=1., fwhm=fwhm, gsparams=gsparams) # in arcsec
+
+if draw:
+    star_psf_2 = (1-frac) * psf_mof + frac * psf_pow_2 
+    
+    img_pow_2 = psf_pow_2.drawImage(scale=pixel_scale, method="no_pixel").array
+    img_gs_2 = star_psf_2.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel").array
+    
+    plt.figure(figsize=(7,6))
+    r = np.logspace(0.1,2.5,100)
+    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
+    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta_psf) / C_mof2Dto1D
+
+    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
+    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
+
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
+                                                 core_undersample=True,xunit="arcsec", yunit="intensity", color="g")
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
+                                                 core_undersample=True,xunit="arcsec", yunit="intensity", label="Galsim PSF")
+
+    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, label="Mof + Pow 1D",zorder=5)
+    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1), ls="--", lw=3, label="Moffat1D",zorder=1)
+    plt.plot(r*pixel_scale, np.log10(comp2 * frac), ls="--",lw=3,  label="Power1D")
+
+    plt.xscale("log")
+    plt.axvline(theta_t_pix,color="k",ls="--")
+    plt.title("Model PSF",fontsize=14)
+    
+    plt.legend(fontsize=12)
+    plt.ylim(np.log10(z_rbin[-1]),-1)
+    if save:
+        plt.savefig("%s/Model.png"%dir_name,dpi=150)
+        plt.close()
 
 
 ############################################
@@ -468,13 +502,14 @@ from dynesty import utils as dyfunc
 import multiprocess as mp
 
 # truths = np.log10(frac), n, mu, sigma
-# labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
-labels = [r'$f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
+labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
+# labels = [r'$f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
+# print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
-#     v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
-    v[0] = u[0] * 0.5 + 0.01 # frac : 0.01-0.5
+    v[0] = u[0] * 2.7 - 3 # frac : 0.001-0.5
+#     v[0] = u[0] * 0.5 + 0.01 # frac : 0.01-0.5
     v[1] = u[1] * 2 + 2  # n : 2-4
     v[2] = 886 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
     v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(5, 0.5)
@@ -488,7 +523,7 @@ if draw:
     x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
 
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
-    ax0.plot((x0 * 0.5 + 0.01), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
+    ax0.plot((x0 * 2.7 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
     ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
     ax2.plot(886-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
@@ -510,9 +545,9 @@ X = np.array([xx,yy])
 Y = image[~mask_fit].copy().ravel()
 
 def loglike(v):
-#     logfrac, n, mu, sigma = v
-#     frac = 10**logfrac
-    frac, n, mu, sigma = v
+    logfrac, n, mu, sigma = v
+    frac = 10**logfrac
+#     frac, n, mu, sigma = v
     
     image_tri = generate_image_galsim_norm(frac, n, mu, sigma, star_pos=star_pos, norm=z_norm,
                                            image_size=image_size, parallel=True)
@@ -526,9 +561,7 @@ def loglike(v):
         
     return loglike
 
-def Run_Nested_Fitting(loglike=loglike, 
-                       prior_transform=prior_transform, 
-                       ndim=4, 
+def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, ndim=4,
                        nlive_init=200, nlive_batch=100, maxbatch=3,
                        print_progress=print_progress):
         
@@ -570,7 +603,8 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     from astropy.stats import bootstrap
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
-    gamma, alpha, frac, n = true_pars.values()
+    gamma, alpha, frac, n = true_pars["gamma"], true_pars["alpha"], true_pars["frac"], true_pars["n"]
+
     C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2)
     C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2) / C_mof2Dto1D
     
@@ -582,7 +616,8 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     
     plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
                  label="Truth", color="steelblue", lw=4, zorder=2)
-    for (frac_k, n_k, _, _) in samples_eq_bs:
+    for (logfrac_k, n_k, _, _) in samples_eq_bs:
+        frac_k = 10**logfrac_k
         comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / C_pow2Dto1D
 
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
@@ -590,7 +625,7 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     else:
         for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
                                   [":","-.","--"], ["max_w", "mean", "med"]):
-            f_fit = fits[0]
+            f_fit = 10**fits[0]
             comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
             
@@ -636,5 +671,5 @@ if RUN_FITTING:
         plt.savefig("%s/Result.png"%dir_name,dpi=150)
         plt.close('all')
                    
-    plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=False, dir_name=dir_name,
+    plot_fitting_vs_truth_PSF(pdres, n_bootstrap=500, image_size=image_size, save=False, dir_name=dir_name,
                               true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac, "n":n})

@@ -74,11 +74,59 @@ def trunc_pow(x, n, theta0, I_theta0=1):
     y = a * x**(-n) if x > theta0 else I_theta0
     return y
 
+def multi_pow(x, n0, n_s, theta0, theta_s, I_theta0, a_s=None):
+    """ Multi-power law for single element """
+    if a_s is None:
+        a_s = np.zeros(len(n_s+1))
+        a0 = I_theta0/(theta0)**(-n0)
+        a_s[0] = a0
+
+        I_theta_i = a0 * (1.*theta_s[0])**(-n0)
+        for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
+            a_i = I_theta_i/(theta_i)**(-n_i)
+            try:
+                I_theta_i = a_i * (1.*theta_s[i+1])**(-n_i)
+                a_s[i+1] = a_i
+            except IndexError:
+                pass
+    if x < theta0:
+        y = I_theta0
+    elif x < theta_s[0]:
+        y = a0 * x**(-n0)
+    else:
+        k = np.argmin(x>theta_s)
+        y = a_s[k-1] * x**(-n_s[k])
+    return y
+
 def trunc_power1d(x, n, theta0, I_theta0=1): 
     """ Truncated power law for 1d array, normalized = I_theta0 at theta0 """
     a = I_theta0 / (theta0)**(-n)
     y = a * np.power(x, -n) 
     y[x<theta0] = I_theta0
+    return y
+
+def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
+#     n_s, theta_s = np.atleast1d(n_s), np.atleast1d(theta_s)
+    a0 = I_theta0/(theta0)**(-n0)
+    y = a0 * np.power(x, -n0)
+    y[x<theta0] = I_theta0
+    
+    I_theta_i = a0 * (1.*theta_s[0])**(-n0)
+    for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
+        a_i = I_theta_i/(theta_i)**(-n_i)
+        y_i = a_i * np.power(x, -n_i)
+        y[x>theta_i] = y_i[x>theta_i]
+        try:
+            I_theta_i = a_i * (1.*theta_s[i+1])**(-n_i)
+        except IndexError:
+            pass
+    return y
+
+def moffat_power1d(x, gamma, alpha, n, theta0, A=1):
+    """ Moffat + Power for 1d array, flux normalized = 1 """
+    Mof_mod_1d = models.Moffat1D(amplitude=A, x_0=0, gamma=gamma, alpha=alpha)
+    y = Mof_mod_1d(x)
+    y[x>theta0] = power1d(x[x>theta0], n, theta0, Mof_mod_1d(theta0))
     return y
 
 def trunc_power1d_normed(x, n, theta0):
@@ -94,27 +142,21 @@ def moffat1d_normed(x, gamma, alpha):
     y = Mof_mod_1d(x) / norm_mof
     return y
 
-def multi_power1d(x, n0, theta0, I_theta0, n_s, theta_s):
-#     n_s, theta_s = np.atleast1d(n_s), np.atleast1d(theta_s)
-    ind_slice = [np.argmin(x<theta_i) for theta_i in theta_s]
+def multi_power1d_normed(x, n0, theta0, I_theta0, n_s, theta_s):
+    a_s = np.zeros(len(n_s+1))
+    I_theta_s = np.zeros(len(n_s+1))
     a0 = I_theta0/(theta0)**(-n0)
-    y = a0 * np.power(x, -n0)
-    I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
+    a_s[0], I_theta_s[0] = a0, I_theta0
+    
+    I_theta_i = a0 * (1.*theta_s[0])**(-n0)
+    I_theta_s[1] = I_theta_i
     for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
         a_i = I_theta_i/(theta_i)**(-n_i)
-        y_i = a_i * np.power(x, -n_i)
-        y[x>theta_i] = y_i[x>theta_i]
         try:
-            I_theta_i = a_i * np.power(1.*theta_s[i+1], -n_i)
+            I_theta_i = a_i * (1.*theta_s[i+1])**(-n_i)
+            a_s[i+1], I_theta_s[i+1] = a_i, I_theta_i
         except IndexError:
             pass
-    return y
-
-def moffat_power1d(x, gamma, alpha, n, theta0, A=1):
-    """ Moffat + Power for 1d array, flux normalized = 1 """
-    Mof_mod_1d = models.Moffat1D(amplitude=A, x_0=0, gamma=gamma, alpha=alpha)
-    y = Mof_mod_1d(x)
-    y[x>theta0] = power1d(x[x>theta0], n, theta0, Mof_mod_1d(theta0))
     return y
 
 def map2d(f, xx=None, yy=None):
@@ -127,23 +169,26 @@ def power2d(xx, yy, n, theta0, I_theta0, cen):
     z = a * np.power(rr, -n) 
     return z 
 
-def trunc_power2d(x, y, n, theta0, I_theta0, cen): 
+def trunc_power2d(xx, yy, n, theta0, I_theta0, cen): 
     """ Truncated power law for 2d array, normalized = I_theta0 at theta0 """
-    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
+    rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
     a = I_theta0 / (theta0)**(-n)
-    z = a * np.power(r, -n) 
-    z[r<theta0] = I_theta0
+    z = a * np.power(rr, -n) 
+    z[rr<theta0] = I_theta0
     return z
 
-def multi_power2d(x, y, n0, theta0, I_theta0, n_s, theta_s, cen):
-    r = np.sqrt((x-cen[0])**2 + (y-cen[1])**2) + 1e-6
+def multi_power2d(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
+    rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
     a0 = I_theta0/(theta0)**(-n0)
-    z = a0 * np.power(r, -n0) 
+    z = a0 * np.power(rr, -n0) 
+    z[rr<theta0] = I_theta0
+    
     I_theta_i = a0 * np.power(1.*theta_s[0], -n0)
+    
     for i, (n_i, theta_i) in enumerate(zip(n_s, theta_s)):
         a_i = I_theta_i/(theta_i)**(-n_i)
-        z_i = a_i * np.power(r, -n_i)
-        z[r>theta_i] = z_i[r>theta_i]
+        z_i = a_i * np.power(rr, -n_i)
+        z[rr>theta_i] = z_i[rr>theta_i]
         try:
             I_theta_i = a_i * np.power(1.*theta_s[i+1], -n_i)
         except IndexError:
@@ -304,7 +349,7 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):
     
     return mask_deep, segmap2
 
-def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12):    
+def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip=240):    
     yy, xx = np.mgrid[:image_size, :image_size]
     phi_s = np.linspace(-90, 90, n_strip+1)
     a_s = np.tan(phi_s*np.pi/180)
@@ -315,14 +360,19 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12):
         mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < width 
                                            for (a, m) in zip(a_s, m_s)])
         mask_strip_s[k] = mask_strip
-        
+    
+    dist_map = np.logical_or.reduce([np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
+                                     for k, (x_b, y_b) in enumerate(star_pos[fluxs.argsort()])])
+    
+    mask_strip_s = mask_strip_s & dist_map
+    
     return mask_strip_s
 
     
 def cal_profile_1d(img, cen=None, mask=None, back=None, 
                    color="steelblue", xunit="pix", yunit="intensity",
                    seeing=2.5, pix_scale=2.5, ZP=27.1, sky_mean=884, sky_std=5,
-                   core_undersample=False, dr=1, alpha=0.7, label=None, 
+                   core_undersample=False, dr=1, lw=2, alpha=0.7, label=None, 
                    draw=True, scatter=False, plot_line=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
@@ -364,7 +414,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     else: 
         bins_inner = np.linspace(0, r_core, np.int(r_core/d_r)) + 1e-3
         
-    n_bin_outer = np.max([10, np.min([np.int(r_max/d_r/10), 50])])
+    n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
     if r_max > (r_core+d_r):
         bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max-d_r), n_bin_outer)
     else:
@@ -389,13 +439,14 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     if draw:
         if yunit == "intensity":  
             # plot radius in Intensity
-            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", color=color, alpha=alpha, zorder=3, label=label) 
+            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, color=color, alpha=alpha, zorder=3, label=label) 
             if scatter:
                 plt.scatter(r[r<3*r_core], np.log10(z[r<3*r_core]), color=color, s=6, alpha=0.2, zorder=1)
                 plt.scatter(r[r>3*r_core], np.log10(z[r>3*r_core]), color=color, s=3, alpha=0.1, zorder=1)
             plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
                              color=color, alpha=0.2, zorder=1)
             plt.ylabel("log Intensity")
+            plt.xscale("log")
             plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8, r_rbin[np.isfinite(r_rbin)][-1]*1.2)
 
         elif yunit == "SB":  
@@ -403,7 +454,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
             B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
             B_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
 
-            plt.plot(r_rbin, B_rbin, "-o", mec="k", color=color, alpha=alpha, zorder=3, label=label)   
+            plt.plot(r_rbin, B_rbin, "-o", mec="k", lw=lw, color=color, alpha=alpha, zorder=3, label=label)   
             if scatter:
                 B = Intensity2SB(y=z, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
                 plt.scatter(r[r<3*r_core], B[r<3*r_core], color=color, s=6, alpha=0.2, zorder=1)
