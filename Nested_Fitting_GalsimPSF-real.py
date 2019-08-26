@@ -125,7 +125,7 @@ table_res_Rnorm = crop_catalog(table_res_Rnorm,
 # Setup PSF
 ############################################
 
-def Generate_PSF_pow_Galsim(contrast, n=n, psf_scale=psf_pixel_scale, 
+def Generate_PSF_pow_Galsim(contrast, n=n, theta=theta_t, psf_scale=psf_pixel_scale, 
                             psf_size=None, min_psf_size=None, max_psf_size=None,
                             x_interpolant="lanczos3", k_interpolant="lanczos3"):
     if psf_size is None:
@@ -145,12 +145,10 @@ def Generate_PSF_pow_Galsim(contrast, n=n, psf_scale=psf_pixel_scale,
     return psf_pow, psf_size
 
 # Define the Power PSF profile, one for making truth in galsim, one for display.
-psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
-                                                psf_size=512,
-                                                psf_scale=psf_pixel_scale)
-psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n,
-                                                psf_size=image_size*2, 
-                                                psf_scale=psf_pixel_scale)
+psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, theta=theta_t,
+                                                psf_size=512, psf_scale=psf_pixel_scale)
+psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n, theta=theta_t,
+                                                psf_size=image_size*2, psf_scale=psf_pixel_scale)
 
 # Define the Moffat PSF profile.
 gsparams = galsim.GSParams(folding_threshold=1e-7)
@@ -191,7 +189,7 @@ if draw:
 
 
 ############################################
-# Distribution
+# Brightness Distribution
 ############################################
 
 # Generate Grid
@@ -203,7 +201,8 @@ star_pos1 = np.vstack([SE_cat['X_IMAGE'],SE_cat['Y_IMAGE']]).T - [patch_Xmin,pat
 Flux1 = np.array(SE_cat['FLUX_AUTO'])
 star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],table_res_Rnorm['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
 
-z_norm = table_res_Rnorm['mean'].data - mu   # <15 mag
+sky_local = np.median(table_res_Rnorm['sky'].data)
+z_norm = table_res_Rnorm['mean'].data - sky_local   # <15 mag
 Amp_pow = z_norm * (8/theta_t_pix)**n
 Flux_pow = power2d_Amp2Flux(n, theta_t_pix, Amp=Amp_pow)
 Flux2 = Flux_pow / frac
@@ -262,6 +261,16 @@ if draw:
 ############################################
 # Setup Image
 ############################################
+
+# Setup the noise background
+def make_noise_image(image_size, noise_var, random_seed=42):
+    noise_image = galsim.ImageF(image_size, image_size)
+    rng = galsim.BaseDeviate(random_seed)
+    gauss_noise = galsim.GaussianNoise(rng, sigma=math.sqrt(noise_var))
+    noise_image.addNoise(gauss_noise)  
+    return noise_image.array
+
+noise_image = make_noise_image(image_size, noise_variance)
 
 # Shift center for the purpose pf accuracy (by default galsim round to integer!)
 def get_center_offset(pos):
@@ -482,9 +491,12 @@ if draw:
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
 
-    plt.figure(figsize=(9,8))
-    im = plt.imshow(image_tri, vmin=mu, vmax=mu+10*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
-    plt.title("Galsim Image (Moffat+Power)")
+    fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+    im = ax1.imshow(image_tri, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
+    colorbar(im)
+    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
+    ax1.set_title("Galsim Image (Moffat+Power)")
+    ax2.set_title("Galsim Image (+noise)")
     colorbar(im)
     plt.tight_layout()   
     if save:
@@ -501,18 +513,15 @@ from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 import multiprocess as mp
 
-# truths = np.log10(frac), n, mu, sigma
 labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
-# labels = [r'$f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
 # print("Truths: ", np.around(truths, 3))
 
 def prior_transform(u):
     v = u.copy()
-    v[0] = u[0] * 2.7 - 3 # frac : 0.001-0.5
-#     v[0] = u[0] * 0.5 + 0.01 # frac : 0.01-0.5
+    v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
     v[1] = u[1] * 2 + 2  # n : 2-4
-    v[2] = 886 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu
-    v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(5, 0.5)
+    v[2] = 888 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu : peak around 884
+    v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(4, 1)
     return v
 
 if draw:
@@ -525,7 +534,7 @@ if draw:
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
     ax0.plot((x0 * 2.7 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
     ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
-    ax2.plot(886-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
+    ax2.plot(888-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
     for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
         ax.legend()
@@ -585,48 +594,40 @@ def Run_Nested_Fitting(loglike=loglike, prior_transform=prior_transform, ndim=4,
 # Plotting Results
 ############################################
 
-def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size, 
-                              n_bootstrap=200, save=False, dir_name="."):
-    from dynesty import utils as dyfunc
-    
+def plot_fit_PSF(res, image_size=image_size, 
+                 n_bootstrap=200, save=False, dir_name="."):
+
     samples = res.samples                                 # samples
     weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
-    pmean, pcov = dyfunc.mean_and_cov(samples, weights)     # weighted mean and covariance
+    pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
-    pmed = np.median(samples_eq,axis=0)                    # median sample
-    pmxw = samples[weights.argmax()]                       # sample contributing most weights
+    pmed = np.median(samples_eq,axis=0)                   # median sample
     
     print("Fitting (mean): ", pmean)
     print("Fitting (median): ", pmed)
-    print("Fitting (highest weight): ", pmxw)
     
     from astropy.stats import bootstrap
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
-    gamma, alpha, frac, n = true_pars["gamma"], true_pars["alpha"], true_pars["frac"], true_pars["n"]
-
-    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2)
-    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2) / C_mof2Dto1D
+    c_mof2Dto1D =  C_mof2Dto1D(gamma_pix, beta_psf)
+    c_pow2Dto1D = C_pow2Dto1D(n, theta_t_pix)
     
     r = np.logspace(0., np.log10(image_size//2), 100)
-    comp1 = moffat1d_normed(r, gamma=gamma, alpha=alpha) / C_mof2Dto1D
-    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
+    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta_psf) / c_mof2Dto1D
     
     plt.figure(figsize=(7,6))
     
-    plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
-                 label="Truth", color="steelblue", lw=4, zorder=2)
     for (logfrac_k, n_k, _, _) in samples_eq_bs:
         frac_k = 10**logfrac_k
-        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / C_pow2Dto1D
+        comp2_k = trunc_power1d_normed(r, n_k, theta_t_pix) / c_pow2Dto1D
 
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
                      color="lightblue", lw=1.5,alpha=0.1,zorder=1)
     else:
-        for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
-                                  [":","-.","--"], ["max_w", "mean", "med"]):
+        for fits, c, ls, l in zip([pmed, pmean], ["royalblue", "b"],
+                                  ["-.","--"], ["mean", "med"]):
             f_fit = 10**fits[0]
-            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
+            comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / c_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
             
             plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls, alpha=0.8, label=l, zorder=4)
@@ -658,8 +659,9 @@ if RUN_FITTING:
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
     pdres = pdsampler.results
-    save_nested_fitting_result(pdres, filename='%s/fit_real.res'%dir_name)
-    pdres = pdsampler.results
+    
+    if save:
+        save_nested_fitting_result(pdres, filename='%s/fit_real.res'%dir_name)
 
     # Plot Result
     fig, axes = dyplot.cornerplot(pdres, show_titles=True, 
@@ -671,5 +673,4 @@ if RUN_FITTING:
         plt.savefig("%s/Result.png"%dir_name,dpi=150)
         plt.close('all')
                    
-    plot_fitting_vs_truth_PSF(pdres, n_bootstrap=500, image_size=image_size, save=False, dir_name=dir_name,
-                              true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac, "n":n})
+    plot_fit_PSF(pdres, n_bootstrap=500, image_size=image_size, save=True, dir_name=dir_name)

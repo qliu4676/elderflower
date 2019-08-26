@@ -577,12 +577,9 @@ def loglike(v):
 
 def Run_Nested_Fitting(loglike=loglike, 
                        prior_transform=prior_transform, 
-                       ndim=4, truths=truths, labels=labels,
+                       ndim=4, truths=truths, 
                        nlive_init=200, nlive_batch=100, maxbatch=3,
-                       print_progress=False):
-    
-    if not len(truths) == len(labels) == ndim:
-        raise ValueError("Dimension of fitting, truths and labels don't match.")
+                       print_progress=True):
         
     with mp.Pool(processes=n_cpu-1) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
@@ -598,19 +595,6 @@ def Run_Nested_Fitting(loglike=loglike,
                              print_progress=print_progress, 
                              dlogz_init=dlogz, 
                              wt_kwargs={'pfrac': 0.8})
-        
-    pdres = pdsampler.results
-        
-    # Plot Result
-    fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
-                                  color="royalblue", truth_color="indianred",
-                                  title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
-                                  label_kwargs={'fontsize':22},
-                                  fig=plt.subplots(ndim, ndim, figsize=(18, 16)))
-    if save:
-        plt.savefig("%s/Result.png"%dir_name,dpi=150)
-        plt.close('all')
-        
     return pdsampler
 
 ############################################
@@ -626,18 +610,16 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
     pmean, pcov = dyfunc.mean_and_cov(samples, weights)     # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
     pmed = np.median(samples_eq,axis=0)                    # median sample
-    pmxw = samples[weights.argmax()]                       # sample contributing most weights
     
     print("Fitting (mean): ", pmean)
     print("Fitting (median): ", pmed)
-    print("Fitting (highest weight): ", pmxw)
     
     from astropy.stats import bootstrap
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     gamma, alpha, frac, n = true_pars.values()
     
-    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
+    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
     C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
     
     r = np.logspace(0., np.log10(image_size//2), 100)
@@ -655,8 +637,8 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
         plt.plot(r, np.log10((1-frac_k) * comp1 + frac_k * comp2_k),
                      color="lightblue", lw=1.5,alpha=0.1,zorder=1)
     else:
-        for fits, c, ls, l in zip([pmxw, pmed, pmean], ["darkblue", "royalblue", "b"],
-                                  [":","-.","--"], ["max_w", "mean", "med"]):
+        for fits, c, ls, l in zip([pmed, pmean], ["royalblue", "b"],
+                                  ["-.","--"], ["mean", "med"]):
             f_fit = 10**fits[0]
             comp2 = trunc_power1d_normed(r, fits[1], theta_t_pix) / C_pow2Dto1D
             y_fit = (1-f_fit) * comp1 + f_fit * comp2
@@ -679,20 +661,30 @@ def plot_fitting_vs_truth_PSF(res, true_pars, image_size=image_size,
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
         plt.close()
 
-
 ############################################
 # Fitting
 ############################################
 
 if RUN_FITTING:
     start = time.time()
-    pdsampler = Run_Nested_Fitting(loglike, prior_transform, ndim=4, truths=truths)
+    pdsampler = Run_Nested_Fitting(loglike, prior_transform, truths=truths)
     end = time.time()
     print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
     
     pdres = pdsampler.results
     save_nested_fitting_result(pdres, filename='%s/fit.res'%dir_name)
-                   
-    plot_fitting_vs_truth_PSF(pdres, n_bootsrap=500, image_size=image_size, save=True, dir_name=dir_name,
+    pdres = pdsampler.results
+
+    # Plot Result
+    fig, axes = dyplot.cornerplot(pdres, truths=truths, show_titles=True, 
+                                  color="royalblue", truth_color="indianred",
+                                  title_kwargs={'fontsize':24, 'y': 1.04}, labels=labels,
+                                  label_kwargs={'fontsize':22},
+                                  fig=plt.subplots(4, 4, figsize=(18, 16)))
+    if save:
+        plt.savefig("%s/Result.png"%dir_name,dpi=150)
+        plt.close('all')
+        
+    plot_fitting_vs_truth_PSF(pdres, n_bootstrap=300, image_size=image_size, save=False, dir_name=dir_name,
                               true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac, "n":n})
-    
+                   
