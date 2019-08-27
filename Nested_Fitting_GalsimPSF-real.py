@@ -141,9 +141,10 @@ SE_cat = crop_catalog(SE_cat_full, bounds=(patch_Xmin,patch_Ymin,patch_Xmax,patc
 SE_cat = SE_cat[SE_cat['RMAG_AUTO']>=15]   # For faint star > 15 mag, use SE flux (not to be modeled)
 
 # Read measurement
-table_res_Rnorm = Table.read("./Rnorm_8pix.txt", format="ascii")
+table_res_Rnorm = Table.read("./Rnorm_8pix_15mag_p2.txt", format="ascii")
 table_res_Rnorm = crop_catalog(table_res_Rnorm, 
                                bounds=(patch_Xmin-25,patch_Ymin-25,patch_Xmax+25,patch_Ymax+25))
+
 
 ############################################
 # Setup PSF
@@ -221,10 +222,10 @@ yy, xx = np.mgrid[:image_size, :image_size]
 cen = ((image_size-1)/2., (image_size-1)/2.)
 
 # Read measurement
-star_pos1 = np.vstack([SE_cat['X_IMAGE'],SE_cat['Y_IMAGE']]).T - [patch_Xmin,patch_Ymin]
+star_pos1 = np.vstack([SE_cat['X_IMAGE'],SE_cat['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
 Flux1 = np.array(SE_cat['FLUX_AUTO'])
-star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],table_res_Rnorm['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
 
+star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],table_res_Rnorm['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
 sky_local = np.median(table_res_Rnorm['sky'].data)
 z_norm = table_res_Rnorm['mean'].data - sky_local   # <15 mag
 Amp_pow = z_norm * (8/theta_t_pix)**n
@@ -239,7 +240,7 @@ F_bright = 3e4
 F_verybright = 1e6
 
 out_of_field = np.logical_or.reduce((star_pos2<-10)|(star_pos2>image_size+10), axis=1) \
-                & (Flux2>F_bright) & (Flux2<F_verybright)
+                                    & (Flux2>F_bright) & (Flux2<F_verybright)
 z_norm = z_norm[~out_of_field]
 star_pos2 = star_pos2[~out_of_field]
 Flux2 = Flux2[~out_of_field]
@@ -294,6 +295,7 @@ def make_noise_image(image_size, noise_var, random_seed=42):
     noise_image.addNoise(gauss_noise)  
     return noise_image.array
 
+print("Generate noise background w/ stddev = %.2g."%sigma)
 noise_image = make_noise_image(image_size, noise_variance)
 
 # Shift center for the purpose pf accuracy (by default galsim round to integer!)
@@ -364,7 +366,7 @@ if use_SE_seg:
     mask_deep = (seg_map!=0)
 else:
     print("Mask inner regions of stars (threshold: S/N = 2.5)")
-    mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=3)
+    mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=1)
 
 if draw:
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
@@ -391,7 +393,8 @@ if draw:
 
 if mask_strip:
     print("Use sky strips crossing very bright stars")
-    mask_strip_s = make_mask_strip(image_size, star_pos[verybright], Flux[verybright], width=wid_strip, n_strip=n_strip)
+    mask_strip_s = make_mask_strip(image_size, star_pos[verybright], Flux[verybright], 
+                                   width=wid_strip, n_strip=n_strip, dist_strip=300)
     mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
     seg_comb = seg_map.copy()
     seg_comb[mask_strip_all&(seg_map==0)] = seg_map.max()+1
@@ -425,6 +428,7 @@ if mask_strip:
         if save:
             plt.savefig("%s/Mask_strip.png"%dir_name,dpi=150)
             plt.close()
+            
 
             
 ############################################
@@ -504,7 +508,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
         image_gs = full_image.array
                    
     image = image_gs.copy() + image_gs0 + mu # add the faint star base and background
-    image[image>4.5e4] = 4.5e4
+    image[image>5e4] = 5e4
     return image
 
 if draw:
@@ -515,13 +519,13 @@ if draw:
     print("\nTotal Time: %.3fs"%(end-start))
 
     fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(21,7))
-    im = ax1.imshow(image_tri, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
+    im = ax1.imshow(image_tri, vmin=mu, vmax=1e3, norm=norm1, origin="lower", cmap="gnuplot2")
     colorbar(im)
     ax1.set_title("Galsim Image (Moffat+Power)")
-    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")    
+    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=1e3, norm=norm1, origin="lower", cmap="gnuplot2")    
     ax2.set_title("Galsim Image (+noise)")
     colorbar(im)
-    im = ax3.imshow(patch, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
+    im = ax3.imshow(patch, vmin=mu, vmax=1e3, norm=norm1, origin="lower", cmap="gnuplot2")
     ax3.set_title("Data")
     colorbar(im)
     plt.tight_layout()   
@@ -545,7 +549,7 @@ labels = [r'$\log\,f_{pow}$', r'$n$', r'$\mu$', r'$\sigma$']
 def prior_transform(u):
     v = u.copy()
     v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
-    v[1] = u[1] * 2 + 2  # n : 2-4
+    v[1] = u[1] * 3 + 2  # n : 2-5
     v[2] = 888 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu : peak around 884
     v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(4, 1)
     return v
@@ -558,8 +562,8 @@ if draw:
     x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
 
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
-    ax0.plot((x0 * 2.7 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
-    ax1.plot(x1*2+2, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
+    ax0.plot((x0 * 1.7 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
+    ax1.plot(x1*2+3, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
     ax2.plot(888-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
     for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
@@ -582,7 +586,6 @@ Y = image[~mask_fit].copy().ravel()
 def loglike(v):
     logfrac, n, mu, sigma = v
     frac = 10**logfrac
-#     frac, n, mu, sigma = v
     
     image_tri = generate_image_galsim_norm(frac, n, mu, sigma, star_pos=star_pos, norm=z_norm,
                                            image_size=image_size, parallel=True)
@@ -625,9 +628,9 @@ def plot_fit_PSF(res, image_size=image_size,
 
     samples = res.samples                                 # samples
     weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
-    pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
+    pmean, pcov = dyfunc.mean_and_cov(samples, weights)     # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
-    pmed = np.median(samples_eq,axis=0)                   # median sample
+    pmed = np.median(samples_eq,axis=0)                    # median sample
     
     print("Fitting (mean): ", pmean)
     print("Fitting (median): ", pmed)
@@ -673,7 +676,7 @@ def plot_fit_PSF(res, image_size=image_size,
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
         plt.close()
-
+        
 ############################################
 # Fitting
 ############################################
@@ -699,4 +702,4 @@ if RUN_FITTING:
         plt.savefig("%s/Result.png"%dir_name,dpi=150)
         plt.close('all')
                    
-    plot_fit_PSF(pdres, n_bootstrap=500, image_size=image_size, save=True, dir_name=dir_name)
+    plot_fit_PSF(pdres, n_bootstrap=250, image_size=image_size, save=True, dir_name=dir_name)
