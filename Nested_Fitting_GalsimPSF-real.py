@@ -44,7 +44,7 @@ draw = True
 save = True
 use_SE_seg = False
 mask_strip = True
-wid_strip, n_strip = 5, 10
+wid_strip, n_strip = 5, 13
 
 dir_name = "./real"
 if save:
@@ -59,8 +59,7 @@ if save:
 
 # Image Parameter
 image_size = 600
-patch_xmin, patch_ymin = 2000, 1000  # patch range, in array
-patch_xmax, patch_ymax = patch_xmin + image_size, patch_ymin + image_size
+patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = 800, 1800, 1800, 2800  # image coords
 
 pixel_scale = 2.5                                # arcsec/pixel
 psf_pixel_scale = 1.5                            # arcsec/pixel
@@ -88,7 +87,9 @@ sigma = np.sqrt(noise_variance)            # sky stddev
 # Read
 ############################################
 
-hdu = fits.open("./SE_APASS/coadd_SloanR_NGC_5907.fits")[0]
+hdu = fits.open("./coadd_SloanR_NGC_5907.fits")[0]
+seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
+
 data = hdu.data
 header = hdu.header
 seeing = 2.5
@@ -97,12 +98,35 @@ mu, std, = np.float(hdu.header["BACKVAL"]), 4
 ZP, pix_scale = np.float(hdu.header["REFZP"]), np.float(hdu.header["PIXSCALE"])
 print("mu: %.2f , std: %.2f , ZP: %.2f , pix_scale: %.2f" %(mu, std, ZP, pix_scale))
 
-patch_Xmin, patch_Ymin = coord_Array2Im(patch_xmin,patch_ymin)
-patch_Xmax, patch_Ymax = coord_Array2Im(patch_xmax,patch_ymax)
-patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
 
-seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
-seg_patch = np.copy(seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+def crop_image(data, seg_map, bounds, weight_map=None, draw=False):
+    patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
+    patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin)
+    patch_xmax, patch_ymax = coord_Im2Array(patch_Xmax, patch_Ymax)
+
+    patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+    seg_patch = np.copy(seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+    
+    if draw:
+        fig, ax = plt.subplots(figsize=(12,8))       
+        plt.imshow(data, vmin=mu, vmax=mu+10*std, norm=norm1, origin="lower", cmap="viridis",alpha=0.9)
+        if weight_map is not None:
+            plt.imshow(data*weight_map, vmin=mu, vmax=mu+10*std, norm=norm1, origin="lower", cmap="viridis",alpha=0.3)
+        plt.plot([500,980],[700,700],"w",lw=4)
+        plt.text(560,450, r"$\bf 20'$",color='w', fontsize=25)
+        rect = patches.Rectangle((patch_Xmin,patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
+                                 linewidth=2,edgecolor='r',facecolor='none')
+        ax.add_patch(rect)
+        plt.show()
+        
+    return patch, seg_patch
+
+pad = ((patch_Xmax0-patch_Xmin0)-image_size)//2
+patch_Xmin, patch_Ymin = patch_Xmin0+pad, patch_Ymin0+pad
+patch_Xmax, patch_Ymax = patch_Xmax0-pad, patch_Ymax0-pad
+
+image_bounds = (patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax)
+patch, seg_patch = crop_image(data, seg_map, image_bounds, draw=True)
 
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -114,7 +138,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
 SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor")
 SE_cat_full["RMAG_AUTO"] = -2.5*np.log10(SE_cat_full["FLUX_AUTO"]) + ZP
 SE_cat = crop_catalog(SE_cat_full, bounds=(patch_Xmin,patch_Ymin,patch_Xmax,patch_Ymax))
-SE_cat = SE_cat[SE_cat['RMAG_AUTO']>=15]
+SE_cat = SE_cat[SE_cat['RMAG_AUTO']>=15]   # For faint star > 15 mag, use SE flux (not to be modeled)
 
 # Read measurement
 table_res_Rnorm = Table.read("./Rnorm_8pix.txt", format="ascii")
@@ -211,7 +235,7 @@ Flux2 = Flux_pow / frac
 # actual PSF, noise level, and magnitude distribution of stars.
 # Non-bright stars are rendered with moffat only in advance.
 # Very bright stars are rendered in real space.
-F_bright = 5e4
+F_bright = 3e4
 F_verybright = 1e6
 
 out_of_field = np.logical_or.reduce((star_pos2<-10)|(star_pos2>image_size+10), axis=1) \
@@ -418,7 +442,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
     psf_pow, psf_size = Generate_PSF_pow_Galsim(contrast=1e4, n=n, 
                                                 psf_scale=pixel_scale, psf_size=None,  
                                                 min_psf_size=min_psf_size, max_psf_size=max_psf_size,
-                                                x_interpolant="linear", k_interpolant="linear")    
+                                                x_interpolant="lanczos3", k_interpolant="lanczos3")    
     # Setup the canvas
     full_image = galsim.ImageF(image_size, image_size)
     
@@ -458,7 +482,6 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
         draw_real = True
     else: 
         draw_real = False
-        
     if draw_real:
         # Draw very bright star (if highter cost in FFT) in real space
         image_gs = full_image.array
@@ -471,7 +494,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
         psf_pow_vb , psf_size = Generate_PSF_pow_Galsim(contrast=5e5, n=n, 
                                                         psf_scale=pixel_scale, psf_size=None,  
                                                         min_psf_size=2*min_psf_size, max_psf_size=2*max_psf_size,
-                                                        x_interpolant="linear", k_interpolant="linear")
+                                                        x_interpolant="lanczos3", k_interpolant="lanczos3")
         psf_star = (1-frac) * psf_mof + frac * psf_pow_vb 
                               
         for k in range(num_verybright):
@@ -481,22 +504,25 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
         image_gs = full_image.array
                    
     image = image_gs.copy() + image_gs0 + mu # add the faint star base and background
-
+    image[image>4.5e4] = 4.5e4
     return image
 
 if draw:
     start = time.time()
-    image_tri = generate_image_galsim_norm(frac=frac, n=3., mu=mu, sigma=sigma, 
+    image_tri = generate_image_galsim_norm(frac=frac, n=3.5, mu=mu, sigma=sigma, 
                                            star_pos=star_pos, norm=z_norm, parallel=True)
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
 
-    fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+    fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(21,7))
     im = ax1.imshow(image_tri, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
     colorbar(im)
-    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
     ax1.set_title("Galsim Image (Moffat+Power)")
+    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")    
     ax2.set_title("Galsim Image (+noise)")
+    colorbar(im)
+    im = ax3.imshow(patch, vmin=mu, vmax=mu+20*sigma, norm=norm1, origin="lower", cmap="gnuplot2")
+    ax3.set_title("Data")
     colorbar(im)
     plt.tight_layout()   
     if save:

@@ -20,8 +20,6 @@ from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
 
-from photutils import detect_sources
-
 from skimage import morphology
 
 
@@ -381,7 +379,7 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
                      morph_oper=morphology.dilation,
                      sub_background=True, mask=None):
     from astropy.convolution import Gaussian2DKernel
-    from photutils import detect_sources
+    from photutils import detect_sources, deblend_sources
     
     if sub_background:
         back, back_rms = background_sub_SE(data, b_size=b_size)
@@ -400,7 +398,9 @@ def source_detection(data, sn=2, b_size=120, k_size=3, fwhm=3,
 
     return data_ma, segm_sm
 
-def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):
+def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=3):
+    from astropy.convolution import Gaussian2DKernel
+    from photutils import detect_sources, deblend_sources
     
     back, back_rms = background_sub_SE(image, b_size=b_size)
     threshold = back + (sn_thre * back_rms)
@@ -417,6 +417,7 @@ def make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=5):
     return mask_deep, segmap2
 
 def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip=480):    
+    
     yy, xx = np.mgrid[:image_size, :image_size]
     phi_s = np.linspace(-90, 90, n_strip+1)
     a_s = np.tan(phi_s*np.pi/180)
@@ -475,7 +476,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
         # for undersampled core, bin in individual pixels 
         bins_inner = np.unique(r[r<r_core]) + 1e-3
     else: 
-        bins_inner = np.linspace(0, r_core, np.int(r_core/d_r)) + 1e-3
+        bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) + 1e-3
         
     n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
     if r_max > (r_core+d_r):
