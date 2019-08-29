@@ -688,6 +688,66 @@ def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, weight_map=None,
 
 ### Nested Fitting Helper ###
 
+def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
+                               nlive_init=100, sample='uniform', 
+                               nlive_batch=50, maxbatch=4,
+                               n_cpu=None, print_progress=True):
+    import dynesty
+    import multiprocess as mp
+    
+    if n_cpu is None:
+        n_cpu = mp.cpu_count()-1
+        
+    with mp.Pool(processes=n_cpu) as pool:
+        print("Opening pool: # of CPU used: %d"%(n_cpu))
+        pool.size = 3
+
+        dlogz = 1e-3 * (nlive_init - 1) + 0.01
+
+        pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim, sample=sample,
+                                                 pool=pool, use_pool={'update_bound': False})
+        pdsampler.run_nested(nlive_init=nlive_init, 
+                             nlive_batch=nlive_batch, 
+                             maxbatch=maxbatch,
+                             print_progress=print_progress, 
+                             dlogz_init=dlogz, 
+                             wt_kwargs={'pfrac': 0.8})
+    return pdsampler
+
+
+def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
+    
+    loc, scale = priors["loc"], priors["scale"]
+    
+    def prior_tf_2lin(u):
+        v = u.copy()
+        v[0] = u[0] * scale[0] + loc[0]  #x0: 12-13
+        v[1] = u[1] * scale[1] + loc[1]  #y0: -10 - -9
+        v[2] = u[2] * scale[2] + loc[2]  #k2
+        v[3] = u[3] * scale[3] + loc[3]  #sigma
+        return v
+
+    def loglike_2lin(v):
+        x0, y0, k2, sigma = v
+        ypred = np.piecewise(X, [X < x0], [lambda x: y0, lambda x: k2*x + y0-k2*x0])
+        residsq = (ypred - Y)**2 / sigma**2
+        loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+        if not np.isfinite(loglike):
+            loglike = -1e100
+        return loglike
+    
+    pdsampler = Run_Dynamic_Nested_Fitting(loglike=loglike_2lin, prior_transform=prior_tf_2lin, ndim=4)
+    pdres = pdsampler.results
+    
+    if display:
+        labels = ["x0", "y0", "k1", "k2", "sigma"]
+        fig, axes = dyplot.cornerplot(pdres, show_titles=True, 
+                                      color="royalblue", labels=labels,
+                                      title_kwargs={'fontsize':15, 'y': 1.02}, 
+                                      label_kwargs={'fontsize':12},
+                                      fig=plt.subplots(4, 4, figsize=(11, 10)))
+    return pdres
+
 def get_params_fit(res):
     from dynesty import utils as dyfunc
     samples = res.samples                                 # samples
