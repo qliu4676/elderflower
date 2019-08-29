@@ -1,9 +1,8 @@
 import os
 import time
-import numpy as np
 from astropy.modeling import models, fitting
 from astropy.table import Table
-import matplotlib.pyplot as plt
+from matplotlib import patches
 from scipy import stats
 from skimage.transform import resize
 from photutils import CircularAperture, CircularAnnulus
@@ -37,12 +36,13 @@ from utils import *
 ############################################
 
 # Fitting Parameter
-n_cpu = 3
+n_cpu = 8
 RUN_FITTING = True
 print_progress = True
 draw = True
-save = True
+save = False
 use_SE_seg = False
+mask_dual = True
 mask_strip = True
 wid_strip, n_strip = 5, 13
 
@@ -71,8 +71,8 @@ fwhm = 2.28 * pixel_scale                         # moffat fwhm, in arcsec
 gamma = fwhm / 2. / np.sqrt(2**(1./beta_psf)-1)  # moffat core width, in arcsec
 gamma_pix = gamma / pixel_scale                  # moffat core width, in pix
 
-n = 3                     # true power index
-frac = 0.3                 # fraction of power law component
+n = 3.5                     # true power index (temp)
+frac = 0.3                  # fraction of power law component (temp)
 theta_t = 5.                # radius at which power law is flattened, in arcsec
 
 theta_t_pix = theta_t/pixel_scale          # flattened radius, in pix
@@ -88,7 +88,7 @@ sigma = np.sqrt(noise_variance)            # sky stddev
 ############################################
 
 hdu = fits.open("./coadd_SloanR_NGC_5907.fits")[0]
-seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
+SE_seg_map = fits.open("./SE_APASS/coadd_SloanR_NGC_5907_seg.fits")[0].data
 
 data = hdu.data
 header = hdu.header
@@ -98,41 +98,13 @@ mu, std, = np.float(hdu.header["BACKVAL"]), 4
 ZP, pix_scale = np.float(hdu.header["REFZP"]), np.float(hdu.header["PIXSCALE"])
 print("mu: %.2f , std: %.2f , ZP: %.2f , pix_scale: %.2f" %(mu, std, ZP, pix_scale))
 
-
-def crop_image(data, seg_map, bounds, weight_map=None, draw=False):
-    patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
-    patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin)
-    patch_xmax, patch_ymax = coord_Im2Array(patch_Xmax, patch_Ymax)
-
-    patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
-    seg_patch = np.copy(seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
-    
-    if draw:
-        fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, vmin=mu, vmax=mu+10*std, norm=norm1, origin="lower", cmap="viridis",alpha=0.9)
-        if weight_map is not None:
-            plt.imshow(data*weight_map, vmin=mu, vmax=mu+10*std, norm=norm1, origin="lower", cmap="viridis",alpha=0.3)
-        plt.plot([500,980],[700,700],"w",lw=4)
-        plt.text(560,450, r"$\bf 20'$",color='w', fontsize=25)
-        rect = patches.Rectangle((patch_Xmin,patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
-                                 linewidth=2,edgecolor='r',facecolor='none')
-        ax.add_patch(rect)
-        plt.show()
-        
-    return patch, seg_patch
-
+# Crop image
 pad = ((patch_Xmax0-patch_Xmin0)-image_size)//2
 patch_Xmin, patch_Ymin = patch_Xmin0+pad, patch_Ymin0+pad
 patch_Xmax, patch_Ymax = patch_Xmax0-pad, patch_Ymax0-pad
 
 image_bounds = (patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax)
-patch, seg_patch = crop_image(data, seg_map, image_bounds, draw=True)
-
-def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
-    Xmin, Ymin, Xmax, Ymax = bounds
-    A, B = keys
-    crop = (cat[A]>=Xmin) & (cat[A]<=Xmax) & (cat[B]>=Ymin) & (cat[B]<=Ymax)
-    return cat[crop]
+patch, seg_patch = crop_image(data, SE_seg_map, image_bounds, sky_mean=mu, sky_std=std, draw=True)
 
 # Read measurement
 SE_cat_full = Table.read("./SE_APASS/coadd_SloanR_NGC_5907.cat", format="ascii.sextractor")
@@ -144,74 +116,6 @@ SE_cat = SE_cat[SE_cat['RMAG_AUTO']>=15]   # For faint star > 15 mag, use SE flu
 table_res_Rnorm = Table.read("./Rnorm_8pix_15mag_p2.txt", format="ascii")
 table_res_Rnorm = crop_catalog(table_res_Rnorm, 
                                bounds=(patch_Xmin-25,patch_Ymin-25,patch_Xmax+25,patch_Ymax+25))
-
-
-############################################
-# Setup PSF
-############################################
-
-def Generate_PSF_pow_Galsim(contrast, n=n, theta=theta_t, psf_scale=psf_pixel_scale, 
-                            psf_size=None, min_psf_size=None, max_psf_size=None,
-                            x_interpolant="lanczos3", k_interpolant="lanczos3"):
-    if psf_size is None:
-        a = (theta_t/psf_scale)**n
-        opt_psf_size = 2 * int((contrast * a) ** (1./n))
-        opt_psf_size = round_good_fft(opt_psf_size)
-        psf_size = max(min_psf_size, min(opt_psf_size, max_psf_size))
-
-    cen_psf = ((psf_size-1)/2., (psf_size-1)/2.)
-    yy_psf, xx_psf = np.mgrid[:psf_size, :psf_size]
-
-    psf_model = trunc_power2d(xx_psf, yy_psf, n, cen=cen_psf, theta0=theta_t/psf_scale, I_theta0=1) 
-    image_psf = galsim.ImageF(psf_model)
-    
-    psf_pow = galsim.InterpolatedImage(image_psf, flux=1, scale=psf_scale,
-                                       x_interpolant=x_interpolant, k_interpolant=k_interpolant)
-    return psf_pow, psf_size
-
-# Define the Power PSF profile, one for making truth in galsim, one for display.
-psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, theta=theta_t,
-                                                psf_size=512, psf_scale=psf_pixel_scale)
-psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n, theta=theta_t,
-                                                psf_size=image_size*2, psf_scale=psf_pixel_scale)
-
-# Define the Moffat PSF profile.
-gsparams = galsim.GSParams(folding_threshold=1e-7)
-psf_mof = galsim.Moffat(beta=beta_psf, flux=1., fwhm=fwhm, gsparams=gsparams) # in arcsec
-
-if draw:
-    star_psf_2 = (1-frac) * psf_mof + frac * psf_pow_2 
-    
-    img_pow_2 = psf_pow_2.drawImage(scale=pixel_scale, method="no_pixel").array
-    img_gs_2 = star_psf_2.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel").array
-    
-    plt.figure(figsize=(7,6))
-    r = np.logspace(0.1,2.5,100)
-    C_mof2Dto1D =  1./(beta_psf-1) * 2*math.sqrt(np.pi) * gamma_pix * Gamma(beta_psf) / Gamma(beta_psf-1./2) 
-    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta_psf) / C_mof2Dto1D
-
-    C_pow2Dto1D = np.pi * theta_t_pix * (n-1) / (n-2)
-    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / C_pow2Dto1D
-
-    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
-                                                 core_undersample=True,xunit="arcsec", yunit="intensity", color="g")
-    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
-                                                 core_undersample=True,xunit="arcsec", yunit="intensity", label="Galsim PSF")
-
-    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, label="Mof + Pow 1D",zorder=5)
-    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1), ls="--", lw=3, label="Moffat1D",zorder=1)
-    plt.plot(r*pixel_scale, np.log10(comp2 * frac), ls="--",lw=3,  label="Power1D")
-
-    plt.xscale("log")
-    plt.axvline(theta_t_pix,color="k",ls="--")
-    plt.title("Model PSF",fontsize=14)
-    
-    plt.legend(fontsize=12)
-    plt.ylim(np.log10(z_rbin[-1]),-1)
-    if save:
-        plt.savefig("%s/Model.png"%dir_name,dpi=150)
-        plt.close()
-
 
 ############################################
 # Brightness Distribution
@@ -236,7 +140,7 @@ Flux2 = Flux_pow / frac
 # actual PSF, noise level, and magnitude distribution of stars.
 # Non-bright stars are rendered with moffat only in advance.
 # Very bright stars are rendered in real space.
-F_bright = 3e4
+F_bright = 5e4
 F_verybright = 1e6
 
 out_of_field = np.logical_or.reduce((star_pos2<-10)|(star_pos2>image_size+10), axis=1) \
@@ -282,6 +186,72 @@ if draw:
     plt.axvline(np.log10(F_verybright), color="orange", ls="--",alpha=0.8)
     plt.title("Flux & Amp from $create{\_}APASS{\_}photometric$")
     plt.legend()
+
+############################################
+# Setup PSF
+############################################
+
+def Generate_PSF_pow_Galsim(contrast, n=n, theta=theta_t, psf_scale=psf_pixel_scale, 
+                            psf_size=None, min_psf_size=None, max_psf_size=None,
+                            x_interpolant="lanczos3", k_interpolant="lanczos3"):
+    if psf_size is None:
+        a = (theta_t/psf_scale)**n
+        opt_psf_size = 2 * int((contrast * a) ** (1./n))
+        opt_psf_size = round_good_fft(opt_psf_size)
+        psf_size = max(min_psf_size, min(opt_psf_size, max_psf_size))
+
+    cen_psf = ((psf_size-1)/2., (psf_size-1)/2.)
+    yy_psf, xx_psf = np.mgrid[:psf_size, :psf_size]
+
+    psf_model = trunc_power2d(xx_psf, yy_psf, n, cen=cen_psf, theta0=theta_t/psf_scale, I_theta0=1) 
+    image_psf = galsim.ImageF(psf_model)
+    
+    psf_pow = galsim.InterpolatedImage(image_psf, flux=1, scale=psf_scale,
+                                       x_interpolant=x_interpolant, k_interpolant=k_interpolant)
+    return psf_pow, psf_size
+
+# Define the Power PSF profile, one for making truth in galsim, one for display.
+psf_pow_1, psf_size_1 = Generate_PSF_pow_Galsim(contrast=1e4, n=n, theta=theta_t,
+                                                psf_size=512, psf_scale=psf_pixel_scale)
+psf_pow_2, psf_size_2 = Generate_PSF_pow_Galsim(contrast=1e6, n=n, theta=theta_t,
+                                                psf_size=image_size*2, psf_scale=psf_pixel_scale)
+
+# Define the Moffat PSF profile.
+gsparams = galsim.GSParams(folding_threshold=1e-7)
+psf_mof = galsim.Moffat(beta=beta_psf, flux=1., fwhm=fwhm, gsparams=gsparams) # in arcsec
+
+if draw:
+    star_psf_2 = (1-frac) * psf_mof + frac * psf_pow_2 
+    
+    img_pow_2 = psf_pow_2.drawImage(scale=pixel_scale, method="no_pixel").array
+    img_gs_2 = star_psf_2.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel").array
+    
+    plt.figure(figsize=(7,6))
+    r = np.logspace(0.1,2.5,100)
+    
+    c_mof2Dto1D =  C_mof2Dto1D(gamma_pix, beta_psf)
+    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta_psf) / c_mof2Dto1D
+
+    c_pow2Dto1D = C_pow2Dto1D(n, theta_t_pix)
+    comp2 = trunc_power1d_normed(r, n, theta_t_pix) / c_pow2Dto1D
+
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_pow_2, pix_scale=pixel_scale, seeing=2.5, 
+                                                 core_undersample=True,xunit="arcsec", yunit="intensity", color="g")
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_gs_2, pix_scale=pixel_scale, seeing=2.5,  
+                                                 core_undersample=True,xunit="arcsec", yunit="intensity", label="Galsim PSF")
+
+    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, label="Mof + Pow 1D",zorder=5)
+    plt.plot(r*pixel_scale, np.log10((1-frac) * comp1), ls="--", lw=3, label="Moffat1D",zorder=1)
+    plt.plot(r*pixel_scale, np.log10(comp2 * frac), ls="--",lw=3,  label="Power1D")
+
+    plt.axhline(np.log10(img_gs_2.max()/(Amps.max()/sigma*3)),color="k",ls="--")
+    plt.title("Model PSF",fontsize=14)
+    
+    plt.legend(fontsize=12)
+    plt.ylim(np.log10(z_rbin[-1]),-1)
+    if save:
+        plt.savefig("%s/Model.png"%dir_name,dpi=150)
+        plt.close()
     
 ############################################
 # Setup Image
@@ -348,7 +318,7 @@ def make_base_image(image_size, star_pos, Flux):
     print("Total Time: %.3fs"%(end-start))
     return image_gs0
 
-print("Generate base image of faint stars (flux < %.2g)."%(Flux[~bright].max()))
+print("Generate base image of faint stars (flux < %.2g)."%(F_bright))
 image_gs0 = make_base_image(image_size, star_pos=star_pos[~bright], Flux=Flux[~bright])
 
 image = patch.copy()
@@ -365,8 +335,15 @@ if use_SE_seg:
         seg_map = morphology.dilation(seg_map)
     mask_deep = (seg_map!=0)
 else:
-    print("Mask inner regions of stars (threshold: S/N = 2.5)")
-    mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, n_dilation=1)
+    if mask_dual:
+        print("Mask inner regions of stars in dual mode:  S/N < 2 / r < 24 pix ")
+#         r_in_s = np.array([12 if F < F_verybright else 24 for F in Flux[bright]])
+        mask_deep, seg_map, core_region = make_mask_map_dual(image, star_pos[verybright], 
+                                                             r_in=24, nlevels=128, contrast=0.0001,
+                                                             sn_thre=2, b_size=25, npix=4, n_dilation=1)
+    else:
+        print("Mask inner regions of stars (threshold: S/N = 2.5)")
+        mask_deep, seg_map = make_mask_map(image, sn_thre=2.5, b_size=25, npix=4, n_dilation=1)
 
 if draw:
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
@@ -435,7 +412,7 @@ if mask_strip:
 # Generate Image
 ############################################
 
-def generate_image_galsim_norm(frac, n, mu, sigma,
+def generate_image_galsim_norm(frac, n, mu,
                                star_pos=star_pos, 
                                norm=z_norm,
                                image_size=image_size,
@@ -513,7 +490,7 @@ def generate_image_galsim_norm(frac, n, mu, sigma,
 
 if draw:
     start = time.time()
-    image_tri = generate_image_galsim_norm(frac=frac, n=3.5, mu=mu, sigma=sigma, 
+    image_tri = generate_image_galsim_norm(frac=frac, n=3.5, mu=mu,
                                            star_pos=star_pos, norm=z_norm, parallel=True)
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
@@ -551,19 +528,21 @@ def prior_transform(u):
     v[0] = u[0] * 1.7 - 2 # frac : 0.01-0.5
     v[1] = u[1] * 3 + 2  # n : 2-5
     v[2] = 888 - stats.rayleigh.ppf(u[2], loc=0, scale=3.)  # mu : peak around 884
-    v[3] = stats.truncnorm.ppf(u[3], a=-2, b=1, loc=4, scale=1)  # sigma : N(4, 1)
+    v[3] = stats.truncnorm.ppf(u[3], a=0, b=1, loc=2, scale=2)  # sigma : 2 < N(2, 2) < 4
     return v
 
 if draw:
-    dist1=stats.uniform()
+    dist0=stats.uniform(loc=-2, scale=1.7)
+    dist1=stats.uniform(loc=2, scale=3)
     dist2=stats.rayleigh(loc=0, scale=3)
-    dist3=stats.truncnorm(a=-2, b=1, loc=4, scale=1)
+    dist3=stats.truncnorm(a=0, b=1, loc=2, scale=2)
 
-    x0,x1,x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist1,dist1,dist2,dist3)]
-
+    x0, x1 = np.linspace(-2.3,0), np.linspace(1,6)
+    x2,x3 = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in (dist2,dist3)]
+    
     fig, (ax0,ax1,ax2,ax3) = plt.subplots(1, 4, figsize=(17,4))
-    ax0.plot((x0 * 1.7 - 3), dist1.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
-    ax1.plot(x1*2+3, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
+    ax0.plot(x0, dist0.pdf(x0),'k-', lw=5, alpha=0.6, label='Uni')
+    ax1.plot(x1, dist1.pdf(x1),'b-', lw=5, alpha=0.6, label='Uni')
     ax2.plot(888-x2, dist2.pdf(x2),'r-', lw=5, alpha=0.6, label='Rayleigh')
     ax3.plot(x3, dist3.pdf(x3),'g-', lw=5, alpha=0.6, label='Normal')
     for ax, xlab in zip((ax0,ax1,ax2,ax3), ["$\log\,f_{pow}$", "$n$", "$\mu$", "$\sigma$"]):
@@ -587,7 +566,7 @@ def loglike(v):
     logfrac, n, mu, sigma = v
     frac = 10**logfrac
     
-    image_tri = generate_image_galsim_norm(frac, n, mu, sigma, star_pos=star_pos, norm=z_norm,
+    image_tri = generate_image_galsim_norm(frac, n, mu, star_pos=star_pos, norm=z_norm,
                                            image_size=image_size, parallel=True)
     
     ypred = image_tri[~mask_fit].ravel()
@@ -671,7 +650,7 @@ def plot_fit_PSF(res, image_size=image_size,
     plt.ylabel(r"$\rm Intensity$",fontsize=18)
     plt.title("Recovered PSF from Fitting",fontsize=18)
     plt.xscale("log")
-    plt.ylim(1e-7, 1)    
+    plt.ylim(5e-8, 0.5)     
     plt.tight_layout()
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
