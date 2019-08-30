@@ -41,6 +41,7 @@ n_cpu = 4
 RUN_FITTING = True
 draw = True
 save = True
+print_progress = False
 mask_strip = True
 mask_dual = True
 wid_strip, n_strip = 5, 12
@@ -522,25 +523,6 @@ def generate_image_galsim(frac, n_s, theta_s, mu,
 
 if draw:
     start = time.time()
-    image_tri = generate_image_galsim(frac=frac, n_s=n_s, theta_s=theta_s,  
-                                      mu=mu, parallel=True, verbose=True)
-    end = time.time()
-    print("\nTotal Time: %.3fs"%(end-start))
-
-    fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
-    im = ax1.imshow(image_tri, vmin=mu, vmax=mu+925, norm=norm1, origin="lower", cmap="gnuplot2")
-    colorbar(im)
-    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+925, norm=norm1, origin="lower", cmap="gnuplot2")
-    ax1.set_title("Galsim Image (Moffat + Multi-Power)")
-    ax2.set_title("Galsim Image (+noise)")
-    colorbar(im)
-    plt.tight_layout()   
-    if save:
-        plt.savefig("%s/Mock.png"%dir_name,dpi=150)
-        plt.close()
-
-if draw:
-    start = time.time()
     print("Test of generating mock images...")
     image_tri = generate_image_galsim(frac=frac, n_s=n_s, theta_s=theta_s,  
                                       mu=mu, parallel=True, verbose=True)
@@ -615,7 +597,7 @@ def Run_Nested_Fitting(loglike=loglike,
                        prior_transform=prior_transform, 
                        ndim=len(truths), truths=truths, sample='hslice',
                        nlive_init=200, nlive_batch=100, maxbatch=2,
-                       print_progress=False):
+                       print_progress=print_progress):
         
     with mp.Pool(processes=n_cpu) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
