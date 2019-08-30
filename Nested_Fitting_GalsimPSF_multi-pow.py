@@ -37,7 +37,7 @@ from utils import *
 ############################################
 
 # Fitting Parameter
-n_cpu = 8
+n_cpu = 4
 RUN_FITTING = True
 draw = True
 save = True
@@ -71,11 +71,11 @@ fwhm = 2.28 * pix_scale                         # moffat fwhm, in arcsec
 gamma = fwhm / 2. / np.sqrt(2**(1./beta_psf)-1)  # moffat core width, in arcsec
 gamma_pix = gamma / pix_scale                    # moffat core width, in pix
 
-n0 = 3.2                    # true power index
-n_s = [n0, 2.7, 2.3, 2.8, 3.3, 3.8]
+n0 = 3.5                    # true power index
+n_s = [n0, 3., 2.5, 3.2, 3.8]
 frac = 0.2                 # fraction of power law component
 theta_0 = 5.               # radius at which power law is flattened, in arcsec
-theta_s = np.append([theta_0], np.logspace(np.log10(50),np.log10(275),5))  # transition radius in arcsec
+theta_s = np.append([theta_0], np.logspace(np.log10(50),np.log10(275),4))  # transition radius in arcsec
 
 theta_0_pix = theta_0/pix_scale          # flattened radius, in pix    
 theta_s_pix = theta_s/pix_scale
@@ -143,16 +143,7 @@ else:
         return f(xx,yy)
 
     p_map2d = partial(map2d, xx=xx, yy=yy)
-
-if draw:
-    import seaborn as sns
-    sns.distplot(np.log10(Amps),label="log Amp (tot)")
-    sns.distplot(np.log10(Flux),label="log Flux (tot)")
-    sns.distplot(np.log10(frac*Flux),label="log Flux (pow)")
-    plt.axvline(np.log10(F_bright), color="orange", ls="-",alpha=0.6)
-    plt.axvline(np.log10(F_verybright), color="orange", ls="--",alpha=0.8)
-    plt.title("Flux & Amp from $create{\_}APASS{\_}photometric$")
-    plt.legend()
+    
     
 ############################################
 # Setup PSF
@@ -369,7 +360,7 @@ def make_truth_image(image_size, star_pos, Flux, noise, F_faint=5e2,
     
     return image
 
-print("Generate the truth image (faint stars with Moffat only).")
+print("Generate the truth image (faint stars with Moffat only).\n")
 image = make_truth_image(image_size, star_pos=star_pos, Flux=Flux, 
                          noise=noise_image, parallel=parallel, method="Real")
 
@@ -421,7 +412,7 @@ if draw:
         plt.close()
 
 if mask_strip:
-    print("Use sky strips crossing very bright stars")
+    print("Use sky strips crossing very bright stars\n")
     mask_strip_s = make_mask_strip(image_size, star_pos[verybright], Flux[verybright], 
                                    width=wid_strip, n_strip=n_strip, dist_strip=300)
     mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
@@ -465,7 +456,7 @@ def generate_image_galsim(frac, n_s, theta_s, mu,
                           image_size=image_size,
                           min_psf_size=32, 
                           max_psf_size=256,
-                          parallel=False):
+                          parallel=False, verbose=False):
     psf_mpow, psf_size = Generate_PSF_mpow_Galsim(contrast=1e5, n_s=n_s, theta_s=theta_s,
                                                   psf_scale=pix_scale, psf_size=None,  
                                                   min_psf_size=min_psf_size, max_psf_size=max_psf_size,
@@ -492,20 +483,23 @@ def generate_image_galsim(frac, n_s, theta_s, mu,
                                      full_image=full_image)
         
         results = parallel_compute(np.arange(num_medbright), p_get_stamp_bounds, 
-                                   requested_cores=4, lengthy_computation=False, verbose=False)
+                                   cores=4, lengthy_computation=False, verbose=verbose)
 
         for (stamp, bounds) in results:
             full_image[bounds] += stamp[bounds]
             
-    draw_real = False
-   
+    if (n_s[0] < 2.5) | (image_size<500):
+        draw_real = True
+    else: 
+        draw_real = False
+        
     if draw_real:
         # Draw very bright star (if highter cost in FFT) in real space
         image_gs = full_image.array
-        I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s, Flux=1)
+        I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s_pix, Flux=1)
         for (pos, flux) in zip(star_pos[verybright], Flux[verybright]):
             p2d_vb = multi_power2d(xx, yy, cen=(pos[0],pos[1]),
-                                   n_s=n_s, theta_s=theta_s, 
+                                   n_s=n_s, theta_s=theta_s_pix, 
                                    I_theta0=I_theta0_mpow*frac*flux)
             image_gs += p2d_vb
     else:
@@ -513,7 +507,7 @@ def generate_image_galsim(frac, n_s, theta_s, mu,
         psf_mpow_vb , psf_size = Generate_PSF_mpow_Galsim(contrast=5e6, n_s=n_s, theta_s=theta_s,
                                                          psf_scale=pix_scale, psf_size=None,  
                                                          min_psf_size=2*min_psf_size, max_psf_size=2*max_psf_size,
-                                                         x_interpolant="cubic", k_interpolant="cubic")
+                                                         x_interpolant="linear", k_interpolant="linear")
         psf_star = (1-frac) * psf_mof + frac * psf_mpow_vb 
                               
         for k in range(num_verybright):
@@ -529,9 +523,29 @@ def generate_image_galsim(frac, n_s, theta_s, mu,
 if draw:
     start = time.time()
     image_tri = generate_image_galsim(frac=frac, n_s=n_s, theta_s=theta_s,  
-                                      mu=mu, parallel=False)
+                                      mu=mu, parallel=True, verbose=True)
     end = time.time()
     print("\nTotal Time: %.3fs"%(end-start))
+
+    fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+    im = ax1.imshow(image_tri, vmin=mu, vmax=mu+925, norm=norm1, origin="lower", cmap="gnuplot2")
+    colorbar(im)
+    im = ax2.imshow(image_tri + noise_image, vmin=mu, vmax=mu+925, norm=norm1, origin="lower", cmap="gnuplot2")
+    ax1.set_title("Galsim Image (Moffat + Multi-Power)")
+    ax2.set_title("Galsim Image (+noise)")
+    colorbar(im)
+    plt.tight_layout()   
+    if save:
+        plt.savefig("%s/Mock.png"%dir_name,dpi=150)
+        plt.close()
+
+if draw:
+    start = time.time()
+    print("Test of generating mock images...")
+    image_tri = generate_image_galsim(frac=frac, n_s=n_s, theta_s=theta_s,  
+                                      mu=mu, parallel=True, verbose=True)
+    end = time.time()
+    print("Done! Total Time: %.3fs\n"%(end-start))
 
     fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
     im = ax1.imshow(image_tri, vmin=mu, vmax=mu+925, norm=norm1, origin="lower", cmap="gnuplot2")
@@ -599,7 +613,7 @@ def loglike(v):
 
 def Run_Nested_Fitting(loglike=loglike, 
                        prior_transform=prior_transform, 
-                       ndim=8, truths=truths, sample='hslice',
+                       ndim=len(truths), truths=truths, sample='hslice',
                        nlive_init=200, nlive_batch=100, maxbatch=2,
                        print_progress=False):
         
@@ -636,7 +650,7 @@ if RUN_FITTING:
                                   color="royalblue", truth_color="indianred",
                                   title_kwargs={'fontsize':18, 'y': 1.04}, labels=labels,
                                   label_kwargs={'fontsize':16},
-                                  fig=plt.subplots(8, 8, figsize=(18, 16)))
+                                  fig=plt.subplots(len(truths), len(truths), figsize=(18, 16)))
     if save:
         plt.savefig("%s/Result.png"%dir_name,dpi=150)
         plt.close('all')
@@ -704,9 +718,9 @@ def plot_fitting_vs_truth_PSF_mpow(res, true_pars, image_size=image_size,
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
         plt.close()
         
-        
-true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac}
-for i in range(len(n_s)):
-    true_pars["n%d"%i] = n_s[i]
+if RUN_FITTING:        
+    true_pars = {"gamma":gamma_pix, "alpha":beta_psf, "frac":frac}
+    for i in range(len(n_s)):
+        true_pars["n%d"%i] = n_s[i]
 
-plot_fitting_vs_truth_PSF_mpow(pdres, n_bootstrap=400, image_size=image_size, save=False, true_pars = true_pars)
+    plot_fitting_vs_truth_PSF_mpow(pdres, n_bootstrap=400, image_size=image_size, save=False, true_pars = true_pars)
