@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import math
 import numpy as np
 from scipy.special import gamma as Gamma
@@ -13,8 +14,10 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.table import Table
 from astropy.modeling import models
+from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip
+from astropy.stats import sigma_clipped_stats
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
@@ -542,11 +545,13 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip
     return mask_strip_s
 
     
-def cal_profile_1d(img, cen=None, mask=None, back=None, 
+def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="intensity",
-                   seeing=2.5, pix_scale=2.5, ZP=27.1, sky_mean=884, sky_std=3,
-                   core_undersample=False, dr=1, lw=2, alpha=0.7, label=None, 
-                   draw=True, scatter=False, plot_line=False, verbose=False):
+                   seeing=2.5, pix_scale=2.5, ZP=27.1, 
+                   sky_mean=884, sky_std=3, dr=1, 
+                   lw=2, alpha=0.7, markersize=5, I_shift=0,
+                   core_undersample=False, label=None, plot_line=False,
+                   draw=True, scatter=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img).astype("bool")
@@ -574,26 +579,24 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
         r = r * pix_scale   # radius in arcsec
         r_core = r_core * pix_scale
         r_max = r_max * pix_scale
-        plt.xlabel("r [acrsec]")
-    elif xunit == "pix":
-        plt.xlabel("r [pix]")
         
     d_r = dr * pix_scale if xunit == "arcsec" else dr
     
-    # Radial bins: discrete/linear within r_core + log beyond it
-    if core_undersample:  
-        # for undersampled core, bin in individual pixels 
-        bins_inner = np.unique(r[r<r_core]) + 1e-3
-    else: 
-        bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) + 1e-3
-        
-    n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
-    if r_max > (r_core+d_r):
-        bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max-d_r), n_bin_outer)
-    else:
-        bins_outer = []
-    bins = np.concatenate([bins_inner, bins_outer])
-    n_pix_rbin, bins = np.histogram(r, bins=bins)
+    if bins is None:
+        # Radial bins: discrete/linear within r_core + log beyond it
+        if core_undersample:  
+            # for undersampled core, bin in individual pixels 
+            bins_inner = np.unique(r[r<r_core]) + 1e-3
+        else: 
+            bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) + 1e-3
+
+        n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
+        if r_max > (r_core+d_r):
+            bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max-d_r), n_bin_outer)
+        else:
+            bins_outer = []
+        bins = np.concatenate([bins_inner, bins_outer])
+        _, bins = np.histogram(r, bins=bins)
     
     # Calculate binned 1d profile
     r_rbin = np.array([])
@@ -612,7 +615,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
     if draw:
         if yunit == "intensity":  
             # plot radius in Intensity
-            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, color=color, alpha=alpha, zorder=3, label=label) 
+            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label) 
             if scatter:
                 plt.scatter(r[r<3*r_core], np.log10(z[r<3*r_core]), color=color, s=6, alpha=0.2, zorder=1)
                 plt.scatter(r[r>3*r_core], np.log10(z[r>3*r_core]), color=color, s=3, alpha=0.1, zorder=1)
@@ -624,19 +627,21 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
 
         elif yunit == "SB":  
             # plot radius in Surface Brightness
-            B_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
-            B_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
+            I_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale) + I_shift
+            I_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
 
-            plt.plot(r_rbin, B_rbin, "-o", mec="k", lw=lw, color=color, alpha=alpha, zorder=3, label=label)   
+            plt.plot(r_rbin, I_rbin, "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label)   
             if scatter:
-                B = Intensity2SB(y=z, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale)
-                plt.scatter(r[r<3*r_core], B[r<3*r_core], color=color, s=6, alpha=0.2, zorder=1)
-                plt.scatter(r[r>3*r_core], B[r>3*r_core], color=color, s=3, alpha=0.1, zorder=1)
+                I = Intensity2SB(y=z, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale) + I_shift
+                plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, s=6, alpha=0.2, zorder=1)
+                plt.scatter(r[r>3*r_core], I[r>3*r_core], color=color, s=3, alpha=0.1, zorder=1)
             plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
             plt.gca().invert_yaxis()
             plt.xscale("log")
             plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
             plt.ylim(30,17)
+            
+        plt.xlabel("r [acrsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
 
         # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
         dz_rbin = np.diff(np.log10(z_rbin)) 
@@ -646,12 +651,14 @@ def cal_profile_1d(img, cen=None, mask=None, back=None,
             r_satr = r_rbin[np.argmax(dz_cum<-0.3)] + 1e-3
             plt.axvline(r_satr,color="k",ls="--",alpha=0.9)
             plt.axvline(r_core,color="k",ls=":",alpha=0.9)
-            plt.axhline(B_sky,color="gray",ls="-.",alpha=0.7)
+            plt.axhline(I_sky,color="gray",ls="-.",alpha=0.7)
 
             use_range = (r_rbin>r_satr) & (r_rbin<r_core)
         else:
             use_range = True
+            
     return r_rbin, z_rbin, logzerr_rbin
+
 
 ### Catalog Manipulation Helper ###
 
@@ -661,7 +668,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     crop = (cat[A]>=Xmin) & (cat[A]<=Xmax) & (cat[B]>=Ymin) & (cat[B]<=Ymax)
     return cat[crop]
 
-def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, weight_map=None, draw=False):
+def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, weight_map=None, color="r", draw=False):
     from matplotlib import patches  
     patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
     patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin)
@@ -675,29 +682,84 @@ def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, weight_map=None,
         plt.imshow(data, vmin=sky_mean, vmax=sky_mean+10*sky_std, norm=norm1, origin="lower", cmap="viridis",alpha=0.95)
         if weight_map is not None:
             plt.imshow(data*weight_map, vmin=sky_mean, vmax=sky_mean+10*sky_std, norm=norm1, origin="lower", cmap="viridis",alpha=0.3)
-        plt.plot([500,980],[700,700],"w",lw=4)
-        plt.text(560,450, r"$\bf 20'$",color='w', fontsize=25)
+        plt.plot([600,840],[650,650],"w",lw=4)
+        plt.text(560,400, r"$\bf 10'$",color='w', fontsize=20)
         rect = patches.Rectangle((patch_Xmin,patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
-                                 linewidth=2,edgecolor='r',facecolor='none')
+                                 linewidth=2,edgecolor=color,facecolor='none')
         ax.add_patch(rect)
         plt.show()
         
     return patch, seg_patch
 
+def query_vizier(catalog_name, radius, columns, column_filters, header):
+    from astroquery.vizier import Vizier
+    from astropy import units as u
+    
+    # Prepare for quearyinig Vizier with filters up to infinitely many rows. By default, this is 50.
+    viz_filt = Vizier(columns=columns, column_filters=column_filters)
+    viz_filt.ROW_LIMIT = -1
 
+    RA, DEC = re.split(",", header['RADEC'])
+    coords = SkyCoord(RA+" "+DEC , unit=(u.hourangle, u.deg))
 
+    # Query!
+    result = viz_filt.query_region(coords, 
+                                   radius=radius, 
+                                   catalog=[catalog_name])
+    return result
+
+def merge_catalog(SE_catalog, table_merge, sep=2.5,
+                  RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
+    
+    from astropy.table import Column, join
+    from astropy import units as u
+    
+    c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
+
+    c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
+    idx, d2d, d3d = c_SE.match_to_catalog_sky(c_tab)
+    match = d2d < sep * u.arcsec
+    cat_SE_match = SE_catalog[match]
+    cat_tab_match = table_merge[idx[match]]
+    
+    cat_tab_match.add_column(cat_SE_match["NUMBER"], index=0, name="NUMBER")
+    cat_match = join(cat_SE_match, cat_tab_match, keys='NUMBER')
+    
+    if keep_columns is not None:
+        cat_match.keep_columns(keep_columns)
+    
+    df_match = cat_match.to_pandas()
+    return df_match
+
+def save_thumbs(obj, filename):
+    import pickle
+    print("Save thumbs to: %s"%filename)
+    with open(filename + '.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+def load_thumbs(filename):
+    import pickle
+    print("Read thumbs from: %s"%filename) 
+    with open(filename + '.pkl', 'rb') as f:
+        return pickle.load(f)
+    
 ### Nested Fitting Helper ###
 
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
-                               nlive_init=100, sample='uniform', 
+                               nlive_init=100, sample='auto', 
                                nlive_batch=50, maxbatch=4,
-                               n_cpu=None, print_progress=True):
+                               pfrac=0.8, n_cpu=None, print_progress=True):
+    
+    """ Run dynamic nested fitting. """
+    
     import dynesty
     import multiprocess as mp
     
     if n_cpu is None:
         n_cpu = mp.cpu_count()-1
         
+    print("Run Nested Fitting for the image... Dim of paramas: %d"%ndim)    
+    
     with mp.Pool(processes=n_cpu) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
         pool.size = 3
@@ -711,32 +773,36 @@ def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
                              maxbatch=maxbatch,
                              print_progress=print_progress, 
                              dlogz_init=dlogz, 
-                             wt_kwargs={'pfrac': 0.8})
+                             wt_kwargs={'pfrac': pfrac})
     return pdsampler
 
 
 def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
     
+    """ Run piece-wise linear fitting for [X, Y]. 
+        Priors need to be given in [loc, loc+scale] by a dictionary {"loc"/"scale":[x0,y0,k1,k2,sigma]} """
+    
     loc, scale = priors["loc"], priors["scale"]
     
     def prior_tf_2lin(u):
         v = u.copy()
-        v[0] = u[0] * scale[0] + loc[0]  #x0: 12-13
-        v[1] = u[1] * scale[1] + loc[1]  #y0: -10 - -9
-        v[2] = u[2] * scale[2] + loc[2]  #k2
-        v[3] = u[3] * scale[3] + loc[3]  #sigma
+        v[0] = u[0] * scale[0] + loc[0]  #x0
+        v[1] = u[1] * scale[1] + loc[1]  #y0
+        v[2] = u[2] * scale[2] + loc[2]  #k1
+        v[3] = u[3] * scale[3] + loc[3]  #k2
+        v[4] = u[4] * scale[4] + loc[4]  #sigma
         return v
 
     def loglike_2lin(v):
         x0, y0, k2, sigma = v
-        ypred = np.piecewise(X, [X < x0], [lambda x: y0, lambda x: k2*x + y0-k2*x0])
+        ypred = np.piecewise(X, [X < x0], [lambda x: k1*x + y0-k1*x0, lambda x: k2*x + y0-k2*x0])
         residsq = (ypred - Y)**2 / sigma**2
         loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
         if not np.isfinite(loglike):
             loglike = -1e100
         return loglike
     
-    pdsampler = Run_Dynamic_Nested_Fitting(loglike=loglike_2lin, prior_transform=prior_tf_2lin, ndim=4)
+    pdsampler = Run_Dynamic_Nested_Fitting(loglike=loglike_2lin, prior_transform=prior_tf_2lin, ndim=5)
     pdres = pdsampler.results
     
     if display:
@@ -745,7 +811,7 @@ def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
                                       color="royalblue", labels=labels,
                                       title_kwargs={'fontsize':15, 'y': 1.02}, 
                                       label_kwargs={'fontsize':12},
-                                      fig=plt.subplots(4, 4, figsize=(11, 10)))
+                                      fig=plt.subplots(5, 5, figsize=(11, 10)))
     return pdres
 
 def get_params_fit(res):
@@ -756,6 +822,7 @@ def get_params_fit(res):
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
     pmed = np.median(samples_eq,axis=0)
     return pmed, pmean, pcov
+
 
 def save_nested_fitting_result(res, filename='fit.res'):
     import dill
