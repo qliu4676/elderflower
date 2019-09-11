@@ -12,6 +12,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from astropy import wcs
 from astropy.io import fits
+from astropy import units as u
 from astropy.table import Table
 from astropy.modeling import models
 from astropy.coordinates import SkyCoord
@@ -708,17 +709,16 @@ def query_vizier(catalog_name, radius, columns, column_filters, header):
                                    catalog=[catalog_name])
     return result
 
-def merge_catalog(SE_catalog, table_merge, sep=2.5,
+def merge_catalog(SE_catalog, table_merge, sep=2.5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
     
     from astropy.table import Column, join
-    from astropy import units as u
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
 
     c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
     idx, d2d, d3d = c_SE.match_to_catalog_sky(c_tab)
-    match = d2d < sep * u.arcsec
+    match = d2d < sep 
     cat_SE_match = SE_catalog[match]
     cat_tab_match = table_merge[idx[match]]
     
