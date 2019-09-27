@@ -6,6 +6,7 @@ import numpy as np
 from scipy.special import gamma as Gamma
 from scipy.integrate import quad
 from scipy import stats
+from skimage import morphology
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -13,31 +14,31 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy import wcs
 from astropy.io import fits
 from astropy import units as u
-from astropy.table import Table
+from astropy.table import Table, Column
 from astropy.modeling import models
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
-from astropy.stats import sigma_clip, SigmaClip
-from astropy.stats import sigma_clipped_stats
+from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
 
-from skimage import morphology
-
+from photutils import detect_sources, deblend_sources
+from photutils import CircularAperture, CircularAnnulus
 
 ### Baisc Funcs ###
 
-def coord_Im2Array(X_IMAGE, Y_IMAGE):
+def coord_Im2Array(X_IMAGE, Y_IMAGE, origin=1):
     """ Convert image coordniate to numpy array coordinate """
-    x_arr, y_arr = int(max(round(Y_IMAGE)-1, 0)), int(max(round(X_IMAGE)-1, 0))
+    x_arr, y_arr = int(max(round(Y_IMAGE)-origin, 0)), int(max(round(X_IMAGE)-origin, 0))
     return x_arr, y_arr
 
-def coord_Array2Im(x_arr, y_arr):
+def coord_Array2Im(x_arr, y_arr, origin=1):
     """ Convert image coordniate to numpy array coordinate """
-    X_IMAGE, Y_IMAGE = y_arr+1, x_arr+1
+    X_IMAGE, Y_IMAGE = y_arr+origin, x_arr+origin
     return X_IMAGE, Y_IMAGE
+
 
 def Intensity2SB(y, BKG, ZP, pix_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
@@ -545,7 +546,7 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip
 
     return mask_strip_s
 
-    
+
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="intensity",
                    seeing=2.5, pix_scale=2.5, ZP=27.1, 
@@ -661,7 +662,161 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     return r_rbin, z_rbin, logzerr_rbin
 
 
-### Catalog Manipulation Helper ###
+### Funcs for measuring scaling ###
+
+def get_star_pos(id, star_cat):
+    """ Get the position of an object from the catalog"""
+    
+    X_c, Y_c = star_cat[id]["X_IMAGE"], star_cat[id]["Y_IMAGE"]
+    return (X_c, Y_c)
+
+def get_star_thumb(id, star_cat, wcs, data, seg_map, 
+                   n_win=20, seeing=2.5, origin=1, verbose=True):
+    """ Crop the data and segment map into thumbnails.
+        Return thumbnail of image/segment/mask, and center of the star. """
+    
+    (X_c, Y_c) = get_star_pos(id, star_cat)    
+    
+    # define thumbnail size
+    fwhm =  max(star_cat[id]["FWHM_IMAGE"], seeing)
+    win_size = int( n_win * min(max(fwhm,2), 8))
+    
+    # calculate boundary
+    X_min, X_max = X_c - win_size, X_c + win_size
+    Y_min, Y_max = Y_c - win_size, Y_c + win_size
+    x_min, y_min = coord_Im2Array(X_min, Y_min, origin)
+    x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
+    
+    if verbose:
+        num = star_cat[id]["NUMBER"]
+        print("NUMBER: ", num)
+        print("X_c, Y_c: ", (X_c, Y_c))
+        print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
+    
+    # crop
+    img_thumb = data[x_min:x_max, y_min:y_max].copy()
+    seg_thumb = seg_map[x_min:x_max, y_min:y_max]
+    mask_thumb = (seg_thumb!=0)    
+    
+    # the center position is converted from world with wcs
+    X_cen, Y_cen = wcs.wcs_world2pix(star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"], origin)
+    cen_star = X_cen - X_min, Y_cen - Y_min
+    
+    return (img_thumb, seg_thumb, mask_thumb), cen_star
+    
+def extract_star(id, star_cat, wcs, data, seg_map, 
+                 seeing=2.5, sn_thre=2.5, n_win=20, 
+                 display_bg=False, display=True, verbose=False):
+    
+    """ Return the image thubnail, mask map, backgroud estimates, and center of star.
+        Do a finer detection&deblending to remove faint undetected source."""
+    
+    thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
+                                          n_win=n_win, seeing=seeing, verbose=verbose)
+    img_thumb, seg_thumb, mask_thumb = thumb_list
+    
+    # the same thumbnail size
+    fwhm = max([star_cat[id]["FWHM_IMAGE"], seeing])
+    
+    # measure background, use a scalar value if the thumbnail is small 
+    b_size = round(img_thumb.shape[0]//5/25)*25
+    if img_thumb.shape[0] >= 50:
+        back, back_rms = background_sub_SE(img_thumb, b_size=b_size)
+    else:
+        back, back_rms = (np.median(img_thumb[~mask_thumb])*np.ones_like(img_thumb), 
+                            mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
+    if display_bg:
+        # show background subtraction
+        display_background_sub(img_thumb, back)  
+            
+    # do segmentation (a second time) to remove faint undetected stars using photutils
+    sigma = seeing * gaussian_fwhm_to_sigma
+    threshold = back + (sn_thre * back_rms)
+    segm = detect_sources(img_thumb, threshold, npixels=5)
+    
+    # do deblending using photutils
+    segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
+                                   nlevels=64, contrast=0.005)
+    
+    # the target star is at the center of the thumbnail
+    star_lab = segm_deblend.data[img_thumb.shape[0]//2, img_thumb.shape[1]//2]
+    star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
+    
+    if display:
+        fig, (ax1,ax2,ax3,ax4) = plt.subplots(nrows=1,ncols=4,figsize=(21,5))
+        ax1.imshow(img_thumb, vmin=np.median(back)-1, vmax=10000, norm=norm1, origin="lower", cmap="viridis")
+        ax1.set_title("star", fontsize=15)
+        ax2.imshow(segm, origin="lower", cmap=segm.make_cmap(random_state=12345))
+        ax2.set_title("segment", fontsize=15)
+        ax3.imshow(segm_deblend, origin="lower", cmap=segm_deblend.make_cmap(random_state=12345))
+        ax3.set_title("deblend", fontsize=15)
+
+        img_thumb_ma = img_thumb.copy()
+        img_thumb_ma[star_ma] = -1
+        ax4.imshow(img_thumb_ma, cmap="viridis", norm=norm2,
+                   vmin=np.median(back)-1, vmax=np.median(back)+10*np.median(back_rms))
+        ax4.set_title("extracted star", fontsize=15)
+    
+    return img_thumb, star_ma, back, cen_star
+
+
+def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=False, display=False):
+    """ Return 3 sigma-clipped mean, med and std of ring r=R (half-width=wid) for image.
+        Note intensity is not background subtracted. """
+    
+    annulus_ma = CircularAnnulus(cen, R-wid, R+wid).to_mask()      
+    mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
+    mask_clean = mask_ring & (~mask_field)                # sky ring with other sources masked
+    
+    # Whether to mask the cross regions, important if R is small
+    if mask_cross:
+        yy, xx = np.indices(image.shape)
+        rr = np.sqrt((xx-cen[0])**2+(yy-cen[1])**2)
+        cross = ((abs(xx-cen[0])<1.)|(abs(yy-cen[1])<1.))
+        mask_clean = mask_clean * (~cross)
+        
+    I_mean, I_med, I_std = sigma_clipped_stats(image[mask_clean], sigma=3)
+    
+    if display:
+        fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
+        ax1.imshow(mask_clean * image, cmap="gray", norm=norm1, vmin=I_med-5*I_std, vmax=I_med+5*I_std)
+        ax2 = plt.hist(sigma_clip(image[mask_clean]))
+    
+    return I_mean, I_med, I_std
+
+def compute_Rnorm_batch(df_target, SE_catalog, wcs, data, seg_map, 
+                        R=10, wid=0.5, return_full=False):
+    """ Combining the above functions. Compute for all object in df_target.
+        Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
+    
+    # Initialize
+    res_thumb = {}    
+    res_Rnorm = np.empty((len(df_target),4))
+    
+    for i, (num, rmag_auto) in enumerate(zip(df_target['NUMBER'], df_target['RMAG_AUTO'])):
+        process_counter(i, len(df_target))
+        ind = num - 1
+        
+        # For very bright sources, use a broader window
+        n_win = 30 if rmag_auto < 11 else 20
+            
+        img, ma, bkg, cen = extract_star(ind, SE_catalog, wcs, data, seg_map,
+                                         n_win=n_win, display_bg=False, display=False)
+        
+        res_thumb[num] = {"image":img, "mask":ma, "bkg":bkg, "center":cen}
+        
+        # Measure the mean, med and std of intensity at R
+        I_mean, I_med, I_std = compute_Rnorm(img, ma, cen, R=R, wid=wid)
+        
+        # Use the median value of background as the local background
+        sky_mean = np.median(bkg)
+        
+        res_Rnorm[i] = np.array([I_mean, I_med, I_std, sky_mean])
+    
+    return res_Rnorm, res_thumb
+
+
+### Catalog / Data Manipulation Helper ###
 
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -669,30 +824,33 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     crop = (cat[A]>=Xmin) & (cat[A]<=Xmax) & (cat[B]>=Ymin) & (cat[B]<=Ymax)
     return cat[crop]
 
-def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, weight_map=None, color="r", draw=False):
+def crop_image(data, SE_seg_map, bounds, sky_mean=0, sky_std=1, origin=1, weight_map=None, color="r", draw=False):
     from matplotlib import patches  
     patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
-    patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin)
-    patch_xmax, patch_ymax = coord_Im2Array(patch_Xmax, patch_Ymax)
+    patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin, origin)
+    patch_xmax, patch_ymax = coord_Im2Array(patch_Xmax, patch_Ymax, origin)
 
     patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
     seg_patch = np.copy(SE_seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
     
     if draw:
         fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, vmin=sky_mean, vmax=sky_mean+10*sky_std, norm=norm1, origin="lower", cmap="viridis",alpha=0.95)
+        plt.imshow(data, norm=norm1, cmap="viridis",
+                   vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
         if weight_map is not None:
-            plt.imshow(data*weight_map, vmin=sky_mean, vmax=sky_mean+10*sky_std, norm=norm1, origin="lower", cmap="viridis",alpha=0.3)
+            plt.imshow(data*weight_map, norm=norm1, cmap="viridis",
+                       vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
         plt.plot([600,840],[650,650],"w",lw=4)
         plt.text(560,400, r"$\bf 10'$",color='w', fontsize=20)
-        rect = patches.Rectangle((patch_Xmin,patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
-                                 linewidth=2,edgecolor=color,facecolor='none')
+        rect = patches.Rectangle((patch_Xmin, patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
+                                 linewidth=2, edgecolor=color, facecolor='none')
         ax.add_patch(rect)
         plt.show()
         
     return patch, seg_patch
 
 def query_vizier(catalog_name, radius, columns, column_filters, header):
+    """ Query catalog in Vizier database with the given catalog name, search radius and column names """
     from astroquery.vizier import Vizier
     from astropy import units as u
     
@@ -708,6 +866,16 @@ def query_vizier(catalog_name, radius, columns, column_filters, header):
                                    radius=radius, 
                                    catalog=[catalog_name])
     return result
+
+def transform_coords2pixel(table, wcs, cat_name='', RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
+    """ Transform the RA/DEC columns in the table into pixel coordinates given wcs"""
+    coords = np.vstack([np.array(table[RA_key]), 
+                        np.array(table[DE_key])]).T
+    pos = wcs.wcs_world2pix(coords, origin)
+    table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name='X_IMAGE'+'_'+cat_name)
+    table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name='Y_IMAGE'+'_'+cat_name)
+    table.add_column(Column(np.arange(len(table))+1), index=0, name="ID"+'_'+cat_name)
+    return table
 
 def merge_catalog(SE_catalog, table_merge, sep=2.5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
@@ -834,4 +1002,22 @@ def open_nested_fitting_result(filename='fit.res'):
     with open(filename, "rb") as file:
         res = dill.load(file)
     return res
+
+from matplotlib import rcParams
+plt.rcParams['image.origin'] = 'lower'
+plt.rcParams['font.serif'] = 'Times New Roman'
+rcParams.update({'xtick.major.pad': '5.0'})
+rcParams.update({'xtick.major.size': '4'})
+rcParams.update({'xtick.major.width': '1.'})
+rcParams.update({'xtick.minor.pad': '5.0'})
+rcParams.update({'xtick.minor.size': '4'})
+rcParams.update({'xtick.minor.width': '0.8'})
+rcParams.update({'ytick.major.pad': '5.0'})
+rcParams.update({'ytick.major.size': '4'})
+rcParams.update({'ytick.major.width': '1.'})
+rcParams.update({'ytick.minor.pad': '5.0'})
+rcParams.update({'ytick.minor.size': '4'})
+rcParams.update({'ytick.minor.width': '0.8'})
+rcParams.update({'font.size': 14})
+
 
