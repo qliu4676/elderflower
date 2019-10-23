@@ -818,6 +818,17 @@ def compute_Rnorm_batch(df_target, SE_catalog, wcs, data, seg_map,
 
 ### Catalog / Data Manipulation Helper ###
 
+def check_save_path(dir_name):
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    else:
+        if len(os.listdir(dir_name)) != 0:
+            while os.path.exists(dir_name):
+                dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
+            os.makedirs(dir_name)
+    print("Results will be saved in %s"%dir_name)
+    
+
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
     Xmin, Ymin, Xmax, Ymax = bounds
     A, B = keys
@@ -910,7 +921,8 @@ def load_thumbs(filename):
     print("Read thumbs from: %s"%filename) 
     with open(filename + '.pkl', 'rb') as f:
         return pickle.load(f)
-    
+
+
 ### Nested Fitting Helper ###
 
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,

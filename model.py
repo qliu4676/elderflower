@@ -128,7 +128,8 @@ def draw_prior(priors, xlabels=None, plabels=None, save=False, dir_name='./'):
     for k, ax in enumerate(axes):
         ax.plot(x_s[k], priors[k].pdf(x_s[k]),'-', lw=5, alpha=0.6, label=plabels[k])
         ax.legend()
-        ax.set_xlabel(xlabels[k], fontsize=12)
+        if xlabels is not None:
+            ax.set_xlabel(xlabels[k], fontsize=12)
     plt.tight_layout()
     if save:
         plt.savefig("%s/Prior.png"%dir_name,dpi=100)
