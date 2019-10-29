@@ -1,9 +1,9 @@
 import pandas as pd
 from astropy.convolution import Gaussian2DKernel
 from astropy.table import Table, Column, setdiff, join, unique
-from astroquery.vizier import Vizier
 
 from utils import *
+from model import *
 
 save = True
 draw = False
