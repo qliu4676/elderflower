@@ -4,8 +4,8 @@ import galsim
 from galsim import GalSimBoundsError
 from utils import *
 
-from types import SimpleNamespace    
-
+from usid_processing import parallel_compute
+from functools import partial
 
 ############################################
 # Functions for making PSF models
@@ -25,13 +25,33 @@ class PSF_Model:
         self.pixel_scale = pixel_scale
         
         self.params = params
+        
+        # Build attribute for parameters from dictionary keys 
         for key, val in params.items():
             exec('self.' + key + ' = val')
             
             if (key == 'gamma') | ('theta' in key):
                 exec('self.' + key + '_pix' + ' = val / pixel_scale')
+                
+    def update(self, params):
+        for key, val in params.items():
+            if np.ndim(val) > 0:
+                val = np.array(val)
+                
+            exec('self.' + key + ' = val')
+            self.params[key] = val
             
-    def plot(self, size=400):
+            if 'theta' in key:
+                exec('self.' + key + '_pix' + ' = val / self.pixel_scale')
+                
+                
+    def make_grid(self, image_size):
+        self.image_size = image_size
+        self.yy, self.xx = np.mgrid[:image_size, :image_size]
+        
+    def plot1D(self, **kwargs):
+        """ Plot analytical 1D profile """
+        from plotting import plot_PSF_model_1D
         
         # core
         frac, gamma_pix, beta = self.frac, self.gamma_pix, self.beta
@@ -53,30 +73,17 @@ class PSF_Model:
             c_aureole_2Dto1D = C_mpow2Dto1D(n_s, theta_s_pix)
             profile = lambda r: multi_power1d_normed(r, n_s, theta_s_pix)
         
+        f_core = lambda r: moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
+        f_aureole = lambda r: profile(r) / c_aureole_2Dto1D
+        
         # plot
-        plt.figure(figsize=(6,5))
-
-        r = np.logspace(0, np.log10(size), 100)
-
-        comp1 = moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
-        comp2 = profile(r) / c_aureole_2Dto1D
-
+        plot_PSF_model_1D(frac, f_core, f_aureole, **kwargs)
+        
         if self.aureole_model == "multi-power":
             for t in theta_s_pix:
-                plt.axvline(t, ls="--", color="k",alpha=0.3, zorder=1)
+                plt.axvline(t, ls="--", color="k", alpha=0.3, zorder=1)
                 
-        plt.plot(r, np.log10((1-frac) * comp1 + comp2 * frac),
-                 ls="-", lw=3,alpha=0.9, zorder=5, label='combined')
-        plt.plot(r, np.log10((1-frac) * comp1),
-                 ls="--", lw=3, alpha=0.9, zorder=1, label='core')
-        plt.plot(r, np.log10(comp2 * frac),
-                 ls="--", lw=3, alpha=0.9, label='aureole')
-        
-        plt.legend(loc=1, fontsize=12)
-        plt.xscale('log')
-        plt.xlabel('r [pix]', fontsize=14)
-        plt.ylabel('log Intensity', fontsize=14)
-        plt.ylim(-9, -0.5)
+        plt.show()
     
     def generate_core(self, folding_threshold=1.e-10):
         """
@@ -155,13 +162,91 @@ class PSF_Model:
         return psf_aureole, psf_size   
     
     def plot_model_galsim(self, psf_core, psf_aureole, image_size=400, contrast=None):
+        """ Plot Galsim 2D model averaged in 1D """
         from plotting import plot_PSF_model_galsim
         plot_PSF_model_galsim(psf_core, psf_aureole, self.params,
                               image_size, self.pixel_scale,
                               contrast=contrast, aureole_model=self.aureole_model)
+        
+    def draw_aureole2D_in_real(self, star_pos, Flux):
+        
+        if self.aureole_model == "power":
+            n = self.n
+            theta_0_pix = psf.theta_0_pix
+                
+            I_theta0_pow = power2d_Flux2Amp(n, theta_0_pix, Flux=1)
+            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, flux=flux:\
+                                          trunc_power2d(xx, yy, cen=cen,
+                                                        n=n, theta0=theta_0_pix,
+                                                        I_theta0=I_theta0_pow * flux)
+                                          for (flux, pos) in zip(Flux, star_pos)])
+
+        elif self.aureole_model == "multi-power":
+            n_s = self.n_s
+            theta_s_pix = self.theta_s_pix
+            
+            I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s_pix, Flux=1)
+            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, flux=flux: \
+                                          multi_power2d(xx, yy, cen=cen,
+                                                        n_s=n_s, theta_s=theta_s_pix,
+                                                        I_theta0=I_theta0_mpow * flux)
+                                          for (flux, pos) in zip(Flux, star_pos)])
+        return func_aureole_2d_s
 
     
-### Galsim Modelling Funcs ###
+class Stars:
+    """ Class storing positions & flux of faint/medium-bright/bright stars"""
+    def __init__(self, star_pos, Flux, Flux_threshold=[7e4, 2.7e6]):
+        """
+        Flux_threshold : thereshold of flux
+                (default: corresponding to [15, 11] mag for DF)
+        """
+        self.star_pos = star_pos
+        self.Flux = Flux
+
+        self.F_bright = Flux_threshold[0]
+        self.F_verybright = Flux_threshold[1]
+        
+        faint = (Flux < self.F_bright)
+        bright = (Flux >= self.F_bright)
+        verybright = (Flux >= self.F_verybright)
+        medbright = (Flux >= self.F_bright) & (Flux < self.F_verybright)
+        
+        self.n_faint = np.sum(faint)
+        self.bright = np.sum(bright)
+        self.n_verybright = np.sum(verybright)
+        self.n_medbright = np.sum(medbright)
+        
+        self.Flux_faint = Flux[faint]
+        self.Flux_bright = Flux[bright]
+        self.Flux_verybright = Flux[verybright]
+        self.Flux_medbright = Flux[medbright]
+
+        self.star_pos_faint = star_pos[faint]
+        self.star_pos_bright = star_pos[bright]
+        self.star_pos_verybright = star_pos[verybright]
+        self.star_pos_medbright = star_pos[medbright]
+        
+        print("# of medium bright (flux:%.2g~%.2g) stars: %d "\
+      %(self.Flux_medbright.min(), self.Flux_medbright.max(), self.n_medbright))
+
+        print("# of very bright (flux>%.2g) stars : %d"\
+              %(self.Flux_verybright.min(), self.n_verybright))
+
+        # Rendering stars in parallel if number of bright stars exceeds 50
+        if self.n_medbright < 50:
+            print("Not many bright stars, will draw in serial.")
+            self.parallel = False 
+        else: 
+            print("Crowded fields w/ bright stars > 50, will draw in parallel.")
+            self.parallel = True
+            
+    def plot_flux_dist(self):
+        from plotting import plot_flux_dist
+        plot_flux_dist(self.Flux, [self.F_bright, self.F_verybright])
+        
+    
+### (Old) Galsim Modelling Funcs ###
 def Generate_PSF_pow_Galsim(n, theta_t=5, psf_scale=2,
                             contrast=1e5, psf_range=None,
                             min_psf_range=30, max_psf_range=600,
@@ -614,13 +699,29 @@ def get_stamp_bounds(k, star_pos, Flux, psf_star, psf_size, full_image, pixel_sc
 # Functions for making mock images
 ############################################
 
-def make_base_image(image_size, psf_base, star_pos, Flux, verbose=False):
+
+def make_noise_image(image_size, noise_std, random_seed=42):
+    """ Make noise image """
+    print("Generate noise background w/ stddev = %.3g"%noise_std)
+    noise_image = galsim.ImageF(image_size, image_size)
+    rng = galsim.BaseDeviate(random_seed)
+    gauss_noise = galsim.GaussianNoise(rng, sigma=noise_std)
+    noise_image.addNoise(gauss_noise)  
+    return noise_image.array
+
+
+def make_base_image(image_size, stars, psf_base, verbose=False):
     """ Background images composed of dim stars with fixed PSF psf_base"""
-    if len(star_pos) == 0:
-        return np.zeros((image_size, image_size))
+    print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
     
     start = time.time()
     full_image0 = galsim.ImageF(image_size, image_size)
+    
+    star_pos = stars.star_pos_faint
+    Flux = stars.Flux_faint
+    
+    if len(star_pos) == 0:
+        return np.zeros((image_size, image_size))
     
     # draw faint stars in Moffat with galsim in Fourier space   
     for k in range(len(star_pos)):
@@ -641,74 +742,55 @@ def make_base_image(image_size, psf_base, star_pos, Flux, verbose=False):
     return image_gs0
 
 
-def make_noise_image(image_size, noise_std, random_seed=42):
-    """ Make noise image """
-    noise_image = galsim.ImageF(image_size, image_size)
-    rng = galsim.BaseDeviate(random_seed)
-    gauss_noise = galsim.GaussianNoise(rng, sigma=noise_std)
-    noise_image.addNoise(gauss_noise)  
-    return noise_image.array
-
-
-def make_truth_image(psf, star_pos, Flux, image_size,
-                     Flux_threshold = [4e3, 2.7e6], contrast=1e6,
+def make_truth_image(psf, stars, contrast=1e6,
                      parallel=False, verbose=True, saturation=4.5e4):
     
     """
-    Build Truth image with the position & flux. 
-    Two methods provided: 1) Galsim convolution in FFT and 2) Astropy model in real space. 
-    Flux_threshold : thereshold of flux [18 mag, 11 mag]
+    Draw truth image according to the given position & flux. 
+    In two manners: 1) convolution in FFT w/ Galsim;
+                and 2) plot in real space w/ astropy model. 
+
     """
+    
+    print("Generate the truth image.")
     start = time.time()
     
     frac = psf.frac
     gamma_pix = psf.gamma_pix
     beta = psf.beta
-    
-    if psf.aureole_model == "power":
-        n = psf.n
-        theta_0_pix = psf.theta_0_pix
-    elif psf.aureole_model == "multi-power":
-        n_s = psf.n_s
-        theta_s_pix = psf.theta_s_pix
-    
-    if hasattr(psf, 'psf_core'):
-        psf_core = psf.psf_core
+
+    if hasattr(psf, 'image_size'):
+        image_size = psf.image_size
+        yy, xx = psf.yy, psf.xx
     else:
-        psf_core = psf.generate_core()
+        print('Grid has not been built.')
+        return None
+    
+    psf_core = getattr(psf, 'psf_core', psf.generate_core())
         
-    if hasattr(psf, 'psf_aureole'):
-        psf_aureole = psf.psf_aureole
-    else:
-        psf_aureole, _ = psf.generate_aureole(contrast=contrast, psf_range=image_size)
+    psf_aureole = getattr(psf, 'psf_aureole',
+                          psf.generate_aureole(contrast=contrast,
+                                               psf_range=image_size)[0])
     
-    
-    # grid and center of image
-    yy, xx = np.mgrid[:image_size, :image_size]
-    cen = ((image_size-1)/2., (image_size-1)/2.)
-    
-    # Draw normal stars in Fourier
+    # 1. Draw normal stars in Fourier
     full_image = galsim.ImageF(image_size, image_size)
     
     # separate stars into two samples
-    Flux_A = Flux[Flux >= Flux_threshold[1]]
-    star_pos_A = star_pos[Flux >= Flux_threshold[1]]
+    Flux_A = stars.Flux_verybright
+    star_pos_A = stars.star_pos_verybright
     
-    Flux_B = Flux[Flux < Flux_threshold[1]]
-    star_pos_B = star_pos[Flux < Flux_threshold[1]]
+    Flux_B = stars.Flux_medbright
+    star_pos_B =stars.star_pos_medbright
     
+    # stick stamps from FFT on the canvas 
     for k, (pos, flux) in enumerate(zip(star_pos_B, Flux_B)): 
 
-        if flux >= Flux_threshold[0]:  
-            psf_star = (1-frac) * psf_core + frac * psf_aureole
-        else:
-            psf_star = psf_core      # for very faint stars, just assume truth is core
-
-        star = psf_star.withFlux(flux)
+        psf_star = (1-frac) * psf_core + frac * psf_aureole
+        psf_star = psf_star.withFlux(flux)
         
         (ix_nominal, iy_nominal), offset = get_center_offset(pos)
 
-        stamp = star.drawImage(scale=psf.pixel_scale, offset=offset, method='no_pixel')
+        stamp = psf_star.drawImage(scale=psf.pixel_scale, offset=offset, method='no_pixel')
         stamp.setCenter(ix_nominal,iy_nominal)
         
         try:
@@ -717,53 +799,153 @@ def make_truth_image(psf, star_pos, Flux, image_size,
         except GalSimBoundsError:
             continue
 
-
     image_gs = full_image.array
 
-    # Draw bright stars in real
-    Amps_A = np.array([moffat2d_Flux2Amp(gamma_pix, beta, Flux=(1-frac)*flux) for flux in Flux_A])
-    func_core_2d_s = np.array([models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0, gamma=gamma_pix, alpha=beta)
-                               for (amp, (x0,y0)) in zip(Amps_A, star_pos_A)])
+    # 2. Draw bright stars in real space
+    Amps_A = np.array([moffat2d_Flux2Amp(gamma_pix, beta, Flux=(1-frac)*flux)
+                       for flux in Flux_A])
+    func_core_2d_s = np.array([models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0,
+                                               gamma=gamma_pix, alpha=beta)
+                               for ((x0,y0), amp) in zip(star_pos_A, Amps_A)])
+    
+    func_aureole_2d_s = psf.draw_aureole2D_in_real(star_pos_A, frac * Flux_A)
 
-    if psf.aureole_model == "power":
-        I_theta0_pow = power2d_Flux2Amp(n, theta_0_pix, Flux=1)
-        func_aureole_2d_s = np.array([lambda xx, yy, cen=cen, flux=flux:\
-                                      trunc_power2d(xx, yy, cen=cen,
-                                                    n=n, theta0=theta_0_pix,
-                                                    I_theta0=I_theta0_pow * frac * flux)
-                                      for (flux, cen) in zip(Flux_A, star_pos_A)])
-        
-    elif psf.aureole_model == "multi-power":
-        I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s_pix, Flux=1)
-        func_aureole_2d_s = np.array([lambda xx, yy, cen=cen, flux=flux: \
-                                          multi_power2d(xx, yy, cen=cen,
-                                                        n_s=n_s, theta_s=theta_s_pix,
-                                                        I_theta0=I_theta0_mpow * frac * flux)
-                                      for (flux, cen) in zip(Flux_A, star_pos_A)])
-
-    # Draw stars in real space
+    # option for drawing in parallel
     if not parallel:
         print("Rendering bright stars in serial...")
         image_real = np.sum([f2d(xx,yy) + p2d(xx,yy) 
                              for (f2d, p2d) in zip(func_core_2d_s, func_aureole_2d_s)], axis=0)
     else:
         print("Rendering bright stars in parallel...")
-        func2d_s = np.concatenate([func_core_2d_s[Flux>F_faint], func_aureole_2d_s])
+        func2d_s = np.concatenate([func_core_2d_s, func_aureole_2d_s])
         p_map2d = partial(map2d, xx=xx, yy=yy)
         
         image_stars = parallel_compute(func2d_s, p_map2d,
                                        lengthy_computation=False, verbose=True)
         image_real = np.sum(image_stars, axis=0)
-
+    
+    # combine the two image
     image = image_gs + image_real
-        
+    
+    # saturation limit
     image[image>saturation] = saturation
         
     end = time.time()
     if verbose: print("Total Time: %.3fs"%(end-start))
     
     return image
+        
+def generate_mock_image(psf, stars,
+                        contrast=[1e6,1e7],
+                        min_psf_range=90, 
+                        max_psf_range=1200,
+                        psf_scale=None,
+                        parallel=False,
+                        n_parallel=4,
+                        draw_real=False,
+                        n_real=2.5,
+                        brightest_only=False,
+                        interpolant='cubic'):
+    
+    
+    
+    if hasattr(psf, 'image_size'):
+        image_size = psf.image_size
+        yy, xx = psf.yy, psf.xx
+    else:
+        print('Grid has not been built.')
+        return None
+    
+    frac = psf.frac
+    
+    psf_scale = psf.pixel_scale if psf_scale is None else 2
+        
+    psf_c = getattr(psf, 'psf_core', psf.generate_core())
+    
+    # Setup the canvas
+    full_image = galsim.ImageF(image_size, image_size)
+        
+    if not brightest_only:
+        # 1. Draw medium bright stars with galsim in Fourier space
+        psf_e, psf_size = psf.generate_aureole(contrast=contrast[0],
+                                           psf_scale=psf_scale,
+                                           psf_range=None,
+                                           min_psf_range=min_psf_range//2,
+                                           max_psf_range=max_psf_range//2,
+                                           interpolant=interpolant)
+        
+        # Rounded PSF size to 2^k or 3*2^k for faster FT
+        psf_size = round_good_fft(psf_size)
 
+        psf_star = (1-frac) * psf_c + frac * psf_e               
+
+        if not parallel:
+            # Draw in serial
+            for k in range(stars.n_medbright):
+                draw_star(k,
+                          star_pos=stars.star_pos_medbright,
+                          Flux=stars.Flux_medbright,
+                          psf_star=psf_star, psf_size=psf_size,
+                          full_image=full_image)
+        else:
+            # Draw in parallel, automatically back to serial computing if too few jobs 
+            p_get_stamp_bounds = partial(get_stamp_bounds,
+                                         star_pos=stars.star_pos_medbright,
+                                         Flux=stars.Flux_medbright,
+                                         psf_star=psf_star,
+                                         psf_size=psf_size,
+                                         full_image=full_image)
+
+            results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds, 
+                                       lengthy_computation=False, verbose=False)
+
+            for (stamp, bounds) in results:
+                full_image[bounds] += stamp[bounds]
+                
+    # 2. Draw very bright stars
+    if (psf.aureole_model == "power"):
+        if psf.n < n_real:
+            draw_real = True
+            
+    if (image_size<500) | (psf.aureole_model == "multi-power"):
+        draw_real = True
+        
+    if draw_real:
+        # Draw aureole of very bright star (if high cost in FFT) in real space
+        image_gs = full_image.array
+        
+        func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+                                                       frac * stars.Flux_verybright)
+        image_real = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
+        
+        image = image_gs + image_real
+        
+#         I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s_pix, Flux=1)
+#         for (pos, flux) in zip(star_pos[verybright], Flux[verybright]):
+#             p2d_vb = multi_power2d(xx, yy, cen=(pos[0],pos[1]),
+#                                    n_s=n_s, theta_s=theta_s_pix, 
+#                                    I_theta0=I_theta0_mpow*frac*flux)
+#             image_gs += p2d_vb
+    else:
+        # Draw very bright star in Fourier space 
+        psf_e_2, psf_size_2 = psf.generate_aureole(contrast=contrast[1],
+                                                   psf_scale=psf_scale,
+                                                   psf_range=None,
+                                                   min_psf_range=min_psf_range,
+                                                   max_psf_range=max_psf_range,
+                                                   interpolant=interpolant)
+        
+        psf_size_2 = round_good_fft(psf_size_2)
+        psf_star_2 = (1-frac) * psf_c + frac * psf_e_2
+        
+        for k in range(stars.n_verybright):
+            draw_star(k, star_pos=stars.star_pos_verybright, Flux=stars.Flux_verybright,
+                      psf_star=psf_star_2, psf_size=psf_size_2, full_image=full_image)
+            
+        image = full_image.array
+                   
+
+    return image
 
 ############################################
 # Functions for making priors

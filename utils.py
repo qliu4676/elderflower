@@ -2,6 +2,7 @@ import sys
 import os
 import re
 import math
+import time
 import numpy as np
 from scipy.special import gamma as Gamma
 from scipy.integrate import quad
@@ -19,6 +20,7 @@ from astropy.modeling import models
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
+
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, SqrtStretch, AsinhStretch
 norm0 = ImageNormalize(stretch=AsinhStretch())
@@ -27,6 +29,10 @@ norm2 = ImageNormalize(stretch=LogStretch())
 
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus
+
+import dynesty
+import multiprocess as mp
+
 
 ### Baisc Funcs ###
 
@@ -198,12 +204,27 @@ def make_mask_map_core(image, star_pos, r_core=12):
     
     return mask_deep, segmap
 
-def make_mask_map_dual(image, star_pos, r_core=24, sn_thre=2, 
+def make_mask_map_dual(image, stars, image_size, r_core=24, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
                        b_size=25, n_dilation=1):
-    """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre; for bright stars, mask core (r < r_core pix) """
+    """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
+    for bright stars, mask core (r < r_core pix) """
     from photutils import detect_sources, deblend_sources
-    yy, xx = np.indices(image.shape)
+    
+    star_pos = stars.star_pos_bright
+    yy, xx = np.mgrid[:image_size, :image_size]
+    
+    r_core_s = np.unique(r_core)[::-1]
+    if len(r_core_s) == 1:
+        r_core_A, r_core_B = r_core, r_core
+        r_core_s = np.ones(len(star_pos)) * r_core
+    else:
+        r_core_A, r_core_B = r_core_s[:2]
+        r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
+                             for F in stars.Flux_bright])
+
+    print("Mask inner regions of stars in dual mode:  S/N > %.1f / r < %d (%d) pix "\
+          %(sn_thre, r_core_A, r_core_B))
 
     # detect all source first 
     back, back_rms = background_sub_SE(image, b_size=b_size)
@@ -214,6 +235,7 @@ def make_mask_map_dual(image, star_pos, r_core=24, sn_thre=2,
     segm_deb = deblend_sources(image, segm0, npixels=npix,
                                nlevels=nlevels, contrast=contrast)
     segmap = segm_deb.data.copy()
+    
 #     for pos in star_pos:
 #         if (min(pos[0],pos[1]) > 0) & (pos[0] < image.shape[0]) & (pos[1] < image.shape[1]):
 #             star_lab = segmap[coord_Im2Array(pos[0], pos[1])]
@@ -232,9 +254,7 @@ def make_mask_map_dual(image, star_pos, r_core=24, sn_thre=2,
         segmap2 = morphology.dilation(segmap2)
 
     # mask core for input (bright) stars
-    if np.ndim(r_core) == 0:
-        r_core = np.ones(len(star_pos)) * r_core
-    core_region= np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r for (pos,r) in zip(star_pos,r_core)])
+    core_region= np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r for (pos,r) in zip(star_pos,r_core_s)])
     
     segmap2[core_region] = segmap.max()+1
     
@@ -246,9 +266,15 @@ def make_mask_map_dual(image, star_pos, r_core=24, sn_thre=2,
     
     return mask_deep, segmap2, core_region
 
-def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip=300):    
+def make_mask_strip(image_size, stars, width=5, n_strip=12, dist_strip=300):    
     """ Make mask map in strips with width=width """
+    
+    print("Use sky strips crossing very bright stars")
+    
+    star_pos = stars.star_pos_verybright
+    
     yy, xx = np.mgrid[:image_size, :image_size]
+    
     phi_s = np.linspace(-90, 90, n_strip+1)
     phi_s = np.setdiff1d(phi_s, [-90,0,90])
     a_s = np.tan(phi_s*np.pi/180)
@@ -256,7 +282,7 @@ def make_mask_strip(image_size, star_pos, fluxs, width=5, n_strip=12, dist_strip
     mask_strip_s = np.empty((len(star_pos), image_size, image_size))
     mask_cross_s = np.empty_like(mask_strip_s)
     
-    for k, (x_b, y_b) in enumerate(star_pos[fluxs.argsort()]):
+    for k, (x_b, y_b) in enumerate(star_pos):
         m_s = (y_b-a_s*x_b)
         mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < width 
                                            for (a, m) in zip(a_s, m_s)])
@@ -276,7 +302,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    sky_mean=884, sky_std=3, dr=1, 
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, label=None, plot_line=False,
-                   draw=True, scatter=False, verbose=False):
+                   plot=True, scatter=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img).astype("bool")
@@ -337,7 +363,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         z_rbin = np.append(z_rbin, zb)
         logzerr_rbin = np.append(logzerr_rbin, 0.434 * ( sigma_zb / zb))
 
-    if draw:
+    if plot:
         if yunit == "intensity":  
             # plot radius in Intensity
             plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label) 
@@ -646,34 +672,35 @@ def save_thumbs(obj, filename):
 def load_thumbs(filename):
     import pickle
     print("Read thumbs from: %s"%filename) 
-    with open(filename + '.pkl', 'rb') as f:
+    with open(filename, 'rb') as f:
         return pickle.load(f)
 
 
 ### Nested Fitting Helper ###
-
-def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
+def Run_Dynamic_Nested_Fitting(loglike, 
+                               prior_transform,
+                               ndim,
                                nlive_init=100, sample='auto', 
-                               nlive_batch=50, maxbatch=4,
-                               pfrac=0.8, n_cpu=None, print_progress=True):
+                               nlive_batch=50, maxbatch=2,
+                               pfrac=0.8,
+                               n_cpu=None,
+                               print_progress=True):
+    print("Run Nested Fitting for the image... Dim of params: %d"%ndim)
     
-    """ Run dynamic nested fitting. """
-    
-    import dynesty
-    import multiprocess as mp
+    start = time.time()
     
     if n_cpu is None:
         n_cpu = mp.cpu_count()-1
         
-    print("Run Nested Fitting for the image... Dim of paramas: %d"%ndim)    
-    
     with mp.Pool(processes=n_cpu) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
-        pool.size = 3
+        pool.size = n_cpu
 
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
 
-        pdsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim, sample=sample,
+        pdsampler = dynesty.DynamicNestedSampler(loglike,
+                                                 prior_transform, ndim,
+                                                 sample=sample,
                                                  pool=pool, use_pool={'update_bound': False})
         pdsampler.run_nested(nlive_init=nlive_init, 
                              nlive_batch=nlive_batch, 
@@ -681,7 +708,12 @@ def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
                              print_progress=print_progress, 
                              dlogz_init=dlogz, 
                              wt_kwargs={'pfrac': pfrac})
+        
+    end = time.time()
+    print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
+    
     return pdsampler
+
 
 
 def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
@@ -726,7 +758,7 @@ def get_params_fit(res):
     from dynesty import utils as dyfunc
     samples = res.samples                                 # samples
     weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
-    pmean, pcov = dyfunc.mean_and_cov(samples, weights)     # weighted mean and covariance
+    pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
     pmed = np.median(samples_eq,axis=0)
     return pmed, pmean, pcov
@@ -744,23 +776,6 @@ def open_nested_fitting_result(filename='fit.res'):
     with open(filename, "rb") as file:
         res = dill.load(file)
     return res
-
-from matplotlib import rcParams
-plt.rcParams['image.origin'] = 'lower'
-plt.rcParams['font.serif'] = 'Times New Roman'
-rcParams.update({'xtick.major.pad': '5.0'})
-rcParams.update({'xtick.major.size': '4'})
-rcParams.update({'xtick.major.width': '1.'})
-rcParams.update({'xtick.minor.pad': '5.0'})
-rcParams.update({'xtick.minor.size': '4'})
-rcParams.update({'xtick.minor.width': '0.8'})
-rcParams.update({'ytick.major.pad': '5.0'})
-rcParams.update({'ytick.major.size': '4'})
-rcParams.update({'ytick.major.width': '1.'})
-rcParams.update({'ytick.minor.pad': '5.0'})
-rcParams.update({'ytick.minor.size': '4'})
-rcParams.update({'ytick.minor.width': '0.8'})
-rcParams.update({'font.size': 14})
 
 
 # From TurbuStat

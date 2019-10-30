@@ -1,8 +1,25 @@
 from modeling import *
 
+from matplotlib import rcParams
+plt.rcParams['image.origin'] = 'lower'
+plt.rcParams['image.cmap'] = 'gnuplot2'
+plt.rcParams['font.serif'] = 'Times New Roman'
+rcParams.update({'xtick.major.pad': '5.0'})
+rcParams.update({'xtick.major.size': '4'})
+rcParams.update({'xtick.major.width': '1.'})
+rcParams.update({'xtick.minor.pad': '5.0'})
+rcParams.update({'xtick.minor.size': '4'})
+rcParams.update({'xtick.minor.width': '0.8'})
+rcParams.update({'ytick.major.pad': '5.0'})
+rcParams.update({'ytick.major.size': '4'})
+rcParams.update({'ytick.major.width': '1.'})
+rcParams.update({'ytick.minor.pad': '5.0'})
+rcParams.update({'ytick.minor.size': '4'})
+rcParams.update({'ytick.minor.width': '0.8'})
+rcParams.update({'axes.labelsize': 14})
+rcParams.update({'font.size': 14})
 
-def draw_mask_map(image, seg_map, mask_deep,
-                  star_pos_A, star_pos_B,
+def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=24, vmin=884, vmax=1e3,
                   pad=0, save=False, save_path='./'):
     """ Visualize mask map """
@@ -12,17 +29,20 @@ def draw_mask_map(image, seg_map, mask_deep,
     ax1.set_title("Mock")
     colorbar(im1)
 
-    ax2.imshow(seg_map, cmap="gnuplot2")
+    ax2.imshow(seg_map)
     ax2.set_title("Deep Mask")
 
     image2 = image.copy()
     image2[mask_deep] = 0
-    im3 = ax3.imshow(image2, cmap='gnuplot2', norm=norm2, vmin=vmin, vmax=vmax, aspect='auto') 
+    im3 = ax3.imshow(image2, norm=norm2, vmin=vmin, vmax=vmax, aspect='auto') 
     ax3.set_title("'Sky'")
     colorbar(im3)
     
     if np.ndim(r_core) == 0:
         r_core = [r_core, r_core]
+    
+    star_pos_A = stars.star_pos_verybright
+    star_pos_B = stars.star_pos_medbright
     
     aper = CircularAperture(star_pos_A, r=r_core[0])
     aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
@@ -40,28 +60,35 @@ def draw_mask_map(image, seg_map, mask_deep,
         plt.savefig(os.path.join(save_path, "Mask.png"), dpi=150)
         plt.close()
 
-def draw_mask_map_strip(image, seg_comb, mask_comb,
-                        mask_strip, mask_cross,
-                        star_pos_A, star_pos_B,
+def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
+                        ma_example=None,
+                        
                         r_core=24, vmin=884, vmax=1e3,
                         pad=0, save=False, save_path='./'):
     """ Visualize mask map w/ strips """
     
     from matplotlib import patches
+    
+    star_pos_A = stars.star_pos_verybright
+    star_pos_B = stars.star_pos_medbright
+    
+    if ma_example is not None:
+        mask_strip, mask_cross = ma_example
+    
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
     mask_strip[mask_cross.astype(bool)]=0.5
     ax1.imshow(mask_strip, cmap="gray_r")
-    ax1.plot(star_pos_A[-1][0], star_pos_A[-1][1], "r*",ms=15)
+    ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
     ax1.set_title("Mask Strip")
 
-    ax2.imshow(seg_comb, cmap="gnuplot2")
-    ax2.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=15)
+    ax2.imshow(seg_comb)
+    ax2.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax2.set_title("Mask Comb.")
 
     image3 = image.copy()
     image3[mask_comb] = 0
-    im3 = ax3.imshow(image3, cmap='gnuplot2', norm=norm1, aspect='auto', vmin=vmin, vmax=vmax) 
-    ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=15)
+    im3 = ax3.imshow(image3, norm=norm1, aspect='auto', vmin=vmin, vmax=vmax) 
+    ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_title("'Sky'")
     colorbar(im3)
 
@@ -80,7 +107,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb,
         plt.savefig(os.path.join(save_path, "Mask_strip.png"), dpi=150)
         plt.close()
         
-def display_background_distribution(image, mask_deep):
+def Fit_background_distribution(image, mask_deep):
     # Check background, fit with gaussian and exp-gaussian distribution
     import seaborn as sns
     plt.figure(figsize=(6,4))
@@ -91,15 +118,36 @@ def display_background_distribution(image, mask_deep):
     print(mu_fit, std_fit)
     d_mod = stats.norm(loc=mu_fit, scale=std_fit)
     x = np.linspace(d_mod.ppf(0.001), d_mod.ppf(0.999), 100)
-    plt.plot(x, d_mod.pdf(x), 'g-', lw=2, alpha=0.6, label='Normal')
+    plt.plot(x, d_mod.pdf(x), 'g-', lw=2, alpha=0.6, label='Norm Fit')
 
     K_fit, mu_fit, std_fit = stats.exponnorm.fit(z_sky)
     print(K_fit, mu_fit, std_fit)
     d_mod2 = stats.exponnorm(loc=mu_fit, scale=std_fit, K=K_fit)
     x = np.linspace(d_mod2.ppf(0.001), d_mod2.ppf(0.9999), 100)
-    plt.plot(x, d_mod2.pdf(x), 'r-', lw=2, alpha=0.6, label='exp norm')
+    plt.plot(x, d_mod2.pdf(x), 'r-', lw=2, alpha=0.6, label='Exp-Norm Fit')
 
     plt.legend(fontsize=12)
+    
+def plot_PSF_model_1D(frac, f_core, f_aureole,
+                      psf_range=400):
+    
+    plt.figure(figsize=(6,5))
+
+    r = np.logspace(0, np.log10(psf_range), 100)
+    comp1, comp2 = f_core(r), f_aureole(r)
+
+    plt.plot(r, np.log10((1-frac) * comp1 + comp2 * frac),
+             ls="-", lw=3,alpha=0.9, zorder=5, label='combined')
+    plt.plot(r, np.log10((1-frac) * comp1),
+             ls="--", lw=3, alpha=0.9, zorder=1, label='core')
+    plt.plot(r, np.log10(comp2 * frac),
+             ls="--", lw=3, alpha=0.9, label='aureole')
+
+    plt.legend(loc=1, fontsize=12)
+    plt.xscale('log')
+    plt.xlabel('r [pix]', fontsize=14)
+    plt.ylabel('log Intensity', fontsize=14)
+    plt.ylim(-9, -0.5)
     
 def plot_PSF_model_galsim(psf_inner, psf_outer, params,
                           image_size, pixel_scale,
@@ -157,3 +205,18 @@ def plot_PSF_model_galsim(psf_inner, psf_outer, params,
         
     plt.title("Model PSF",fontsize=14)
     plt.ylim(-9, -0.5)
+    
+def plot_flux_dist(Flux, Flux_thresholds):
+    import seaborn as sns
+    F_bright, F_verybright = Flux_thresholds
+    sns.distplot(np.log10(Flux), label="log Flux (tot)", color='plum')
+    plt.axvline(np.log10(F_bright), color="k", ls="-",alpha=0.8)
+    plt.axvline(np.log10(F_verybright), color="k", ls="--",alpha=0.8)
+    plt.axvspan(plt.gca().get_xlim()[0], np.log10(F_bright),
+                color='gray', alpha=0.2, zorder=1)
+    plt.axvspan(np.log10(F_bright), np.log10(F_verybright),
+                color='seagreen', alpha=0.2, zorder=1)
+    plt.axvspan(np.log10(F_verybright), plt.gca().get_xlim()[1],
+                color='steelblue', alpha=0.2, zorder=1)
+    plt.xlabel('Estimated Total Flux', fontsize=15)
+    plt.show()
