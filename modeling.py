@@ -16,23 +16,30 @@ class PSF_Model:
     def __init__(self,
                  core_model='Moffat',
                  aureole_model='power',
-                 pixel_scale=2.5,
+                 
                  params=None):
         
         self.core_model = core_model
         self.aureole_model = aureole_model
         
-        self.pixel_scale = pixel_scale
         
         self.params = params
         
         # Build attribute for parameters from dictionary keys 
         for key, val in params.items():
             exec('self.' + key + ' = val')
-            
-            if (key == 'gamma') | ('theta' in key):
-                exec('self.' + key + '_pix' + ' = val / pixel_scale')
                 
+    def make_grid(self, image_size, pixel_scale=2.5):
+        self.image_size = image_size
+        self.yy, self.xx = np.mgrid[:image_size, :image_size]
+        
+        self.pixel_scale = pixel_scale
+        
+        for key, val in self.params.items():
+            if (key == 'gamma') | ('theta' in key):
+                val = val / pixel_scale
+                exec('self.' + key + '_pix' + ' = val')
+
     def update(self, params):
         for key, val in params.items():
             if np.ndim(val) > 0:
@@ -42,13 +49,10 @@ class PSF_Model:
             self.params[key] = val
             
             if 'theta' in key:
-                exec('self.' + key + '_pix' + ' = val / self.pixel_scale')
+                val = val / pixel_scale
+                exec('self.' + key + '_pix' + ' = val')
                 
-                
-    def make_grid(self, image_size):
-        self.image_size = image_size
-        self.yy, self.xx = np.mgrid[:image_size, :image_size]
-        
+                                
     def plot1D(self, **kwargs):
         """ Plot analytical 1D profile """
         from plotting import plot_PSF_model_1D
@@ -172,7 +176,7 @@ class PSF_Model:
         
         if self.aureole_model == "power":
             n = self.n
-            theta_0_pix = psf.theta_0_pix
+            theta_0_pix = self.theta_0_pix
                 
             I_theta0_pow = power2d_Flux2Amp(n, theta_0_pix, Flux=1)
             func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, flux=flux:\
@@ -198,11 +202,14 @@ class Stars:
     """ Class storing positions & flux of faint/medium-bright/bright stars"""
     def __init__(self, star_pos, Flux, Flux_threshold=[7e4, 2.7e6]):
         """
+        star_pos: positions of stars
+        Flux: flux of stars
         Flux_threshold : thereshold of flux
                 (default: corresponding to [15, 11] mag for DF)
         """
         self.star_pos = star_pos
         self.Flux = Flux
+        self.Flux_threshold = Flux_threshold
 
         self.F_bright = Flux_threshold[0]
         self.F_verybright = Flux_threshold[1]
@@ -245,7 +252,81 @@ class Stars:
         from plotting import plot_flux_dist
         plot_flux_dist(self.Flux, [self.F_bright, self.F_verybright])
         
-    
+
+class Mask:
+    """ Maksing of stars"""
+    def __init__(self, image, stars, image_size, mu=0):
+        self.image = image
+        self.stars = stars
+        self.image_size = image_size
+        self.mu = mu
+        
+    def make_mask_map_dual(self, r_core, sn_thre=3,
+                           draw=True, **kwargs):
+        # S/N + Core mask
+        mask_deep, seg_deep, core_region = \
+            make_mask_map_dual(self.image, self.stars, self.image_size,
+                               r_core=r_core, sn_thre=sn_thre, **kwargs)
+        
+        self.mask_deep = mask_deep
+        self.seg_deep = seg_deep
+        self.r_core = r_core
+        
+        # Display mask
+        if draw:
+            from plotting import draw_mask_map
+            draw_mask_map(self.image, seg_deep, mask_deep, self.stars,
+                          r_core=r_core, vmin=self.mu, vmax=self.mu+50)
+            
+    def make_mask_strip(self, width, n_strip, dist_strip=200,
+                        draw=True, clean=True, dist_clean=48, **kwargs):
+        if hasattr(self, 'mask_deep') is False:
+            return None
+        
+        stars = self.stars
+        
+        # Strip + Cross mask
+        mask_strip_s, mask_cross_s = \
+            make_mask_strip(self.image_size, stars,
+                            width, n_strip, dist_strip=dist_strip, **kwargs)
+        
+        mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
+        mask_cross_all = ~np.logical_or.reduce(mask_cross_s)
+        
+        seg_comb = self.seg_deep.copy()
+        ma_extra = (mask_strip_all|~mask_cross_all) & (self.seg_deep==0)
+        seg_comb[ma_extra] = self.seg_deep.max()+1
+        mask_comb = (seg_comb!=0)
+        
+        self.mask_comb = mask_comb
+        self.seg_comb = seg_comb
+        
+        # Clean medium bright stars far from bright stars
+        if clean:
+            yy, xx = np.mgrid[:self.image_size, :self.image_size]
+            
+            clean = np.zeros(len(stars.star_pos), dtype=bool)
+            for k, pos in enumerate(stars.star_pos):
+                rr = np.sqrt((xx-pos[0])**2+(yy-pos[1])**2)
+
+                if np.min(rr[~self.mask_comb]) > dist_clean:
+                    clean[k] = True
+                    
+            stars = Stars(stars.star_pos[~clean], stars.Flux[~clean],
+                          Flux_threshold=stars.Flux_threshold)
+            self.new_stars = stars
+        
+        # Display mask
+        if draw:
+            from plotting import draw_mask_map_strip
+            draw_mask_map_strip(self.image, seg_comb,
+                                mask_comb, stars,
+                                ma_example=[mask_strip_s[0],
+                                            mask_cross_s[0]],
+                                r_core=self.r_core,
+                                vmin=self.mu, vmax=self.mu+50)
+            
+        
 ### (Old) Galsim Modelling Funcs ###
 def Generate_PSF_pow_Galsim(n, theta_t=5, psf_scale=2,
                             contrast=1e5, psf_range=None,

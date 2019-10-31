@@ -192,7 +192,7 @@ def make_mask_map_core(image, star_pos, r_core=12):
 
     # mask core
     yy, xx = np.indices(image.shape)
-    mask_deep = np.zeros_like(image).astype(bool)
+    mask_deep = np.zeros_like(image, dtype=bool)
     
     if np.ndim(r_core) == 0:
         r_core = np.ones(len(star_pos)) * r_core
@@ -245,8 +245,8 @@ def make_mask_map_dual(image, stars, image_size, r_core=24, sn_thre=3,
     
     # remove S/N mask map for input (bright) stars
     for pos in star_pos:
-        rr = (xx-pos[0])**2+(yy-pos[1])**2
-        lab = segmap2[np.where(rr==np.min(rr))][0]
+        rr2 = (xx-pos[0])**2+(yy-pos[1])**2
+        lab = segmap2[np.where(rr2==np.min(rr2))][0]
         segmap2[segmap2==lab] = 0
     
     # dilation
@@ -305,7 +305,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    plot=True, scatter=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
-        mask =  np.zeros_like(img).astype("bool")
+        mask =  np.zeros_like(img, dtype=bool)
     if back is None:     
         back = np.ones_like(img) * sky_mean
     if cen is None:
@@ -672,7 +672,7 @@ def save_thumbs(obj, filename):
 def load_thumbs(filename):
     import pickle
     print("Read thumbs from: %s"%filename) 
-    with open(filename, 'rb') as f:
+    with open(filename + '.pkl', 'rb') as f:
         return pickle.load(f)
 
 

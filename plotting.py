@@ -62,7 +62,6 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
                         ma_example=None,
-                        
                         r_core=24, vmin=884, vmax=1e3,
                         pad=0, save=False, save_path='./'):
     """ Visualize mask map w/ strips """
