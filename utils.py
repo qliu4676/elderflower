@@ -15,7 +15,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy import wcs
 from astropy.io import fits
 from astropy import units as u
-from astropy.table import Table, Column
+from astropy.table import Table, Column, join
 from astropy.modeling import models
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
@@ -31,6 +31,8 @@ from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus
 
 import dynesty
+from dynesty import plotting as dyplot
+from dynesty import utils as dyfunc
 import multiprocess as mp
 
 
@@ -46,18 +48,26 @@ def coord_Array2Im(x_arr, y_arr, origin=1):
     X_IMAGE, Y_IMAGE = y_arr+origin, x_arr+origin
     return X_IMAGE, Y_IMAGE
 
+def fwhm_to_gamma(fwhm, beta):
+    """ in arcsec """
+    return fwhm / 2. / math.sqrt(2**(1./beta)-1)
 
-def Intensity2SB(y, BKG, ZP, pix_scale):
+def gamma_to_fwhm(gamma, beta):
+    """ in arcsec """
+    return gamma / fwhm_to_gamma(1, beta)
+
+def Intensity2SB(I, BKG, ZP, pixel_scale=2.5):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
-#     y = np.atleast_1d(y)
-#     y[y<BKG] = np.nan
-    I_SB = -2.5*np.log10(y - BKG) + ZP + 2.5 * np.log10(pix_scale**2)
+    I = np.atleast_1d(I)
+    I[I<BKG] = np.nan
+    I_SB = -2.5*np.log10(I - BKG) + ZP + 2.5 * math.log10(pixel_scale**2)
     return I_SB
 
-def SB2Intensity(I_SB, BKG, ZP, pix_scale):
+def SB2Intensity(SB, BKG, ZP, pixel_scale=2.5):
     """ Convert surface brightness (mag/arcsec^2)to intensity given the background value, zero point and pixel scale """ 
-    y = 10** ((I_SB - ZP - 2.5 * np.log10(pix_scale**2))/ (-2.5)) + BKG
-    return y
+    SB = np.atleast_1d(SB)
+    I = 10** ((SB - ZP - 2.5 * math.log10(pixel_scale**2))/ (-2.5)) + BKG
+    return I
 
 def cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
@@ -75,7 +85,6 @@ def process_counter(i, number):
 
 def round_good_fft(x):
     return min(2**math.ceil(math.log2(x)), 3 * 2**math.floor(math.log2(x)-1))
-
     
 ### Plotting Helpers ###
 
@@ -204,20 +213,23 @@ def make_mask_map_core(image, star_pos, r_core=12):
     
     return mask_deep, segmap
 
-def make_mask_map_dual(image, stars, image_size, r_core=24, sn_thre=3, 
+def make_mask_map_dual(image, stars, xx=None, yy=None, pad=0,
+                       r_core=24, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
                        b_size=25, n_dilation=1):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
     for bright stars, mask core (r < r_core pix) """
     from photutils import detect_sources, deblend_sources
     
-    star_pos = stars.star_pos_bright
-    yy, xx = np.mgrid[:image_size, :image_size]
+    if (xx is None) | (yy is None):
+        yy, xx = np.mgrid[:image.shape[0]+2*pad, :image.shape[1]+2*pad]
+        
+    star_pos = stars.star_pos_bright + pad
     
     r_core_s = np.unique(r_core)[::-1]
     if len(r_core_s) == 1:
-        r_core_A, r_core_B = r_core, r_core
-        r_core_s = np.ones(len(star_pos)) * r_core
+        r_core_A, r_core_B = r_core_s, r_core_s
+        r_core_s = np.ones(len(star_pos)) * r_core_s
     else:
         r_core_A, r_core_B = r_core_s[:2]
         r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
@@ -266,20 +278,18 @@ def make_mask_map_dual(image, stars, image_size, r_core=24, sn_thre=3,
     
     return mask_deep, segmap2, core_region
 
-def make_mask_strip(image_size, stars, width=5, n_strip=12, dist_strip=300):    
+def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):    
     """ Make mask map in strips with width=width """
     
     print("Use sky strips crossing very bright stars")
     
-    star_pos = stars.star_pos_verybright
-    
-    yy, xx = np.mgrid[:image_size, :image_size]
+    star_pos = stars.star_pos_verybright + pad
     
     phi_s = np.linspace(-90, 90, n_strip+1)
     phi_s = np.setdiff1d(phi_s, [-90,0,90])
     a_s = np.tan(phi_s*np.pi/180)
     
-    mask_strip_s = np.empty((len(star_pos), image_size, image_size))
+    mask_strip_s = np.empty((len(star_pos), xx.shape[0], xx.shape[1]))
     mask_cross_s = np.empty_like(mask_strip_s)
     
     for k, (x_b, y_b) in enumerate(star_pos):
@@ -294,15 +304,25 @@ def make_mask_strip(image_size, stars, width=5, n_strip=12, dist_strip=300):
 
     return mask_strip_s, mask_cross_s
 
+def clean_lonely_stars(xx, yy, mask, star_pos, pad=0, dist_clean=48):
     
+    star_pos = star_pos + pad
+    
+    clean = np.zeros(len(star_pos), dtype=bool)
+    for k, pos in enumerate(star_pos):
+        rr = np.sqrt((xx-pos[0])**2+(yy-pos[1])**2)
+        if np.min(rr[~mask]) > dist_clean:
+            clean[k] = True
+            
+    return clean
         
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="intensity",
-                   seeing=2.5, pix_scale=2.5, ZP=27.1, 
+                   seeing=2.5, pixel_scale=2.5, ZP=27.1, 
                    sky_mean=884, sky_std=3, dr=1, 
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
-                   core_undersample=False, label=None, plot_line=False,
-                   plot=True, scatter=False, verbose=False):
+                   core_undersample=False, label=None, plot_line=False, mock=False,
+                   plot=True, scatter=False, errorbar=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img, dtype=bool)
@@ -315,7 +335,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
     r = rr[~mask].ravel()  # radius in pix
     z = img[~mask].ravel()  # pixel intensity
-    r_core = np.int(3 * seeing/pix_scale) # core radius in pix
+    r_core = np.int(3 * seeing/pixel_scale) # core radius in pix
 
     # Decide the outermost radial bin r_max before going into the background
     bkg_cumsum = np.arange(1, len(z)+1, 1) * np.median(back)
@@ -323,16 +343,22 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     n_pix_max = len(z) - np.argmin(abs(z_diff - 0.0001 * z_diff[-1]))
     r_max = np.sqrt(n_pix_max/np.pi)
     r_max = np.min([img.shape[0]//2, r_max])
+    
     if verbose:
         print("Maximum R: %d (pix)"%np.int(r_max))    
     
     if xunit == "arcsec":
-        r = r * pix_scale   # radius in arcsec
-        r_core = r_core * pix_scale
-        r_max = r_max * pix_scale
+        r = r * pixel_scale   # radius in arcsec
+        r_core = r_core * pixel_scale
+        r_max = r_max * pixel_scale
         
-    d_r = dr * pix_scale if xunit == "arcsec" else dr
+    d_r = dr * pixel_scale if xunit == "arcsec" else dr
     
+    if mock:
+        clip = lambda z: sigma_clip((z), sigma=3, maxiters=10)
+    else:
+        clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=10)
+        
     if bins is None:
         # Radial bins: discrete/linear within r_core + log beyond it
         if core_undersample:  
@@ -352,19 +378,23 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     # Calculate binned 1d profile
     r_rbin = np.array([])
     z_rbin = np.array([])
-    logzerr_rbin = np.array([])
-    for k,b in enumerate(bins[:-1]):
+    zstd_rbin = np.array([])
+    for k, b in enumerate(bins[:-1]):
         in_bin = (r>bins[k])&(r<bins[k+1])
+        
         r_rbin = np.append(r_rbin, np.mean(r[in_bin]))
-      
-        z_clip = sigma_clip(z[in_bin], sigma=3, maxiters=10)
-        zb = np.mean(z_clip)
-        sigma_zb = np.std(z_clip)
-        z_rbin = np.append(z_rbin, zb)
-        logzerr_rbin = np.append(logzerr_rbin, 0.434 * ( sigma_zb / zb))
+        z_clip = clip(z[in_bin])
 
+        zb = np.mean(z_clip)
+        zstd_b = np.std(z_clip)
+        
+        z_rbin = np.append(z_rbin, zb)
+        zstd_rbin = np.append(zstd_rbin, zstd_b)
+        
+    logzerr_rbin = 0.434 * abs( zstd_rbin / (z_rbin-sky_mean))
+    
     if plot:
-        if yunit == "intensity":  
+        if yunit == "Intensity":  
             # plot radius in Intensity
             plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label) 
             if scatter:
@@ -378,14 +408,34 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
         elif yunit == "SB":  
             # plot radius in Surface Brightness
-            I_rbin = Intensity2SB(y=z_rbin, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale) + I_shift
-            I_sky = Intensity2SB(y=sky_std, BKG=0, ZP=ZP, pix_scale=pix_scale)
+            I_rbin = Intensity2SB(I=z_rbin, BKG=np.median(back),
+                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
+            I_sky = -2.5*np.log10(sky_std) + ZP + 2.5 * math.log10(pixel_scale**2)
 
             plt.plot(r_rbin, I_rbin, "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label)   
+            
             if scatter:
-                I = Intensity2SB(y=z, BKG=np.median(back), ZP=ZP, pix_scale=pix_scale) + I_shift
-                plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, s=6, alpha=0.2, zorder=1)
-                plt.scatter(r[r>3*r_core], I[r>3*r_core], color=color, s=3, alpha=0.1, zorder=1)
+                I = Intensity2SB(I=z, BKG=np.median(back),
+                                 ZP=ZP, pixel_scale=pixel_scale) + I_shift
+                plt.scatter(r[r<3*r_core], I[r<3*r_core],
+                            color=color, s=6, alpha=0.2, zorder=1)
+                plt.scatter(r[r>3*r_core], I[r>3*r_core],
+                            color=color, s=3, alpha=0.1, zorder=1)
+                
+            if errorbar:
+                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin+sky_std,
+                                                     BKG=np.median(back),
+                                                     ZP=ZP, pixel_scale=pixel_scale)
+                Ierr_rbin_lo = Intensity2SB(I=z_rbin-sky_std,
+                                            BKG=np.median(back),
+                                            ZP=ZP, pixel_scale=pixel_scale) - I_rbin
+                lolims = np.isnan(Ierr_rbin_lo)
+                uplims = np.isnan(Ierr_rbin_up)
+                Ierr_rbin_lo[lolims] = 4
+                Ierr_rbin_up[uplims] = 4
+                plt.errorbar(r_rbin, I_rbin, yerr=[Ierr_rbin_up, Ierr_rbin_lo],
+                             fmt='', ecolor=color, capsize=2, alpha=0.5)
+                
             plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
             plt.gca().invert_yaxis()
             plt.xscale("log")
@@ -440,7 +490,9 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
         num = star_cat[id]["NUMBER"]
         print("NUMBER: ", num)
         print("X_c, Y_c: ", (X_c, Y_c))
+        print("RA, DEC: ", (star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"]))
         print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
+        print("X_min, X_max, Y_min, Y_max: ", X_min, X_max, Y_min, Y_max)
     
     # crop
     img_thumb = data[x_min:x_max, y_min:y_max].copy()
@@ -454,7 +506,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map, 
-                 seeing=2.5, sn_thre=2.5, n_win=20, 
+                 seeing=2.5, sn_thre=3, n_win=20, n_dilation=3,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
@@ -490,6 +542,8 @@ def extract_star(id, star_cat, wcs, data, seg_map,
     # the target star is at the center of the thumbnail
     star_lab = segm_deblend.data[img_thumb.shape[0]//2, img_thumb.shape[1]//2]
     star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
+    for i in range(n_dilation):
+        star_ma = morphology.dilation(star_ma)
     
     if display:
         fig, (ax1,ax2,ax3,ax4) = plt.subplots(nrows=1,ncols=4,figsize=(21,5))
@@ -532,6 +586,7 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=False, displ
         ax2 = plt.hist(sigma_clip(image[mask_clean]))
     
     return I_mean, I_med, I_std
+
 
 def compute_Rnorm_batch(df_target, SE_catalog, wcs, data, seg_map, 
                         R=10, wid=0.5, return_full=False):
@@ -613,7 +668,7 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         
     return patch, seg_patch
 
-def query_vizier(catalog_name, radius, columns, column_filters, header):
+def query_vizier(catalog_name, radius, header, columns, column_filters):
     """ Query catalog in Vizier database with the given catalog name, search radius and column names """
     from astroquery.vizier import Vizier
     from astropy import units as u
@@ -638,10 +693,11 @@ def transform_coords2pixel(table, wcs, cat_name='', RA_key="RAJ2000", DE_key="DE
     pos = wcs.wcs_world2pix(coords, origin)
     table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name='X_IMAGE'+'_'+cat_name)
     table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name='Y_IMAGE'+'_'+cat_name)
-    table.add_column(Column(np.arange(len(table))+1), index=0, name="ID"+'_'+cat_name)
+    table.add_column(Column(np.arange(len(table))+1, dtype=int), 
+                     index=0, name="ID"+'_'+cat_name)
     return table
 
-def merge_catalog(SE_catalog, table_merge, sep=2.5 * u.arcsec,
+def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
     
     from astropy.table import Column, join
@@ -660,8 +716,73 @@ def merge_catalog(SE_catalog, table_merge, sep=2.5 * u.arcsec,
     if keep_columns is not None:
         cat_match.keep_columns(keep_columns)
     
-    df_match = cat_match.to_pandas()
-    return df_match
+    return cat_match
+
+def cross_match(header, SE_catalog, bounds, mag_threshold=14,
+                catalog={'Pan-STARRS': 'II/349/ps1'}, radius=2.5*u.deg, 
+                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'mfa',
+                                        'gmag', 'e_gmag', 'rmag', 'e_rmag']},
+                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(8, 18)}},
+                magnitude_name={'Pan-STARRS':'rmag'}):
+    """ 
+        Cross match SExtractor catalog with Vizier Online catalog.
+        
+        'URAT': 'I/329/urat1'
+                magnitude_name: "rmag"
+                columns: ['RAJ2000', 'DEJ2000', 'mfa', 'gmag', 'e_gmag', 'rmag', 'e_rmag']
+                column_filters: {'mfa':'=1', 'rmag':'{0} .. {1}'.format(8, 18)}
+                
+        'USNO': 'I/252/out'
+                magnitude_name: "Rmag"
+                columns: ['RAJ2000', 'DEJ2000', 'Bmag', 'Rmag']
+                column_filters: {"Rmag":'{0} .. {1}'.format(5, 15)}
+                
+    """
+    import pandas as pd
+    
+    wcs_data = wcs.WCS(header)
+    for i, (catalog_name, table_name) in enumerate(catalog.items()):
+        # Query from Vizier
+        result = query_vizier(catalog_name=catalog_name,
+                              radius=radius, header=header,
+                              columns=columns[catalog_name],
+                              column_filters=column_filters[catalog_name])
+
+        Cat_full = result[table_name]
+        if len(catalog_name) > 4:
+            cat_name = catalog_name[0] + catalog_name[-1]
+        else:
+            cat_name = catalog_name
+        
+        mag_name = magnitude_name[catalog_name]
+        Cat_full = transform_coords2pixel(Cat_full, wcs_data, cat_name=cat_name) 
+        mag = Cat_full[mag_name]
+        print("%s %s:  %.3f ~ %.3f"%(catalog_name, mag_name, mag.min(), mag.max()))
+
+        # Merge Catalog
+        SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ELLIPTICITY",
+                      "RMAG_AUTO", "FWHM_IMAGE", "FLAGS"]
+        keep_columns = SE_columns + ["ID"+'_'+cat_name, mag_name,
+                                     "X_IMAGE"+'_'+cat_name, "Y_IMAGE"+'_'+cat_name]
+        tab_match = merge_catalog(SE_catalog, Cat_full, sep=5*u.arcsec,
+                                  keep_columns=keep_columns)
+        mag_match_name = mag_name+'_'+cat_name
+        tab_match[mag_name].name = mag_match_name
+        
+        if i==0:
+            tab_match_all = tab_match
+        else:
+            tab_match_all = join(tab_match_all, tab_match, keys=SE_columns,
+                                 join_type='left', metadata_conflicts='silent')
+
+    tab_match_crop = crop_catalog(tab_match_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
+    
+    target = tab_match_crop[mag_match_name] < mag_threshold
+    tab_target = tab_match_crop[target].copy()
+    tab_target.sort(keys=mag_match_name)
+    
+    return tab_target
+
 
 def save_thumbs(obj, filename):
     import pickle
@@ -755,16 +876,16 @@ def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
 
 
 def get_params_fit(res):
-    from dynesty import utils as dyfunc
     samples = res.samples                                 # samples
     weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
     pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
     pmed = np.median(samples_eq,axis=0)
     return pmed, pmean, pcov
-
-
-
+    
+def cal_reduced_chi2(fit, data, sigma, n_param=4):
+    chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-n_param)
+    print("Reduced Chi^2: %.5f"%chi2_reduced)
 
 def save_nested_fitting_result(res, filename='fit.res'):
     import dill
@@ -779,8 +900,8 @@ def open_nested_fitting_result(filename='fit.res'):
 
 
 # From TurbuStat
-def make_extended(imsize, powerlaw=2.0, theta=0., ellip=1.,
-                  return_fft=False, full_fft=True, randomseed=32768324):
+def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
+                      return_fft=False, full_fft=True, randomseed=32768324):
     '''
     Generate a 2D power-law image with a specified index and random phases.
     Adapted from https://github.com/keflavich/image_registration. Added ability
