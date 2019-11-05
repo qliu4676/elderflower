@@ -186,13 +186,19 @@ class PSF_Model:
         if self.aureole_model == "power":
             return I2Flux_pow(self.frac, self.n, self.theta_0_pix, r, I)
         
+        elif self.aureole_model == "multi-power":
+            return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I)
+        
     def Flux2I(self, Flux, r=10):
         """ Convert Intensity I(r) at r to total flux with power law.
         r in pixel """
         
         if self.aureole_model == "power":
             return Flux2I_pow(self.frac, self.n, self.theta_0_pix, r, Flux)
-    
+        
+        elif self.aureole_model == "multi-power":
+            return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux)
+        
     def SB2Flux(self, SB, BKG, ZP, r=10):
         I = SB2Intensity(SB, BKG, ZP, self.pixel_scale)
         return self.I2Flux(I, r=r)
@@ -240,7 +246,8 @@ class Stars:
     """ Class storing positions & flux of faint/medium-bright/bright stars"""
     def __init__(self, star_pos, Flux, 
                  Flux_threshold=[7e4, 2.7e6],
-                 z_norm=None, r_scale=10, verbose=False):
+                 z_norm=None, r_scale=10, BKG=0,
+                 verbose=False):
         """
         star_pos: positions of stars
         Flux: flux of stars
@@ -263,6 +270,7 @@ class Stars:
         if z_norm is not None:
             self.z_norm = z_norm
             self.r_scale = r_scale
+            self.BKG = BKG
             
         if verbose:
             if len(Flux[self.medbright])>0:
@@ -390,8 +398,6 @@ def remove_outsider(image_size, star_pos, Flux, Flux_threshold, d=[12, 24]):
 
     remove = remove_A | remove_B
     return remove
-
-        
         
 
 class Mask:
@@ -763,7 +769,7 @@ def multi_power2d_cover(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
-def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen):
+def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen, ):
     """ Multi-power law for 2d array, I = I_theta0 at theta0, theta in pix"""
     a_s = compute_multi_pow_norm(n_s, theta_s, I_theta0)
     
@@ -830,24 +836,40 @@ def moffat2d_Amp2Flux(r_core, beta, Amp=1):
 #         I_theta0 = (1./np.pi) * Flux / (1 + 2*math.log(r_trunc/theta0)) / theta0**2
 #     return I_theta0
 
-def power2d_Flux2Amp(n, theta0, Flux=1, r_trunc=500):
-    I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
+def power2d_Flux2Amp(n, theta0, Flux=1):
+    if n>2:
+        I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
+    else:
+        raise InconvergenceError('PSF is not convergent in Infinity.')
+        
     return I_theta0
 
 def power2d_Amp2Flux(n, theta0, Amp=1):
     return Amp / power2d_Flux2Amp(n, theta0, Flux=1)
 
-def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1):
+def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
     a_s = compute_multi_pow_norm(n_s, theta_s, Amp)
     n0, theta0, a0 = n_s[0], theta_s[0], a_s[0]
     
     I_2D = Amp * np.pi * theta0**2
+    
     for k in range(len(n_s)-1):
+        
         if n_s[k] == 2:
             I_2D += 2*np.pi * a_s[k] * np.log(theta_s[k+1]/theta_s[k])
         else:
-            I_2D += 2*np.pi * a_s[k] * (theta_s[k]**(2-n_s[k]) - theta_s[k+1]**(2-n_s[k])) / (n_s[k]-2) 
-    I_2D += 2*np.pi * a_s[-1] * theta_s[-1]**(2-n_s[-1]) / (n_s[-1]-2)   
+            I_2D += 2*np.pi * a_s[k] * (theta_s[k]**(2-n_s[k]) - theta_s[k+1]**(2-n_s[k])) / (n_s[k]-2)
+            
+    if n_s[-1] > 2:
+        I_2D += 2*np.pi * a_s[-1] * theta_s[-1]**(2-n_s[-1]) / (n_s[-1]-2) 
+#     elif n_s[-1] == 2:
+#         I_2D += 2*np.pi * a_s[-1] * np.log(theta_trunc/theta_s[-1])
+#     else:
+#         I_2D += 2*np.pi * a_s[k] * (theta_trunc**(2-n_s[k]) - theta_s[k]**(2-n_s[k])) / (2-n_s[-1])
+
+    else:
+        raise InconvergenceError('PSF is not convergent in Infinity.')
+        
     return I_2D
 
 def multi_power2d_Flux2Amp(n_s, theta_s, Flux=1):
@@ -856,19 +878,48 @@ def multi_power2d_Flux2Amp(n_s, theta_s, Flux=1):
 
 def I2Flux_pow(frac, n, theta0, r, I):
     """ Convert Intensity I(r) at r to total flux with fraction of power law.
-        theata0 and r in the same unit"""
-    Amp_pow = I * (r/theta0)**n
-    Flux_pow = power2d_Amp2Flux(n, theta0, Amp=Amp_pow)
+        theata0 and r in pixel """
+    I_0 = I * (r/theta0)**n
+    Flux_pow = power2d_Amp2Flux(n, theta0, Amp=I_0)
     Flux_tot = Flux_pow / frac
     return Flux_tot
 
 def Flux2I_pow(frac, n, theta0, r, Flux):
     """ Convert total flux to Intensity I(r) at r.
-        theata0 and r in the same unit"""
+        theata0 and r in pixel """
     Flux_pow = Flux * frac
-    Amp_pow = power2d_Flux2Amp(n, theta0, Flux=Flux_pow)
-    I = Amp_pow / (r/theta0)**n
+    I_0 = power2d_Flux2Amp(n, theta0, Flux=Flux_pow)
+    I = I_0 / (r/theta0)**n
     return I
+
+def I2Flux_mpow(frac, n_s, theta_s, r, I):
+    """ Convert Intensity I(r) at r to total flux with fraction of multi-power law.
+        theata_s and r in pixel """
+    i = np.digitize(r, theta_s, right=True) - 1
+        
+    I_0 = I * r**(n_s[i]) * theta_s[0]**(-n_s[0])
+    for j in range(i):
+        I_0 *= theta_s[j+1]**(n_s[j]-n_s[j+1])
+        
+    Flux_mpow = multi_power2d_Amp2Flux(n_s=n_s, theta_s=theta_s, Amp=I_0)
+    Flux_tot = Flux_mpow / frac
+    
+    return Flux_tot
+
+def Flux2I_mpow(frac, n_s, theta_s, r, Flux):
+    """ Convert total flux to Intensity I(r) at r.
+        theata_s and r in pixel """
+    i = np.digitize(r, theta_s, right=True) - 1
+    
+    Flux_mpow = Flux / frac
+    I_0 = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s, Flux=Flux_mpow)
+    
+    I = I_0 / r**(n_s[i]) / theta_s[0]**(-n_s[0])
+    for j in range(i):
+        I /= theta_s[j+1]**(n_s[j]-n_s[j+1])
+
+    return I
+
 
 ### 1D/2D conversion factor ###
 
@@ -1226,21 +1277,9 @@ def generate_image_by_znorm(psf, stars,
     
     frac = psf.frac
     psf_scale = psf.pixel_scale if psf_scale is None else 2
-    
     psf_c = getattr(psf, 'psf_core', psf.generate_core())
 
     # Update stellar flux:
-    
-#     theta_0_pix = psf.theta_0_pix
-#     Amp_pow = stars0.z_norm * (r_scale/theta_0_pix)**psf.n
-#     Flux_pow = power2d_Amp2Flux(psf.n, theta_0_pix, Amp=Amp_pow)
-#     Flux = Flux_pow / frac
-#     K = Flux[0] / stars0.Flux[0]
-    
-#     stars = Stars(stars0.star_pos, Flux,
-#                   K * stars0.Flux_threshold,
-#                   stars0.z_norm, verbose=False)
-    
     Flux = psf.I2Flux(stars.z_norm, stars.r_scale)
     stars.update_Flux(Flux)
     
@@ -1248,7 +1287,6 @@ def generate_image_by_znorm(psf, stars,
 #                              stars0.z_norm,
 #                              r_scale=stars0.r_scale,
 #                              Flux_threshold=Flux_threshold)
-
 
     # Setup the canvas
     full_image = galsim.ImageF(image_size, image_size)
@@ -1274,15 +1312,12 @@ def generate_image_by_znorm(psf, stars,
         if not parallel:
             # Draw in serial
             for k in range(stars.n_medbright):
-#                 try:
                 draw_star(k,
                           star_pos=stars.star_pos_medbright,
                           Flux=stars.Flux_medbright,
                           psf_star=psf_star,
                           psf_size=psf_size,
                           full_image=full_image)
-#                 except GalSimBoundsError as e:
-#                     pass
 
         else:
             # Draw in parallel, automatically back to serial computing if too few jobs 
@@ -1337,6 +1372,7 @@ def generate_image_by_znorm(psf, stars,
         image = full_image.array
                    
     return image
+
 
 def generate_image_fit(res, psf, stars, image_base):
     pmed, pmean, pcov = get_params_fit(res)

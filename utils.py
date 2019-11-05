@@ -903,6 +903,16 @@ def open_nested_fitting_result(filename='fit.res'):
     return res
 
 
+class MyError(Exception): 
+    def __init__(self, message):  self.message = message 
+    def __str__(self): return(repr(self.message))
+    def __repr__(self): return 'MyError(%r)'%(str(self))
+
+class InconvergenceError(MyError): 
+    def __init__(self, message):  self.message = message 
+    def __repr__(self):
+        return 'InconvergenceError: %r'%self.message
+    
 # From TurbuStat
 def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
                       return_fft=False, full_fft=True, randomseed=32768324):
