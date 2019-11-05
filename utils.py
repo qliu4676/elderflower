@@ -875,14 +875,18 @@ def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
     return pdres
 
 
-def get_params_fit(res):
+def get_params_fit(res, return_sample=False):
     samples = res.samples                                 # samples
     weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
     pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
     samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
     pmed = np.median(samples_eq,axis=0)
-    return pmed, pmean, pcov
     
+    if return_sample:
+        return pmed, pmean, pcov, samples_eq
+    else:
+        return pmed, pmean, pcov
+        
 def cal_reduced_chi2(fit, data, sigma, n_param=4):
     chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-n_param)
     print("Reduced Chi^2: %.5f"%chi2_reduced)

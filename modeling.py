@@ -718,7 +718,8 @@ def moffat1d_normed(x, gamma, alpha):
 def multi_power1d_normed(x, n_s, theta_s):
     """ Multi-power law for 1d array, flux normalized = 1, theta in pix """
     a_s = compute_multi_pow_norm(n_s, theta_s, 1)
-    norm_mpow = quad(multi_pow, 0, np.inf, args=(n_s, theta_s, 1, a_s))[0]
+    norm_mpow = quad(multi_pow, 0, np.inf,
+                     args=(n_s, theta_s, 1, a_s), limit=100)[0]
     y = multi_power1d(x, n_s, theta_s, 1) / norm_mpow
     return y
 

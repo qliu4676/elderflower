@@ -242,7 +242,161 @@ def plot_flux_dist(Flux, Flux_thresholds, **kwargs):
     plt.xlabel('Estimated Total Flux/Mag', fontsize=15)
     plt.ylabel('# of stars', fontsize=15)
     plt.legend(loc=1)
+
+
+def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
+                                 Amp_max=None, r_core=None,
+                                 plot_truth=True, save=False, dir_name="."):
+    """ Compare 1D fit and truth PSF """
+    image_size = psf.image_size
+    pixel_scale = psf.pixel_scale
     
+    plt.figure(figsize=(7,6))
+    r = np.logspace(0., np.log10(image_size), 100)
+    
+    # read fitting results
+    pmed, pmean, pcov, samples_eq = get_params_fit(res, return_sample=True)
+    print("Fitting (mean) : ", np.around(pmean,3))
+    print("Fitting (median) : ", np.around(pmed,3))
+    
+    from astropy.stats import bootstrap
+    samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
+    
+    # truth psf params
+    gamma_pix, beta, frac = psf.gamma_pix, psf.beta, psf.frac
+    n_s, theta_s_pix = psf.n_s, psf.theta_s_pix
+    print('Truth : ', n_s)
+    
+    # 2D - 1D conversion for visual
+    c_mof2Dto1D =  C_mof2Dto1D(gamma_pix, beta)
+    c_mpow2Dto1D = C_mpow2Dto1D(n_s=n_s, theta_s=theta_s_pix)
+    
+    # 1D truth psf
+    comp1 = moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
+    comp2 = multi_power1d_normed(r, n_s, theta_s_pix) / c_mpow2Dto1D
+    
+    # plot truth
+    if plot_truth:
+        plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
+                     label="Truth", color="steelblue", lw=4, zorder=2)
+    
+    N_n = len([lab for lab in labels if "n" in lab])
+    N_theta = len([lab for lab in labels if "theta" in lab])
+    
+    for sample_k in samples_eq_bs:
+        
+        n_s_k = sample_k[:N_n]
+        
+        if N_theta > 0:
+            theta_s_pix_k = np.append([theta_s_pix[0]],
+                                      10**sample_k[N_n:-2] / pixel_scale) 
+        else:
+            theta_s_pix_k = theta_s_pix 
+            
+        comp2_k = multi_power1d_normed(r, n_s_k, theta_s_pix_k) / c_mpow2Dto1D
+
+        plt.semilogy(r, (1-frac) * comp1 + frac * comp2_k,
+                     color="lightblue", lw=2, alpha=0.1, zorder=1)
+        
+    for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
+                              ["-.","--"], ["mean", "med"]):
+
+        n_s_fit = fits[:N_n]
+
+        if N_theta > 0:
+            theta_s_pix_fit = np.append([theta_s_pix[0]],
+                                        10**fits[N_n:-2] / pixel_scale)
+        else:
+            theta_s_pix_fit = theta_s_pix 
+
+        comp2 = multi_power1d_normed(r,n_s=n_s_fit, theta_s=theta_s_pix_fit) / c_mpow2Dto1D
+        y_fit = (1-frac) * comp1 + frac * comp2
+
+        plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls,
+                     alpha=0.8, label=lab+' comb.', zorder=4)
+
+        if lab=="med":
+            plt.semilogy(r, (1-frac) * comp1,
+                         color="orange", lw=2, ls="--",
+                         alpha=0.7, label="med core", zorder=4)
+            plt.semilogy(r, frac * comp2,
+                         color="seagreen", lw=2, ls="--",
+                         alpha=0.7, label="med aureole", zorder=4)
+
+        std_fit = 10**fits[-1]
+        contrast = Amp_max / std_fit
+        plt.axhline(y_fit.max()/contrast, color="k", ls="--", alpha=0.9)
+            
+    for theta in theta_s_pix:
+        plt.axvline(theta, ls=":", color="gray",alpha=0.3)
+    if N_theta > 0:    
+        for logtheta_fit in fits[N_n:-2]:
+            plt.axvline(10**logtheta_fit / pixel_scale, ls="-", color="k",alpha=0.7)
+    
+    if r_core is not None:
+        r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
+        plt.axvspan(np.atleast_1d(r_core).max(), r_max,
+                    color='steelblue', alpha=0.15, zorder=1)
+        plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
+                    color='gray', alpha=0.15, zorder=1)
+    plt.legend(loc=1, fontsize=12)    
+    plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
+    plt.ylabel(r"$\rm Intensity$",fontsize=18)
+    plt.title("Recovered PSF from Fitting vs Truth",fontsize=18)
+    plt.text(1, y_fit.max()/contrast*1.5, '1 $\sigma$', fontsize=10)
+    plt.xscale("log")
+    plt.ylim(1e-9, 0.5)    
+    plt.tight_layout()
+    
+    if save:
+        plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
+        plt.close()
+        
+def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
+                                 image_base=None, vmin=None, vmax=None,
+                                 avg_func='median'):
+    """ Compare 2D fit and truth image """
+    N_n = len([lab for lab in labels if "n" in lab])
+    N_theta = len([lab for lab in labels if "theta" in lab])
+    
+    pmed, pmean, pcov = get_params_fit(res)
+    fits = pmed if avg_func=='median' else pmean
+    print("Fitting (mean) : ", np.around(pmean,3))
+    print("Fitting (median) : ", np.around(pmed,3))
+    
+    n_s_fit = fits[:N_n]
+    if N_theta > 0:
+        theta_s_fit = np.append([psf.theta_s[0]], 10**fits[N_n:-2])
+    else:
+        theta_s_fit = psf.theta_s
+    
+    mu_fit, sigma_fit = fits[-2], 10**fits[-1]
+    noise_fit = make_noise_image(psf.image_size, sigma_fit)
+    
+    psf_fit = psf.copy()
+    psf_fit.update({'n_s':n_s_fit, 'theta_s': theta_s_fit})
+    
+    image_fit = generate_mock_image(psf_fit, stars, draw_real=True)
+    image_fit = image_fit + mu + noise_fit
+    
+    if image_base is not None:
+        image_fit += image_base
+        
+    if vmin is None:
+        vmin = mu_fit - 0.3 * sigma_fit
+    if vmax is None:
+        vmax = vmin + 11
+        
+    fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
+    im = ax1.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm1); colorbar(im)
+    im = ax2.imshow(image, vmin=vmin, vmax=vmax, norm=norm1); colorbar(im)
+    Diff = (image_fit-image)/image
+    im = ax3.imshow(Diff, vmin=-0.1, vmax=0.1, cmap='seismic'); colorbar(im)
+    ax1.set_title("Fit: I$_f$")
+    ax2.set_title("Original: I$_0$")
+    ax3.set_title("Frac.Diff: (I$_f$ - I$_0$) / I$_0$")
+    
+    plt.tight_layout()   
 
 def draw_comparison_fit_data(image_fit, data, 
                              noise_fit, mask_fit, vmin=None, vmax=None,
