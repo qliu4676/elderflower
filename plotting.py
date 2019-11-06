@@ -380,7 +380,7 @@ def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
         
 def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
                                  image_base=None, vmin=None, vmax=None,
-                                 avg_func='median'):
+                                 avg_func='median', save=False, dir_name="."):
     """ Compare 2D fit and truth image """
     N_n = len([lab for lab in labels if "n" in lab])
     N_theta = len([lab for lab in labels if "theta" in lab])

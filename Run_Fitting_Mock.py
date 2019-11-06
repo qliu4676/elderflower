@@ -16,7 +16,7 @@ dir_name = id_generator()
 check_save_path(dir_name)
 # dir_name = 'mp_mock'
 print_progress = True
-method = '2p'
+method = '3p'
 n_thread = None
 n_cpu = 4
 
@@ -70,7 +70,7 @@ Flux_Auto_SE = SE_cat_full[SE_cat_full['FLAGS']<8]["FLUX_AUTO"]
 np.random.seed(888)
 Flux = Flux_Auto_SE.sample(n=n_star).values
 
-Flux[Flux>5e5] *= 10
+Flux[Flux>5e5] *= 20
 
 # Flux Thresholds 
 F_bright = 1e5
@@ -154,7 +154,7 @@ def loglike_2p(v):
     
     psf.update({'n_s':n_s, 'theta_s':theta_s})
     
-    image_tri = generate_mock_image(psf, stars, psf_range=640,
+    image_tri = generate_mock_image(psf, stars, psf_range=[320, 640],
                                     brightest_only=True, parallel=False, draw_real=False)
     image_tri = image_tri + image_base + mu 
     
@@ -170,11 +170,12 @@ def loglike_2p(v):
 
 def prior_tf_3p(u):
     v = u.copy()
-    v[0] = u[0] * 0.8 + 2.7                 # n0 : 2.7-3.5
-    v[1] = u[1] * 0.8 + (v[0]-1)            # n1 : n0-1 - n0-0.2
-    v[2] = max(u[2] * 0.8 + (v[1]-1) ,1)    # n2 : [1,n1-1] - n1-0.2
-    v[3] = u[3] * 0.8 + 1.7                 # log theta1 : 50-300  # in arcsec
-    v[4] = u[4] * (2.7-2*v[3]) + 2*v[3]     # log theta2 : 2 * theta1 - 500  # in arcsec
+    v[0] = u[0] * 0.8 + 2.7                           # n0 : 2.7-3.5
+    v[1] = u[1] * 0.8 + (v[0]-1)                      # n1 : n0-1 - n0-0.2
+    v[2] = u[2] * max(-0.8, 1.2-v[1]) + (v[1]-0.2)    # n2 : [1,n1-1] - n1-0.2
+    v[3] = u[3] * 0.8 + 1.7                           # log theta1 : 50-300  # in arcsec
+    v[4] = u[4] * min(0.4, 2.4-v[3]) + (v[3]+0.3)
+        # log theta2 : 2 * theta1 - [5 * theta1, 500]  # in arcsec
     v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
                                 loc=mu_patch, scale=std_patch)         # mu
     v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
@@ -188,7 +189,7 @@ def loglike_3p(v):
     
     psf.update({'n_s':n_s, 'theta_s':theta_s})
     
-    image_tri = generate_mock_image(psf, stars, psf_range=640,
+    image_tri = generate_mock_image(psf, stars, psf_range=[320, 640],
                                     brightest_only=True, parallel=False, draw_real=False)
     image_tri = image_tri + image_base + mu 
     
@@ -229,10 +230,10 @@ ds.save_result(filename='Mock-fit_best_%s.res'%method,
 
 ds.cornerplot(labels=labels, save=save, dir_name=dir_name)
 
-draw2D_fit_vs_truth_PSF_mpow(ds.ressults, psf0, stars, labels,
+draw2D_fit_vs_truth_PSF_mpow(ds.results, psf0, stars, labels,
                              save=save, dir_name=dir_name)
 
-plot1D_fit_vs_truth_PSF_mpow(ds.ressults, psf0, labels,
+plot1D_fit_vs_truth_PSF_mpow(ds.results, psf0, labels,
                              n_bootstrap=800,
                              Amp_max=Amp_m, r_core=r_core_s,
                              save=save, dir_name=dir_name)

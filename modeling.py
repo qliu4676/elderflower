@@ -1167,7 +1167,7 @@ def make_truth_image(psf, stars, contrast=1e6,
         
 def generate_mock_image(psf, stars,
                         contrast=[1e6,1e7],
-                        psf_range=None,
+                        psf_range=[None, None],
                         min_psf_range=90, 
                         max_psf_range=1200,
                         psf_scale=None,
@@ -1195,7 +1195,7 @@ def generate_mock_image(psf, stars,
         # 1. Draw medium bright stars with galsim in Fourier space
         psf_e, psf_size = psf.generate_aureole(contrast=contrast[0],
                                                psf_scale=psf_scale,
-                                               psf_range=psf_range,
+                                               psf_range=psf_range[0],
                                                min_psf_range=min_psf_range//2,
                                                max_psf_range=max_psf_range//2,
                                                interpolant=interpolant)
@@ -1252,7 +1252,7 @@ def generate_mock_image(psf, stars,
         # Draw very bright star in Fourier space 
         psf_e_2, psf_size_2 = psf.generate_aureole(contrast=contrast[1],
                                                    psf_scale=psf_scale,
-                                                   psf_range=psf_range,
+                                                   psf_range=psf_range[1],
                                                    min_psf_range=min_psf_range,
                                                    max_psf_range=max_psf_range,
                                                    interpolant=interpolant)
