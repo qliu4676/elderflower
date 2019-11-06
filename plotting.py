@@ -21,7 +21,7 @@ rcParams.update({'font.size': 14})
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=24, vmin=884, vmax=1e3,
-                  pad=0, save=False, save_path='./'):
+                  pad=0, save=False, dir_name='./'):
     """ Visualize mask map """
     from matplotlib import patches
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
@@ -57,13 +57,13 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     plt.tight_layout()
     
     if save:
-        plt.savefig(os.path.join(save_path, "Mask.png"), dpi=150)
+        plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=150)
         plt.close()
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
                         ma_example=None,
                         r_core=24, vmin=884, vmax=1e3,
-                        pad=0, save=False, save_path='./'):
+                        pad=0, save=False, dir_name='./'):
     """ Visualize mask map w/ strips """
     
     from matplotlib import patches
@@ -103,7 +103,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(save_path, "Mask_strip.png"), dpi=150)
+        plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=150)
         plt.close()
         
 def Fit_background_distribution(image, mask_deep):
@@ -165,7 +165,8 @@ def plot_PSF_model_1D(frac, f_core, f_aureole,
     
 def plot_PSF_model_galsim(psf_inner, psf_outer, params,
                           image_size, pixel_scale,
-                          contrast=None, aureole_model="Power"):
+                          contrast=None, save=False, dir_name='.',
+                          aureole_model="Power"):
     
     frac, gamma_pix, beta = params['frac'], params['gamma'] / pixel_scale, params['beta']
     
@@ -226,7 +227,13 @@ def plot_PSF_model_galsim(psf_inner, psf_outer, params,
     plt.title("Model PSF",fontsize=14)
     plt.ylim(-9, -0.5)
     
-def plot_flux_dist(Flux, Flux_thresholds, **kwargs):
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(dir_name, "Model_PSF.png"), dpi=120)
+        plt.close()
+    
+def plot_flux_dist(Flux, Flux_thresholds,
+                   save=False, dir_name='.', **kwargs):
     import seaborn as sns
     F_bright, F_verybright = Flux_thresholds
     plt.axvline(np.log10(F_bright), color="k", ls="-",alpha=0.7, zorder=1)
@@ -242,8 +249,27 @@ def plot_flux_dist(Flux, Flux_thresholds, **kwargs):
     plt.xlabel('Estimated Total Flux/Mag', fontsize=15)
     plt.ylabel('# of stars', fontsize=15)
     plt.legend(loc=1)
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(dir_name, "Flux_dist.png"), dpi=120)
+        plt.close()
 
+def draw_prior(priors, xlabels=None, plabels=None, save=False, dir_name='./'):
+    
+    x_s = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in priors]
+    
+    fig, axes = plt.subplots(1, len(priors), figsize=(15,4))
+    for k, ax in enumerate(axes):
+        ax.plot(x_s[k], priors[k].pdf(x_s[k]),'-', lw=5, alpha=0.6, label=plabels[k])
+        ax.legend()
+        if xlabels is not None:
+            ax.set_xlabel(xlabels[k], fontsize=12)
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(dir_name, "Prior.png"), dpi=100)
+        plt.close()
 
+        
 def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
                                  Amp_max=None, r_core=None,
                                  plot_truth=True, save=False, dir_name="."):
@@ -349,7 +375,7 @@ def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
     plt.tight_layout()
     
     if save:
-        plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
+        plt.savefig(os.path.join(dir_name, "Fit_PSF.png"), dpi=120)
         plt.close()
         
 def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
@@ -397,7 +423,11 @@ def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
     ax3.set_title("Frac.Diff: (I$_f$ - I$_0$) / I$_0$")
     
     plt.tight_layout()   
-
+    if save:
+        plt.savefig(os.path.join(dir_name,
+                                 "Fit_vs_truth_image.png"), dpi=120)
+        plt.close()
+        
 def draw_comparison_fit_data(image_fit, data, 
                              noise_fit, mask_fit, vmin=None, vmax=None,
                              save=False, dir_name=".", suffix=""):
@@ -428,7 +458,7 @@ def draw_comparison_fit_data(image_fit, data,
 
     plt.tight_layout()
     if save:
-        plt.savefig("Comparison_fit_data%s.png"%(dir_name, suffix),dpi=150)
+        plt.savefig(os.path.join(dir_name, "Comparison_fit_data%s.png"%suffix), dpi=120)
         plt.close()
     
 # def plot_fit_PSF(res, image_size=image_size, 

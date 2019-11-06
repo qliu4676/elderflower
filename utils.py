@@ -621,6 +621,13 @@ def compute_Rnorm_batch(df_target, SE_catalog, wcs, data, seg_map,
 
 
 ### Catalog / Data Manipulation Helper ###
+def id_generator(size=6, chars=None):
+    import random
+    import string
+
+    if chars is None:
+        chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(size))
 
 def check_save_path(dir_name):
     if not os.path.exists(dir_name):
@@ -796,17 +803,115 @@ def load_thumbs(filename):
     with open(filename + '.pkl', 'rb') as f:
         return pickle.load(f)
 
+### Prior Helper ###    
+def build_priors(priors):
+    """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
+    def prior_transform(u):
+        v = u.copy()
+        for i in range(len(u)):
+            v[i] = priors[i].ppf(u[i])
+        return v
+    return prior_transform    
 
 ### Nested Fitting Helper ###
-def Run_Dynamic_Nested_Fitting(loglike, 
-                               prior_transform,
-                               ndim,
+
+class DynamicNestedSampler:
+    def __init__(self,  loglike,  prior_transform, ndim,
+                 sample='auto', bound='multi', n_cpu=None, n_thread=None):
+        
+        self.ndim = ndim
+
+        if n_cpu is None:
+            n_cpu = mp.cpu_count()
+            
+        if n_thread is None:
+            n_thread = max(n_thread, n_cpu-1)
+            
+        self.open_pool(n_cpu)
+        
+        dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
+                                                sample=sample, bound=bound,
+                                                pool=self.pool, queue_size=n_thread,
+                                                use_pool={'update_bound': False})
+        self.dsampler = dsampler
+        
+    def run_fitting(self, nlive_init=100,
+                    maxiter_init=600, maxiter=10000,
+                    nlive_batch=50, maxbatch=2,
+                    maxiter_batch=1000,
+                    pfrac=0.8, close_pool=True,
+                    print_progress=True):
+    
+        print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
+        start = time.time()
+   
+        dlogz = 1e-3 * (nlive_init - 1) + 0.01
+        
+        self.dsampler.run_nested(nlive_init=nlive_init, 
+                                 nlive_batch=nlive_batch, 
+                                 maxbatch=maxbatch,
+                                 maxiter_init=maxiter_init,
+                                 maxiter=maxiter,
+                                 dlogz_init=dlogz, 
+                                 wt_kwargs={'pfrac': pfrac},
+                                 print_progress=print_progress) 
+        
+        end = time.time()
+        self.run_time = (end-start)
+        print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
+        
+        if close_pool:
+            self.close_pool()
+        
+    def open_pool(self, n_cpu):
+        print("\nOpening new pool: # of CPU used: %d"%(n_cpu - 1))
+        self.pool = mp.Pool(processes=n_cpu - 1)
+        self.pool.size = n_cpu - 1
+    
+    def close_pool(self):
+        print("\nPool Closed.")
+        self.pool.close()
+        self.pool.join()
+    
+    @property
+    def results(self):
+        res = getattr(self.dsampler, 'results', {})
+        if len(result) > 0:
+            res['run_time'] = self.run_time
+        return res
+    
+    def save_result(self, filename, dir_name='.'):
+        fname = os.path.join(dir_name, filename)
+        save_nested_fitting_result(self.results, fname)
+    
+    def cornerplot(self, labels=None, truths=None, figsize=(16,14),
+                   save=False, dir_name='.'):
+        fig = plt.subplots(self.ndim, self.ndim, figsize=figsize)
+        dyplot.cornerplot(self.results, truths=truths, labels=labels, 
+                          color="royalblue", truth_color="indianred",
+                          title_kwargs={'fontsize':18, 'y': 1.04},
+                          label_kwargs={'fontsize':16}, 
+                          show_titles=True, fig=fig)
+        if save:
+            plt.savefig(os.path.join(dir_name, "Cornerplot.png"), dpi=150)
+            plt.close()
+        
+    def cornerbound(self, prior_transform, labels=None, figsize=(10,10), save=False, dir_name='.'):
+        fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
+        fg, ax = dyplot.cornerbound(self.results, it=1000, labels=labels,
+                                    prior_transform=prior_transform,
+                                    show_live=True, fig=(fig, axes))
+        if save:
+            plt.savefig(os.path.join(dir_name, "Cornerbound.png"), dpi=150)
+            plt.close()
+
+            
+def Run_Dynamic_Nested_Fitting(loglike,  prior_transform, ndim,
                                nlive_init=100, sample='auto', 
                                nlive_batch=50, maxbatch=2,
-                               pfrac=0.8,
-                               n_cpu=None,
-                               print_progress=True):
-    print("Run Nested Fitting for the image... Dim of params: %d"%ndim)
+                               pfrac=0.8, n_cpu=None, print_progress=True):
+    
+    print("Run Nested Fitting for the image... #a of params: %d"%ndim)
     
     start = time.time()
     
@@ -835,45 +940,8 @@ def Run_Dynamic_Nested_Fitting(loglike,
     
     return pdsampler
 
-
-
-def Run_2lin_Nested_Fitting(X, Y, priors, display=True):
-    
-    """ Run piece-wise linear fitting for [X, Y]. 
-        Priors need to be given in [loc, loc+scale] by a dictionary {"loc"/"scale":[x0,y0,k1,k2,sigma]} """
-    
-    loc, scale = priors["loc"], priors["scale"]
-    
-    def prior_tf_2lin(u):
-        v = u.copy()
-        v[0] = u[0] * scale[0] + loc[0]  #x0
-        v[1] = u[1] * scale[1] + loc[1]  #y0
-        v[2] = u[2] * scale[2] + loc[2]  #k1
-        v[3] = u[3] * scale[3] + loc[3]  #k2
-        v[4] = u[4] * scale[4] + loc[4]  #sigma
-        return v
-
-    def loglike_2lin(v):
-        x0, y0, k2, sigma = v
-        ypred = np.piecewise(X, [X < x0], [lambda x: k1*x + y0-k1*x0, lambda x: k2*x + y0-k2*x0])
-        residsq = (ypred - Y)**2 / sigma**2
-        loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
-        if not np.isfinite(loglike):
-            loglike = -1e100
-        return loglike
-    
-    pdsampler = Run_Dynamic_Nested_Fitting(loglike=loglike_2lin, prior_transform=prior_tf_2lin, ndim=5)
-    pdres = pdsampler.results
-    
-    if display:
-        labels = ["x0", "y0", "k1", "k2", "sigma"]
-        fig, axes = dyplot.cornerplot(pdres, show_titles=True, 
-                                      color="royalblue", labels=labels,
-                                      title_kwargs={'fontsize':15, 'y': 1.02}, 
-                                      label_kwargs={'fontsize':12},
-                                      fig=plt.subplots(5, 5, figsize=(11, 10)))
-    return pdres
-
+def merge_run(re_list):
+    return dyfunc.merge_runs(res_list)
 
 def get_params_fit(res, return_sample=False):
     samples = res.samples                                 # samples
@@ -913,123 +981,123 @@ class InconvergenceError(MyError):
     def __repr__(self):
         return 'InconvergenceError: %r'%self.message
     
-# From TurbuStat
-def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
-                      return_fft=False, full_fft=True, randomseed=32768324):
-    '''
-    Generate a 2D power-law image with a specified index and random phases.
-    Adapted from https://github.com/keflavich/image_registration. Added ability
-    to make the power spectra elliptical. Also changed the random sampling so
-    the random phases are Hermitian (and the inverse FFT gives a real-valued
-    image).
-    Parameters
-    ----------
-    imsize : int
-        Array size.
-    powerlaw : float, optional
-        Powerlaw index.
-    theta : float, optional
-        Position angle of major axis in radians. Has no effect when ellip==1.
-    ellip : float, optional
-        Ratio of the minor to major axis. Must be > 0 and <= 1. Defaults to
-        the circular case (ellip=1).
-    return_fft : bool, optional
-        Return the FFT instead of the image. The full FFT is
-        returned, including the redundant negative phase phases for the RFFT.
-    full_fft : bool, optional
-        When `return_fft=True`, the full FFT, with negative frequencies, will
-        be returned. If `full_fft=False`, the RFFT is returned.
-    randomseed: int, optional
-        Seed for random number generator.
-    Returns
-    -------
-    newmap : np.ndarray
-        Two-dimensional array with the given power-law properties.
-    full_powermap : np.ndarray
-        The 2D array in Fourier space. The zero-frequency is shifted to
-        the centre.
-    '''
-    imsize = int(imsize)
+# # From TurbuStat
+# def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
+#                       return_fft=False, full_fft=True, randomseed=32768324):
+#     '''
+#     Generate a 2D power-law image with a specified index and random phases.
+#     Adapted from https://github.com/keflavich/image_registration. Added ability
+#     to make the power spectra elliptical. Also changed the random sampling so
+#     the random phases are Hermitian (and the inverse FFT gives a real-valued
+#     image).
+#     Parameters
+#     ----------
+#     imsize : int
+#         Array size.
+#     powerlaw : float, optional
+#         Powerlaw index.
+#     theta : float, optional
+#         Position angle of major axis in radians. Has no effect when ellip==1.
+#     ellip : float, optional
+#         Ratio of the minor to major axis. Must be > 0 and <= 1. Defaults to
+#         the circular case (ellip=1).
+#     return_fft : bool, optional
+#         Return the FFT instead of the image. The full FFT is
+#         returned, including the redundant negative phase phases for the RFFT.
+#     full_fft : bool, optional
+#         When `return_fft=True`, the full FFT, with negative frequencies, will
+#         be returned. If `full_fft=False`, the RFFT is returned.
+#     randomseed: int, optional
+#         Seed for random number generator.
+#     Returns
+#     -------
+#     newmap : np.ndarray
+#         Two-dimensional array with the given power-law properties.
+#     full_powermap : np.ndarray
+#         The 2D array in Fourier space. The zero-frequency is shifted to
+#         the centre.
+#     '''
+#     imsize = int(imsize)
 
-    if ellip > 1 or ellip <= 0:
-        raise ValueError("ellip must be > 0 and <= 1.")
+#     if ellip > 1 or ellip <= 0:
+#         raise ValueError("ellip must be > 0 and <= 1.")
 
-    yy, xx = np.meshgrid(np.fft.fftfreq(imsize),
-                         np.fft.rfftfreq(imsize), indexing="ij")
+#     yy, xx = np.meshgrid(np.fft.fftfreq(imsize),
+#                          np.fft.rfftfreq(imsize), indexing="ij")
 
-    if ellip < 1:
-        # Apply a rotation and scale the x-axis (ellip).
-        costheta = np.cos(theta)
-        sintheta = np.sin(theta)
+#     if ellip < 1:
+#         # Apply a rotation and scale the x-axis (ellip).
+#         costheta = np.cos(theta)
+#         sintheta = np.sin(theta)
 
-        xprime = ellip * (xx * costheta - yy * sintheta)
-        yprime = xx * sintheta + yy * costheta
+#         xprime = ellip * (xx * costheta - yy * sintheta)
+#         yprime = xx * sintheta + yy * costheta
 
-        rr2 = xprime**2 + yprime**2
+#         rr2 = xprime**2 + yprime**2
 
-        rr = rr2**0.5
-    else:
-        # Circular whenever ellip == 1
-        rr = (xx**2 + yy**2)**0.5
+#         rr = rr2**0.5
+#     else:
+#         # Circular whenever ellip == 1
+#         rr = (xx**2 + yy**2)**0.5
 
-    # flag out the bad point to avoid warnings
-    rr[rr == 0] = np.nan
+#     # flag out the bad point to avoid warnings
+#     rr[rr == 0] = np.nan
     
-    from astropy.utils import NumpyRNGContext
-    with NumpyRNGContext(randomseed):
+#     from astropy.utils import NumpyRNGContext
+#     with NumpyRNGContext(randomseed):
 
-        Np1 = (imsize - 1) // 2 if imsize % 2 != 0 else imsize // 2
+#         Np1 = (imsize - 1) // 2 if imsize % 2 != 0 else imsize // 2
 
-        angles = np.random.uniform(0, 2 * np.pi,
-                                   size=(imsize, Np1 + 1))
+#         angles = np.random.uniform(0, 2 * np.pi,
+#                                    size=(imsize, Np1 + 1))
 
-    phases = np.cos(angles) + 1j * np.sin(angles)
+#     phases = np.cos(angles) + 1j * np.sin(angles)
 
-    # Rescale phases to an amplitude of unity
-    phases /= np.sqrt(np.sum(phases**2) / float(phases.size))
+#     # Rescale phases to an amplitude of unity
+#     phases /= np.sqrt(np.sum(phases**2) / float(phases.size))
 
-    output = (rr**(-powerlaw / 2.)).astype('complex') * phases
+#     output = (rr**(-powerlaw / 2.)).astype('complex') * phases
 
-    output[np.isnan(output)] = 0.
+#     output[np.isnan(output)] = 0.
 
-    # Impose symmetry
-    # From https://dsp.stackexchange.com/questions/26312/numpys-real-fft-rfft-losing-power
-    if imsize % 2 == 0:
-        output[1:Np1, 0] = np.conj(output[imsize:Np1:-1, 0])
-        output[1:Np1, -1] = np.conj(output[imsize:Np1:-1, -1])
-        output[Np1, 0] = output[Np1, 0].real + 1j * 0.0
-        output[Np1, -1] = output[Np1, -1].real + 1j * 0.0
+#     # Impose symmetry
+#     # From https://dsp.stackexchange.com/questions/26312/numpys-real-fft-rfft-losing-power
+#     if imsize % 2 == 0:
+#         output[1:Np1, 0] = np.conj(output[imsize:Np1:-1, 0])
+#         output[1:Np1, -1] = np.conj(output[imsize:Np1:-1, -1])
+#         output[Np1, 0] = output[Np1, 0].real + 1j * 0.0
+#         output[Np1, -1] = output[Np1, -1].real + 1j * 0.0
 
-    else:
-        output[1:Np1 + 1, 0] = np.conj(output[imsize:Np1:-1, 0])
-        output[1:Np1 + 1, -1] = np.conj(output[imsize:Np1:-1, -1])
+#     else:
+#         output[1:Np1 + 1, 0] = np.conj(output[imsize:Np1:-1, 0])
+#         output[1:Np1 + 1, -1] = np.conj(output[imsize:Np1:-1, -1])
 
-    # Zero freq components must have no imaginary part to be own conjugate
-    output[0, -1] = output[0, -1].real + 1j * 0.0
-    output[0, 0] = output[0, 0].real + 1j * 0.0
+#     # Zero freq components must have no imaginary part to be own conjugate
+#     output[0, -1] = output[0, -1].real + 1j * 0.0
+#     output[0, 0] = output[0, 0].real + 1j * 0.0
 
-    if return_fft:
+#     if return_fft:
 
-        if not full_fft:
-            return output
+#         if not full_fft:
+#             return output
 
-        # Create the full power map, with the symmetric conjugate component
-        if imsize % 2 == 0:
-            power_map_symm = np.conj(output[:, -2:0:-1])
-        else:
-            power_map_symm = np.conj(output[:, -1:0:-1])
+#         # Create the full power map, with the symmetric conjugate component
+#         if imsize % 2 == 0:
+#             power_map_symm = np.conj(output[:, -2:0:-1])
+#         else:
+#             power_map_symm = np.conj(output[:, -1:0:-1])
 
-        power_map_symm[1::, :] = power_map_symm[:0:-1, :]
+#         power_map_symm[1::, :] = power_map_symm[:0:-1, :]
 
-        full_powermap = np.concatenate((output, power_map_symm), axis=1)
+#         full_powermap = np.concatenate((output, power_map_symm), axis=1)
 
-        if not full_powermap.shape[1] == imsize:
-            raise ValueError("The full output should have a square shape."
-                             " Instead has {}".format(full_powermap.shape))
+#         if not full_powermap.shape[1] == imsize:
+#             raise ValueError("The full output should have a square shape."
+#                              " Instead has {}".format(full_powermap.shape))
 
-        return np.fft.fftshift(full_powermap)
+#         return np.fft.fftshift(full_powermap)
 
-    newmap = np.fft.irfft2(output)
+#     newmap = np.fft.irfft2(output)
 
-    return newmap
+#     return newmap
 

@@ -208,12 +208,14 @@ class PSF_Model:
         return Intensity2SB(I, BKG, ZP, self.pixel_scale)
     
     def plot_model_galsim(self, psf_core, psf_aureole,
-                          image_size=400, contrast=None):
+                          image_size=400, contrast=None,
+                          save=False, dir_name='.'):
         """ Plot Galsim 2D model averaged in 1D """
         from plotting import plot_PSF_model_galsim
         plot_PSF_model_galsim(psf_core, psf_aureole, self.params,
                               image_size, self.pixel_scale,
                               contrast=contrast,
+                              save=save, dir_name='.',
                               aureole_model=self.aureole_model)
         
     def draw_aureole2D_in_real(self, star_pos, Flux):
@@ -284,10 +286,10 @@ class Stars:
             
             # Rendering stars in parallel if number of bright stars exceeds 50
             if self.n_medbright < 50:
-                print("Not many bright stars, will draw in serial.")
+                print("Not many bright stars, will draw in serial.\n")
                 self.parallel = False 
             else: 
-                print("Crowded fields w/ bright stars > 50, will draw in parallel.")
+                print("Crowded fields w/ bright stars > 50, will draw in parallel.\n")
                 self.parallel = True
 
     @classmethod            
@@ -413,7 +415,8 @@ class Mask:
         self.mu = mu
         
     def make_mask_map_dual(self, r_core, sn_thre=3,
-                           draw=True, **kwargs):
+                           draw=True, save=False, dir_name='.',
+                           **kwargs):
         image = self.image
         stars = self.stars
         pad = self.pad 
@@ -435,10 +438,12 @@ class Mask:
         if draw:
             from plotting import draw_mask_map
             draw_mask_map(image, seg_deep0, mask_deep0, stars, pad=pad,
-                          r_core=r_core, vmin=self.mu, vmax=self.mu+50)
+                          r_core=r_core, vmin=self.mu, vmax=self.mu+50, save=save, dir_name=dir_name)
             
     def make_mask_strip(self, width, n_strip, dist_strip=200,
-                        draw=True, clean=True, **kwargs):
+                        draw=True, clean=True,
+                        save=False, dir_name='.',
+                        **kwargs):
         if hasattr(self, 'mask_deep') is False:
             return None
         
@@ -484,7 +489,7 @@ class Mask:
                                 mask_comb0, stars_new, pad=pad,
                                 ma_example=[mask_strip_s[0],
                                             mask_cross_s[0]],
-                                r_core=self.r_core, vmin=self.mu, vmax=self.mu+50)
+                                r_core=self.r_core, vmin=self.mu, vmax=self.mu+50, save=save, dir_name=dir_name)
             
         
 ### (Old) Galsim Modelling Funcs ###
@@ -856,19 +861,19 @@ def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
     for k in range(len(n_s)-1):
         
         if n_s[k] == 2:
-            I_2D += 2*np.pi * a_s[k] * np.log(theta_s[k+1]/theta_s[k])
+            I_2D += 2*np.pi * a_s[k] * math.log(theta_s[k+1]/theta_s[k])
         else:
             I_2D += 2*np.pi * a_s[k] * (theta_s[k]**(2-n_s[k]) - theta_s[k+1]**(2-n_s[k])) / (n_s[k]-2)
             
     if n_s[-1] > 2:
         I_2D += 2*np.pi * a_s[-1] * theta_s[-1]**(2-n_s[-1]) / (n_s[-1]-2) 
-#     elif n_s[-1] == 2:
-#         I_2D += 2*np.pi * a_s[-1] * np.log(theta_trunc/theta_s[-1])
-#     else:
-#         I_2D += 2*np.pi * a_s[k] * (theta_trunc**(2-n_s[k]) - theta_s[k]**(2-n_s[k])) / (2-n_s[-1])
-
+    elif n_s[-1] == 2:
+        I_2D += 2*np.pi * a_s[-1] * math.log(theta_trunc/theta_s[-1])
     else:
-        raise InconvergenceError('PSF is not convergent in Infinity.')
+        I_2D += 2*np.pi * a_s[k] * (theta_trunc**(2-n_s[k]) - theta_s[k]**(2-n_s[k])) / (2-n_s[-1])
+
+#     else:
+#         raise InconvergenceError('PSF is not convergent in Infinity.')
         
     return I_2D
 
@@ -1055,7 +1060,7 @@ def make_base_image(image_size, stars, psf_base, pad=0, verbose=True):
     image_gs0 = full_image0.array
     
     end = time.time()
-    if verbose: print("Total Time: %.3fs"%(end-start))
+    if verbose: print("Total Time: %.3f s\n"%(end-start))
     
     return image_gs0[pad:image_size-pad, pad:image_size-pad]
 
@@ -1152,7 +1157,7 @@ def make_truth_image(psf, stars, contrast=1e6,
         
     if verbose: 
         end = time.time()
-        print("Total Time: %.3fs"%(end-start))
+        print("Total Time: %.3f s\n"%(end-start))
     
     return image
         
@@ -1389,32 +1394,3 @@ def generate_image_fit(res, psf, stars, image_base):
     image_fit = image_fit + image_base + mu_fit
     
     return image_fit, noise_fit, pmed
-
-############################################
-# Functions for making priors
-############################################
-
-def build_priors(priors):
-    """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
-    def prior_transform(u):
-        v = u.copy()
-        for i in range(len(u)):
-            v[i] = priors[i].ppf(u[i])
-        return v
-    return prior_transform
-
-def draw_prior(priors, xlabels=None, plabels=None, save=False, dir_name='./'):
-    
-    x_s = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in priors]
-    
-    fig, axes = plt.subplots(1, len(priors), figsize=(15,4))
-    for k, ax in enumerate(axes):
-        ax.plot(x_s[k], priors[k].pdf(x_s[k]),'-', lw=5, alpha=0.6, label=plabels[k])
-        ax.legend()
-        if xlabels is not None:
-            ax.set_xlabel(xlabels[k], fontsize=12)
-    plt.tight_layout()
-    if save:
-        plt.savefig("%s/Prior.png"%dir_name,dpi=100)
-        plt.close()
-
