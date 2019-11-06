@@ -739,6 +739,10 @@ def multi_power1d_normed(x, n_s, theta_s):
 def map2d(f, xx=None, yy=None):
     return f(xx,yy)
 
+def map2d_k(k, func_list, xx=None, yy=None):
+    return func_list[k](xx, yy)
+
+
 def power2d(xx, yy, n, theta0, I_theta0, cen): 
     """ Power law for 2d array, normalized = I_theta0 at theta0 """
     rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
@@ -1066,7 +1070,7 @@ def make_base_image(image_size, stars, psf_base, pad=0, verbose=True):
 
 
 def make_truth_image(psf, stars, contrast=1e6,
-                     parallel=False, verbose=True, saturation=4.5e4):
+                     parallel=False, verbose=False, saturation=4.5e4):
     
     """
     Draw truth image according to the given position & flux. 
@@ -1095,32 +1099,31 @@ def make_truth_image(psf, stars, contrast=1e6,
                           psf.generate_aureole(contrast=contrast,
                                                psf_range=image_size)[0])
     
-    # 1. Draw normal stars in Fourier
     full_image = galsim.ImageF(image_size, image_size)
     
-    # separate stars into two samples
-    Flux_A = stars.Flux_verybright
-    star_pos_A = stars.star_pos_verybright
+    Flux_A = stars.Flux_bright
+    star_pos_A = stars.star_pos_bright
     
-    Flux_B = stars.Flux_medbright
-    star_pos_B =stars.star_pos_medbright
+#     Flux_B = stars.Flux_medbright
+#     star_pos_B =stars.star_pos_medbright
     
-    # stick stamps from FFT on the canvas 
-    for k, (pos, flux) in enumerate(zip(star_pos_B, Flux_B)): 
+    # 1. Draw normal stars in Fourier
+#     for k, (pos, flux) in enumerate(zip(star_pos_B, Flux_B)): 
 
-        psf_star = (1-frac) * psf_core + frac * psf_aureole
-        psf_star = psf_star.withFlux(flux)
+#         psf_star = (1-frac) * psf_core + frac * psf_aureole
+#         psf_star = psf_star.withFlux(flux)
         
-        (ix_nominal, iy_nominal), offset = get_center_offset(pos)
+#         (ix_nominal, iy_nominal), offset = get_center_offset(pos)
 
-        stamp = psf_star.drawImage(scale=psf.pixel_scale, offset=offset, method='no_pixel')
-        stamp.setCenter(ix_nominal,iy_nominal)
+#         # stick stamps from FFT on the canvas 
+#         stamp = psf_star.drawImage(scale=psf.pixel_scale, offset=offset, method='no_pixel')
+#         stamp.setCenter(ix_nominal,iy_nominal)
         
-        try:
-            bounds = stamp.bounds & full_image.bounds
-            full_image[bounds] += stamp[bounds]
-        except GalSimBoundsError:
-            continue
+#         try:
+#             bounds = stamp.bounds & full_image.bounds
+#             full_image[bounds] += stamp[bounds]
+#         except GalSimBoundsError:
+#             continue
 
     image_gs = full_image.array
 
@@ -1138,7 +1141,8 @@ def make_truth_image(psf, stars, contrast=1e6,
         if verbose: 
             print("Rendering bright stars in serial...")
         image_real = np.sum([f2d(xx,yy) + p2d(xx,yy) 
-                             for (f2d, p2d) in zip(func_core_2d_s, func_aureole_2d_s)], axis=0)
+                             for (f2d, p2d) in zip(func_core_2d_s,
+                                                   func_aureole_2d_s)], axis=0)
     else:
         if verbose: 
             print("Rendering bright stars in parallel...")
@@ -1146,7 +1150,7 @@ def make_truth_image(psf, stars, contrast=1e6,
         p_map2d = partial(map2d, xx=xx, yy=yy)
         
         image_stars = parallel_compute(func2d_s, p_map2d,
-                                       lengthy_computation=False, verbose=True)
+                                       lengthy_computation=False, verbose=verbose)
         image_real = np.sum(image_stars, axis=0)
     
     # combine the two image
@@ -1163,12 +1167,14 @@ def make_truth_image(psf, stars, contrast=1e6,
         
 def generate_mock_image(psf, stars,
                         contrast=[1e6,1e7],
+                        psf_range=None,
                         min_psf_range=90, 
                         max_psf_range=1200,
                         psf_scale=None,
                         parallel=False,
                         n_parallel=4,
                         draw_real=False,
+                        parallel_real=False,
                         n_real=2.5,
                         brightest_only=False,
                         interpolant='cubic'):
@@ -1188,15 +1194,16 @@ def generate_mock_image(psf, stars,
     if not brightest_only:
         # 1. Draw medium bright stars with galsim in Fourier space
         psf_e, psf_size = psf.generate_aureole(contrast=contrast[0],
-                                           psf_scale=psf_scale,
-                                           psf_range=None,
-                                           min_psf_range=min_psf_range//2,
-                                           max_psf_range=max_psf_range//2,
-                                           interpolant=interpolant)
+                                               psf_scale=psf_scale,
+                                               psf_range=psf_range,
+                                               min_psf_range=min_psf_range//2,
+                                               max_psf_range=max_psf_range//2,
+                                               interpolant=interpolant)
         
         # Rounded PSF size to 2^k or 3*2^k for faster FT
-        psf_size = round_good_fft(psf_size)
-
+#         psf_size = round_good_fft(psf_size)
+        psf_size = psf_size // 2 * 2
+        
         psf_star = (1-frac) * psf_c + frac * psf_e               
 
         if not parallel:
@@ -1228,8 +1235,8 @@ def generate_mock_image(psf, stars,
         if psf.n < n_real:
             draw_real = True
             
-    if (image_size<500) | (psf.aureole_model == "multi-power"):
-        draw_real = True
+#     if (image_size<500) | (psf.aureole_model == "multi-power"):
+#         draw_real = True
         
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
@@ -1245,12 +1252,13 @@ def generate_mock_image(psf, stars,
         # Draw very bright star in Fourier space 
         psf_e_2, psf_size_2 = psf.generate_aureole(contrast=contrast[1],
                                                    psf_scale=psf_scale,
-                                                   psf_range=None,
+                                                   psf_range=psf_range,
                                                    min_psf_range=min_psf_range,
                                                    max_psf_range=max_psf_range,
                                                    interpolant=interpolant)
         
-        psf_size_2 = round_good_fft(psf_size_2)
+#         psf_size_2 = round_good_fft(psf_size_2)
+        psf_size_2 = psf_size_2 // 2 * 2
         psf_star_2 = (1-frac) * psf_c + frac * psf_e_2
         
         for k in range(stars.n_verybright):

@@ -18,7 +18,7 @@ check_save_path(dir_name)
 print_progress = True
 method = '2p'
 n_thread = None
-n_cpu = 3
+n_cpu = 4
 
 
 ############################################
@@ -26,13 +26,13 @@ n_cpu = 3
 ############################################
 
 # Meta-parameter
-n_star = 300
+n_star = 400
 wid_strip, n_strip = 8, 32
 mu = 884
 sigma = 1e-1
 
 # Image Parameter
-image_size = 601
+image_size = 801
 pixel_scale = 2.5                                # arcsec/pixel
 
 # PSF Parameters
@@ -154,7 +154,8 @@ def loglike_2p(v):
     
     psf.update({'n_s':n_s, 'theta_s':theta_s})
     
-    image_tri = generate_mock_image(psf, stars, brightest_only=True, parallel=False, draw_real=True)
+    image_tri = generate_mock_image(psf, stars, psf_range=640,
+                                    brightest_only=True, parallel=False, draw_real=False)
     image_tri = image_tri + image_base + mu 
     
     ypred = image_tri[~mask_fit].ravel()
@@ -187,7 +188,8 @@ def loglike_3p(v):
     
     psf.update({'n_s':n_s, 'theta_s':theta_s})
     
-    image_tri = generate_mock_image(psf, stars, brightest_only=True, parallel=False, draw_real=True)
+    image_tri = generate_mock_image(psf, stars, psf_range=640,
+                                    brightest_only=True, parallel=False, draw_real=False)
     image_tri = image_tri + image_base + mu 
     
     ypred = image_tri[~mask_fit].ravel()

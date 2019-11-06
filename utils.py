@@ -637,7 +637,7 @@ def check_save_path(dir_name):
             while os.path.exists(dir_name):
                 dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
             os.makedirs(dir_name)
-    print("Results will be saved in %s"%dir_name)
+    print("Results will be saved in %s\n"%dir_name)
     
 
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
@@ -836,9 +836,8 @@ class DynamicNestedSampler:
         self.dsampler = dsampler
         
     def run_fitting(self, nlive_init=100,
-                    maxiter_init=600, maxiter=10000,
+                    maxiter=10000,
                     nlive_batch=50, maxbatch=2,
-                    maxiter_batch=1000,
                     pfrac=0.8, close_pool=True,
                     print_progress=True):
     
@@ -850,7 +849,6 @@ class DynamicNestedSampler:
         self.dsampler.run_nested(nlive_init=nlive_init, 
                                  nlive_batch=nlive_batch, 
                                  maxbatch=maxbatch,
-                                 maxiter_init=maxiter_init,
                                  maxiter=maxiter,
                                  dlogz_init=dlogz, 
                                  wt_kwargs={'pfrac': pfrac},
@@ -858,6 +856,7 @@ class DynamicNestedSampler:
         
         end = time.time()
         self.run_time = (end-start)
+        
         print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
         
         if close_pool:
@@ -876,11 +875,11 @@ class DynamicNestedSampler:
     @property
     def results(self):
         res = getattr(self.dsampler, 'results', {})
-        if len(res) > 0:
-            res['run_time'] = self.run_time
         return res
     
     def save_result(self, filename, dir_name='.'):
+        self.results['run_time'] = self.run_time
+        
         fname = os.path.join(dir_name, filename)
         save_nested_fitting_result(self.results, fname)
     
