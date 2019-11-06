@@ -12,7 +12,7 @@ matplotlib.use('Agg')
 
 # Option
 save = True
-dir_name = id_generator()
+dir_name = os.oath.join('tmp', id_generator())
 check_save_path(dir_name)
 # dir_name = 'mp_mock'
 print_progress = True
@@ -131,87 +131,24 @@ Y_clip = sigma_clip(Y, sigma=3, maxiters=10)
 mu_patch, std_patch = np.mean(Y_clip), np.std(Y_clip)
 print("\nEstimate of Background: (%.3f, %.3f)"%(mu_patch, std_patch))
 
-
-############################################
-# Priors and Likelihood Models for Fitting
-############################################
-
-def prior_tf_2p(u):
-    v = u.copy()
-    v[0] = u[0] * 0.6 + 3             # n0 : 3-3.6
-    v[1] = u[1] * (v[0]-1.2) + 1.2    # n1 : 1.2-n0
-    v[2] = u[2] * 0.8 + 1.7           # log theta1 : 50-300  # in arcsec
-    v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
-                                loc=mu_patch, scale=std_patch)         # mu
-    v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
-                                loc=np.log10(std_patch), scale=0.5)    # log sigma 
-    return v
-
-def loglike_2p(v):
-    n_s = v[:2]
-    theta_s = [theta_0, 10**v[2]]
-    mu, sigma = v[-2], 10**v[-1]
-    
-    psf.update({'n_s':n_s, 'theta_s':theta_s})
-    
-    image_tri = generate_mock_image(psf, stars, psf_range=[320, 640],
-                                    brightest_only=True, parallel=False, draw_real=False)
-    image_tri = image_tri + image_base + mu 
-    
-    ypred = image_tri[~mask_fit].ravel()
-    residsq = (ypred - Y)**2 / sigma**2
-    loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
-    
-    if not np.isfinite(loglike):
-        loglike = -1e100
-        
-    return loglike
-
-
-def prior_tf_3p(u):
-    v = u.copy()
-    v[0] = u[0] * 0.8 + 2.7                           # n0 : 2.7-3.5
-    v[1] = u[1] * 0.8 + (v[0]-1)                      # n1 : n0-1 - n0-0.2
-    v[2] = u[2] * max(-0.8, 1.2-v[1]) + (v[1]-0.2)    # n2 : [1,n1-1] - n1-0.2
-    v[3] = u[3] * 0.8 + 1.7                           # log theta1 : 50-300  # in arcsec
-    v[4] = u[4] * min(0.4, 2.4-v[3]) + (v[3]+0.3)
-        # log theta2 : 2 * theta1 - [5 * theta1, 500]  # in arcsec
-    v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
-                                loc=mu_patch, scale=std_patch)         # mu
-    v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
-                                loc=np.log10(std_patch), scale=0.5)    # log sigma 
-    return v
-
-def loglike_3p(v):
-    n_s = v[:3]
-    theta_s = [theta_0, 10**v[3], 10**v[4]]
-    mu, sigma = v[-2], 10**v[-1]
-    
-    psf.update({'n_s':n_s, 'theta_s':theta_s})
-    
-    image_tri = generate_mock_image(psf, stars, psf_range=[320, 640],
-                                    brightest_only=True, parallel=False, draw_real=False)
-    image_tri = image_tri + image_base + mu 
-    
-    ypred = image_tri[~mask_fit].ravel()
-    residsq = (ypred - Y)**2 / sigma**2
-    loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
-    
-    if not np.isfinite(loglike):
-        loglike = -1e100
-        
-    return loglike
-
-
 # Choose fitting parameterization
+prior_tf = set_prior(3.3, mu_patch, std_patch,
+                     theta_in=90, theta_out=500, method=method)
+loglike = set_likelihood(Y, mask_fit, psf, stars, image_base, psf_range=[320, 640],
+                         brightest_only=True, parallel=False, draw_real=False,
+                         draw_func=generate_mock_image, method=method)
+
 if method == '2p':
     labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
-    loglike, prior_tf = loglike_2p, prior_tf_2p
     
 elif method == '3p':
     labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$', r'$\mu$', r'$\log\,\sigma$']
-    loglike, prior_tf = loglike_3p, prior_tf_3p
-
+    
+elif method == 'sp':
+    labels_sp = [r'$n_%d$'%d for d in range(nspline)] \
+                + [r'$\theta_%d$'%(d+1) for d in range(nspline-1)] \
+                + [r'$\mu$', r'$\log\,\sigma$']
+    
 ndim = len(labels)
 print("Labels: ", labels)
 
@@ -222,15 +159,15 @@ print("Labels: ", labels)
 ds = DynamicNestedSampler(loglike, prior_tf, ndim,
                           n_cpu=n_cpu, n_thread=n_thread)
 
-ds.run_fitting(nlive_init=min(20*ndim,100), nlive_batch=25, maxbatch=2,
+ds.run_fitting(nlive_init=min(20*(ndim-1),100), nlive_batch=25, maxbatch=2,
                print_progress=print_progress)
 
 ds.save_result(filename='Mock-fit_best_%s.res'%method,
                dir_name=dir_name)
 
-ds.cornerplot(labels=labels, save=save, dir_name=dir_name)
+ds.cornerplot(labels=labels, save=save, dir_name=dir_name, figsize=(22, 20))
 
-draw2D_fit_vs_truth_PSF_mpow(ds.results, psf0, stars, labels,
+draw2D_fit_vs_truth_PSF_mpow(ds.results, psf0, stars, labels, image,
                              save=save, dir_name=dir_name)
 
 plot1D_fit_vs_truth_PSF_mpow(ds.results, psf0, labels,

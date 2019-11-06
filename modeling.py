@@ -140,8 +140,11 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             n_s = self.n_s
             theta_s = self.theta_s
-            n = n_s[0]
+            n0 = n_s[0]
             theta_0 = theta_s[0]
+            
+            self.n0 = n0
+            self.theta_0 = theta_0
             
         if psf_range is None:
             a = theta_0**n
@@ -1402,3 +1405,158 @@ def generate_image_fit(res, psf, stars, image_base):
     image_fit = image_fit + image_base + mu_fit
     
     return image_fit, noise_fit, pmed
+
+
+############################################
+# Priors and Likelihood Models for Fitting
+############################################
+
+def set_prior(n_est, mu_est, std_est, theta_in=90, theta_out=500,
+              nspline=5, method='2p'):
+    
+    log_t_in = np.log10(theta_in)
+    log_t_out = np.log10(theta_out)
+    dlog_t = log_t_out - log_t_in
+    
+    if method == '2p':
+        def prior_tf_2p(u):
+            v = u.copy()
+            v[0] = u[0] * 0.6 + n_est-0.3        # n0 : n +/- 0.3
+            v[1] = u[1] * (v[0]-1.5) + 1.2       # n1 : 1.2 - n0-0.3
+            v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
+            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
+                                        loc=mu_est, scale=std_est)         # mu
+            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
+                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            return v
+        
+        return prior_tf_2p
+    
+    elif method == '3p':
+        def prior_tf_3p(u):
+            v = u.copy()
+            v[0] = u[0] * 0.6 + n_est-0.3                   # n0 : n +/- 0.3
+            v[1] = u[1] * 0.7 + (v[0]-1)                    # n1 : n0-1 - n0-0.3
+            v[2] = u[2] * max(-0.7, 1.3-v[1]) + (v[1]-0.3)  # n2 : [1,n1-1] - n1-0.3
+            v[3] = u[3] * dlog_t + log_t_in                 
+                # log theta1 : t_in-t_out  arcsec
+            v[4] = u[4] * min(0.4, log_t_out-0.3 - v[3]) + (v[3]+0.3)
+                # log theta2 : 2 * theta1 - [5 * theta1, t_out]  arcsec
+            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
+                                        loc=mu_est, scale=std_est)         # mu
+            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
+                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            return v
+        
+        return prior_tf_3p
+    
+    elif method=='sp':
+        def prior_tf_sp(u):
+            v = u.copy()
+
+            v[0] = u[0] * 0.6 + n_est-0.3                   
+            # n0 : n +/- 0.3                                    
+            
+            for k in range(nspline-1):
+                v[k+1] = u[k+1] * max(-0.25, 1.25-v[1]) + (v[1]-0.25)         
+                # n_k+1 : [1, n_k-0.5] - n_k-0.25
+
+            v[nspline] = u[nspline] * dlog_t + log_t_in
+            # log theta1 : t_in-t_out  arcsec
+
+            for k in range(nspline-2):
+                
+                v[k+nspline+1] = u[k+nspline+1] * min(0.4, log_t_out-0.3 - v[k+nspline]) + (v[k+nspline]+0.3)
+                # log theta_k+1: 2*theta_k - [5*theta_k, t_out]  # in arcsec
+
+            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
+                                        loc=mu_est, scale=std_est)         # mu
+            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
+                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            return v
+        
+        return prior_tf_sp
+        
+
+def set_likelihood(data, mask_fit, psf, stars,
+                   image_base=None, psf_range=[None,None],
+                   brightest_only=True, parallel=False, draw_real=False,
+                   draw_func=generate_mock_image, nspline=5, method='2p'):
+    
+    if image_base is None:
+        image_base = np.zeros((psf.image_size, psf.image_size))
+        
+    if method == '2p':
+        
+        def loglike_2p(v):
+            n_s = v[:2]
+            theta_s = [psf.theta_0, 10**v[2]]
+            mu, sigma = v[-2], 10**v[-1]
+
+            psf.update({'n_s':n_s, 'theta_s':theta_s})
+
+            image_tri = draw_func(psf, stars, psf_range=psf_range,
+                                  brightest_only=brightest_only,
+                                  parallel=parallel, draw_real=draw_real)
+            image_tri = image_tri + image_base + mu 
+
+            ypred = image_tri[~mask_fit].ravel()
+            residsq = (ypred - data)**2 / sigma**2
+            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+
+            if not np.isfinite(loglike):
+                loglike = -1e100
+
+            return loglike
+        
+        return loglike_2p        
+        
+    elif method == '3p':
+        
+        def loglike_3p(v):
+            n_s = v[:3]
+            theta_s = [psf.theta_0, 10**v[3], 10**v[4]]
+            mu, sigma = v[-2], 10**v[-1]
+
+            psf.update({'n_s':n_s, 'theta_s':theta_s})
+
+            image_tri = draw_func(psf, stars, psf_range=psf_range,
+                                  brightest_only=brightest_only,
+                                  parallel=parallel, draw_real=draw_real)
+            image_tri = image_tri + image_base + mu 
+
+            ypred = image_tri[~mask_fit].ravel()
+            residsq = (ypred - data)**2 / sigma**2
+            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+
+            if not np.isfinite(loglike):
+                loglike = -1e100
+
+            return loglike
+        
+        return loglike_3p
+    
+    elif method=='sp':
+        def loglike_sp(v):
+            n_s = v[:nspline]
+            theta_s = [psf.theta_0] + (10**v[nspline:-2]).tolist()
+            mu, sigma = v[-2], 10**v[-1]
+
+            psf.update({'n_s':n_s, 'theta_s':theta_s})
+
+            image_tri = draw_func(psf, stars, psf_range=psf_range,
+                                  brightest_only=brightest_only,
+                                  parallel=parallel, draw_real=draw_real)
+            image_tri = image_tri + image_base + mu 
+
+            ypred = image_tri[~mask_fit].ravel()
+            residsq = (ypred - data)**2 / sigma**2
+            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+
+            if not np.isfinite(loglike):
+                loglike = -1e100
+
+            return loglike
+        
+        return loglike_sp
+        

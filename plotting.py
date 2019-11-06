@@ -378,7 +378,7 @@ def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
         plt.savefig(os.path.join(dir_name, "Fit_PSF.png"), dpi=120)
         plt.close()
         
-def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
+def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels, image,
                                  image_base=None, vmin=None, vmax=None,
                                  avg_func='median', save=False, dir_name="."):
     """ Compare 2D fit and truth image """
@@ -403,7 +403,7 @@ def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels,
     psf_fit.update({'n_s':n_s_fit, 'theta_s': theta_s_fit})
     
     image_fit = generate_mock_image(psf_fit, stars, draw_real=True)
-    image_fit = image_fit + mu + noise_fit
+    image_fit = image_fit + mu_fit + noise_fit
     
     if image_base is not None:
         image_fit += image_base
