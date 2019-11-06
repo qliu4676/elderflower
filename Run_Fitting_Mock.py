@@ -17,7 +17,7 @@ check_save_path(dir_name)
 # dir_name = 'mp_mock'
 print_progress = True
 method = '2p'
-n_thread = 1
+n_thread = None
 n_cpu = 3
 
 

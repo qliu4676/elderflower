@@ -824,7 +824,7 @@ class DynamicNestedSampler:
         if n_cpu is None:
             n_cpu = mp.cpu_count()
             
-        if n_thread is None:
+        if n_thread is not None:
             n_thread = max(n_thread, n_cpu-1)
             
         self.open_pool(n_cpu)
@@ -876,7 +876,7 @@ class DynamicNestedSampler:
     @property
     def results(self):
         res = getattr(self.dsampler, 'results', {})
-        if len(result) > 0:
+        if len(res) > 0:
             res['run_time'] = self.run_time
         return res
     
