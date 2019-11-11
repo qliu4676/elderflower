@@ -4,8 +4,9 @@ import galsim
 from galsim import GalSimBoundsError
 from utils import *
 
-from usid_processing import parallel_compute
+from itertools import combinations
 from functools import partial
+from usid_processing import parallel_compute
 from astropy.utils import lazyproperty
 from copy import deepcopy
 
@@ -140,11 +141,11 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             n_s = self.n_s
             theta_s = self.theta_s
-            n0 = n_s[0]
+            n = n_s[0]
             theta_0 = theta_s[0]
             
-            self.n0 = n0
             self.theta_0 = theta_0
+            self.n = n
             
         if psf_range is None:
             a = theta_0**n
@@ -182,33 +183,77 @@ class PSF_Model:
                 for F in Flux]
         return np.array(Amps)
     
-    def I2Flux(self, I, r=10):
-        """ Convert Intensity I(r) at r to total flux with power law.
+    
+    def I2I0(self, I, r=10):
+        """ Convert I(r) at r to I0 with power law.
         r in pixel """
         
         if self.aureole_model == "power":
-            return I2Flux_pow(self.frac, self.n, self.theta_0_pix, r, I)
+            return I2I0_pow(self.n, self.theta_0_pix, r, I=I)
         
         elif self.aureole_model == "multi-power":
-            return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I)
+            return I2I0_mpow(self.n_s, self.theta_s_pix, r, I=I)
+        
+    def I02I(self, I0, r=10):
+        """ Convert I(r) at r to I0 with power law.
+        r in pixel """
+        
+        if self.aureole_model == "power":
+            return I02I_pow(self.n, self.theta_0_pix, r, I0=I0)
+        
+        elif self.aureole_model == "multi-power":
+            return I02I_mpow(self.n_s, self.theta_s_pix, r, I0=I0)
+    
+    def calculate_external_light(self, stars, n_iter=1):
+        """ Calculate external scatter light that affects I at norm """
+        I_ext = np.zeros(stars.n_bright)
+        z_norm_verybright0 = stars.z_norm_verybright
+        pos_source, pos_eval = stars.star_pos_verybright, stars.star_pos_bright
+        
+        if self.aureole_model == "power":
+            calculate_external_light = partial(calculate_external_light_pow,
+                                               n0=self.n, theta0=self.theta_s_pix,
+                                               pos_source=pos_source, pos_eval=pos_eval)
+        elif self.aureole_model == "multi-power":
+            calculate_external_light = partial(calculate_external_light_mpow,
+                                               n_s=self.n_s, theta_s=self.theta_s_pix,
+                                               pos_source=pos_source, pos_eval=pos_eval)
+            
+        for i in range(n_iter):
+            z_norm_verybright = z_norm_verybright0 - I_ext[:stars.n_verybright]
+            I0_verybright = self.I2I0(z_norm_verybright, r=stars.r_scale)
+            I_ext = calculate_external_light(I0=I0_verybright)
+            
+        return I_ext
+    
+    def I2Flux(self, I, r=10):
+        """ Convert I(r) at r to total flux with power law.
+        r in pixel """
+        
+        if self.aureole_model == "power":
+            return I2Flux_pow(self.frac, self.n, self.theta_0_pix, r, I=I)
+        
+        elif self.aureole_model == "multi-power":
+            return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I=I)
         
     def Flux2I(self, Flux, r=10):
-        """ Convert Intensity I(r) at r to total flux with power law.
+        """ Convert I(r) at r to total flux with power law.
         r in pixel """
         
         if self.aureole_model == "power":
-            return Flux2I_pow(self.frac, self.n, self.theta_0_pix, r, Flux)
+            return Flux2I_pow(self.frac, self.n, self.theta_0_pix, r, Flux=Flux)
         
         elif self.aureole_model == "multi-power":
-            return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux)
+            return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
         
     def SB2Flux(self, SB, BKG, ZP, r=10):
-        I = SB2Intensity(SB, BKG, ZP, self.pixel_scale)
+        # Intensity = I + BKG
+        I = SB2Intensity(SB, BKG, ZP, self.pixel_scale) - BKG
         return self.I2Flux(I, r=r)
     
     def Flux2SB(self, Flux, BKG, ZP, r=10):
         I = self.Flux2I(Flux, r=r)
-        return Intensity2SB(I, BKG, ZP, self.pixel_scale)
+        return Intensity2SB(I+ BKG, BKG, ZP, self.pixel_scale)
     
     def plot_model_galsim(self, psf_core, psf_aureole,
                           image_size=400, contrast=None,
@@ -218,32 +263,45 @@ class PSF_Model:
         plot_PSF_model_galsim(psf_core, psf_aureole, self.params,
                               image_size, self.pixel_scale,
                               contrast=contrast,
-                              save=save, dir_name='.',
+                              save=save, dir_name=dir_name,
                               aureole_model=self.aureole_model)
         
-    def draw_aureole2D_in_real(self, star_pos, Flux):
+    def draw_aureole2D_in_real(self, star_pos, Flux=None, I0=None):
         
         if self.aureole_model == "power":
             n = self.n
             theta_0_pix = self.theta_0_pix
-                
-            I_theta0_pow = power2d_Flux2Amp(n, theta_0_pix, Flux=1)
-            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, flux=flux:\
+            
+            if I0 is None:
+                I_theta0 = power2d_Flux2Amp(n, theta_0_pix, Flux=1) * Flux
+            elif Flux is None:
+                I_theta0 = I0
+            else:
+                raise MyError("Both Flux and I0 are not given.")
+            
+            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, I=I:\
                                           trunc_power2d(xx, yy, cen=cen,
                                                         n=n, theta0=theta_0_pix,
-                                                        I_theta0=I_theta0_pow * flux)
-                                          for (flux, pos) in zip(Flux, star_pos)])
+                                                        I_theta0=I)
+                                          for (I, pos) in zip(I_theta0, star_pos)])
 
         elif self.aureole_model == "multi-power":
             n_s = self.n_s
             theta_s_pix = self.theta_s_pix
             
-            I_theta0_mpow = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s_pix, Flux=1)
-            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, flux=flux: \
+            if I0 is None:
+                I_theta0 = multi_power2d_Flux2Amp(n_s, theta_s_pix, Flux=1) * Flux
+            elif Flux is None:
+                I_theta0 = I0
+            else:
+                raise MyError("Both Flux and I0 are not given.")
+            
+            func_aureole_2d_s = np.array([lambda xx, yy, cen=pos, I=I:\
                                           multi_power2d(xx, yy, cen=cen,
                                                         n_s=n_s, theta_s=theta_s_pix,
-                                                        I_theta0=I_theta0_mpow * flux)
-                                          for (flux, pos) in zip(Flux, star_pos)])
+                                                        I_theta0=I)
+                                          for (I, pos) in zip(I_theta0, star_pos)])
+            
         return func_aureole_2d_s
 
     
@@ -297,10 +355,11 @@ class Stars:
 
     @classmethod            
     def from_znorm(cls, psf, star_pos, z_norm,
-                   Flux_threshold=[1e5, 5e6], r_scale=10, 
+                   z_threshold=[9, 300], r_scale=10, 
                    verbose=False):
         
         Flux = psf.I2Flux(z_norm, r_scale)
+        Flux_threshold = psf.I2Flux(z_threshold, r=R_scale)
         
         return cls(star_pos, Flux, Flux_threshold,
                    z_norm=z_norm, r_scale=r_scale, verbose=verbose)
@@ -339,11 +398,15 @@ class Stars:
     @property
     def Flux_medbright(self):
         return self.Flux[self.medbright]
+
+    @property
+    def z_norm_bright(self):
+        return self.z_norm[self.bright]
     
     @property
     def z_norm_verybright(self):
         return self.z_norm[self.verybright]
-
+    
     @lazyproperty
     def star_pos_faint(self):
         return self.star_pos[~self.bright]
@@ -374,35 +437,20 @@ class Stars:
     def copy(self):
         return deepcopy(self) 
     
-    def remove_outsider(self, image_size, d=[12, 24], verbose=False):
+    def remove_outsider(self, image_size, d=[24,12], verbose=False):
         """ Remove some stars far out of field. """
         star_pos = self.star_pos
         Flux = self.Flux
 
-        out_B = (star_pos<-d[0]) | (star_pos>image_size+d[0])
+        out_A = (star_pos<-d[0]) | (star_pos>image_size+d[0])
+        remove_A = np.logical_or.reduce(out_A, axis=1) & self.verybright
+        
+        out_B = (star_pos<-d[1]) | (star_pos>image_size+d[1])
         remove_B = np.logical_or.reduce(out_B, axis=1) & self.medbright
 
-        out_A = (star_pos<-d[1]) | (star_pos>image_size+d[1])
-        remove_A = np.logical_or.reduce(out_A, axis=1) & self.verybright
-
         remove = remove_A | remove_B
-        return Stars(star_pos[~remove], Flux[~remove],
-                     self.Flux_threshold, self.z_norm[~remove], verbose=True)
-
-# deprecated
-def remove_outsider(image_size, star_pos, Flux, Flux_threshold, d=[12, 24]):
-    F_bright, F_verybright = Flux_threshold
-    
-    medbright = (Flux>F_bright) & (Flux<F_verybright)
-    out_B = (star_pos<-d[0]) | (star_pos>image_size+d[0])
-    remove_B = np.logical_or.reduce(out_B, axis=1) & medbright
-    
-    verybright = (Flux>=F_verybright)
-    out_A = (star_pos<-d[1]) | (star_pos>image_size+d[1])
-    remove_A = np.logical_or.reduce(out_A, axis=1) & verybright
-
-    remove = remove_A | remove_B
-    return remove
+        return Stars(star_pos[~remove], Flux[~remove], self.Flux_threshold,
+                     self.z_norm[~remove], BKG=self.BKG, verbose=True)
         
 
 class Mask:
@@ -417,7 +465,8 @@ class Mask:
         self.pad = pad
         self.mu = mu
         
-    def make_mask_map_dual(self, r_core, sn_thre=3,
+    def make_mask_map_dual(self, r_core, r_out=None,
+                           mask_base=None, sn_thre=2.5,
                            draw=True, save=False, dir_name='.',
                            **kwargs):
         image = self.image
@@ -425,9 +474,10 @@ class Mask:
         pad = self.pad 
             
         # S/N + Core mask
-        mask_deep0, seg_deep0, core_region = \
-            make_mask_map_dual(image, stars, self.xx, self.yy, pad=pad,
-                               r_core=r_core, sn_thre=sn_thre, **kwargs)
+        mask_deep0, seg_deep0 = \
+            make_mask_map_dual(image, stars, self.xx, self.yy, 
+                               pad=pad, r_core=r_core, r_out=r_out,
+                               mask_base=mask_base, sn_thre=sn_thre, **kwargs)
         
         
         self.mask_deep = mask_deep0[pad:self.image_size+pad, pad:self.image_size+pad]
@@ -436,12 +486,14 @@ class Mask:
         self.seg_deep0 = seg_deep0
             
         self.r_core = r_core
+        self.r_out = r_out
         
         # Display mask
         if draw:
             from plotting import draw_mask_map
-            draw_mask_map(image, seg_deep0, mask_deep0, stars, pad=pad,
-                          r_core=r_core, vmin=self.mu, vmax=self.mu+50, save=save, dir_name=dir_name)
+            draw_mask_map(image, seg_deep0, mask_deep0, stars,
+                          pad=pad, r_core=r_core, r_out=r_out,
+                          vmin=self.mu, vmax=self.mu+50, save=save, dir_name=dir_name)
             
     def make_mask_strip(self, width, n_strip, dist_strip=200,
                         draw=True, clean=True,
@@ -481,7 +533,8 @@ class Mask:
             z_norm_clean = stars.z_norm[~clean] if hasattr(stars, 'z_norm') else None
             stars_new = Stars(stars.star_pos[~clean], stars.Flux[~clean],
                               stars.Flux_threshold, z_norm=z_norm_clean,
-                              verbose=False)
+                              BKG=stars.BKG, verbose=False)
+            print(stars_new.z_norm.shape)
             self.stars_new = stars_new
             self.clean = clean
         
@@ -781,7 +834,7 @@ def multi_power2d_cover(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
-def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen, ):
+def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen):
     """ Multi-power law for 2d array, I = I_theta0 at theta0, theta in pix"""
     a_s = compute_multi_pow_norm(n_s, theta_s, I_theta0)
     
@@ -860,8 +913,13 @@ def power2d_Amp2Flux(n, theta0, Amp=1):
     return Amp / power2d_Flux2Amp(n, theta0, Flux=1)
 
 def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
-    a_s = compute_multi_pow_norm(n_s, theta_s, Amp)
-    n0, theta0, a0 = n_s[0], theta_s[0], a_s[0]
+    if np.ndim(Amp)>0:
+        a_s = compute_multi_pow_norm(n_s, theta_s, 1)
+        a_s = np.multiply(a_s[:,np.newaxis], Amp)
+    else:
+        a_s = compute_multi_pow_norm(n_s, theta_s, Amp)
+        
+    n0, theta0 = n_s[0], theta_s[0]
     
     I_2D = Amp * np.pi * theta0**2
     
@@ -877,7 +935,7 @@ def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
     elif n_s[-1] == 2:
         I_2D += 2*np.pi * a_s[-1] * math.log(theta_trunc/theta_s[-1])
     else:
-        I_2D += 2*np.pi * a_s[k] * (theta_trunc**(2-n_s[k]) - theta_s[k]**(2-n_s[k])) / (2-n_s[-1])
+        I_2D += 2*np.pi * a_s[-1] * (theta_trunc**(2-n_s[-1]) - theta_s[-1]**(2-n_s[-1])) / (2-n_s[-1])
 
 #     else:
 #         raise InconvergenceError('PSF is not convergent in Infinity.')
@@ -887,46 +945,138 @@ def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
 def multi_power2d_Flux2Amp(n_s, theta_s, Flux=1):
     return Flux / multi_power2d_Amp2Flux(n_s, theta_s, Amp=1)
 
+def I2I0_pow(n0, theta0, r, I=1):
+    """ Convert Intensity I(r) at r to I at theta_0 with power law.
+        theata_s and r in pixel """
+    I_ = I * (r/theta0)**n0
+    return I0
 
-def I2Flux_pow(frac, n, theta0, r, I):
+def I02I_pow(n0, theta0, r, I0=1):
+    """ Convert Intensity I(r) at r to I at theta_0 with power law.
+        theata_s and r in pixel """
+    I = I0 / (r/theta0)**n0
+    return I
+
+def I2Flux_pow(frac, n0, theta0, r, I=1):
     """ Convert Intensity I(r) at r to total flux with fraction of power law.
         theata0 and r in pixel """
-    I_0 = I * (r/theta0)**n
-    Flux_pow = power2d_Amp2Flux(n, theta0, Amp=I_0)
+    I0 = I2I0_pow(n0, theta0, r, I=I)
+    Flux_pow = power2d_Amp2Flux(n0, theta0, Amp=I0)
     Flux_tot = Flux_pow / frac
     return Flux_tot
 
-def Flux2I_pow(frac, n, theta0, r, Flux):
+def Flux2I_pow(frac, n0, theta0, r, Flux=1):
     """ Convert total flux to Intensity I(r) at r.
         theata0 and r in pixel """
     Flux_pow = Flux * frac
-    I_0 = power2d_Flux2Amp(n, theta0, Flux=Flux_pow)
-    I = I_0 / (r/theta0)**n
+    I0 = power2d_Flux2Amp(n0, theta0, Flux=Flux_pow)
+    I = I0 / (r/theta0)**n0
     return I
 
-def I2Flux_mpow(frac, n_s, theta_s, r, I):
-    """ Convert Intensity I(r) at r to total flux with fraction of multi-power law.
+def I2I0_mpow(n_s, theta_s, r, I=1):
+    """ Convert Intensity I(r) at r to I at theta_0 with multi-power law.
         theata_s and r in pixel """
     i = np.digitize(r, theta_s, right=True) - 1
         
-    I_0 = I * r**(n_s[i]) * theta_s[0]**(-n_s[0])
+    I0 = I * r**(n_s[i]) * theta_s[0]**(-n_s[0])
     for j in range(i):
-        I_0 *= theta_s[j+1]**(n_s[j]-n_s[j+1])
+        I0 *= theta_s[j+1]**(n_s[j]-n_s[j+1])
         
-    Flux_mpow = multi_power2d_Amp2Flux(n_s=n_s, theta_s=theta_s, Amp=I_0)
+    return I0
+
+def I02I_mpow(n_s, theta_s, r, I0=1):
+    """ Convert Intensity I(r) at r to I at theta_0 with multi-power law.
+        theata_s and r in pixel """
+    i = np.digitize(r, theta_s, right=True) - 1
+        
+    I = I0 / r**(n_s[i]) / theta_s[0]**(-n_s[0])
+    for j in range(i):
+        I *= theta_s[j+1]**(n_s[j+1]-n_s[j])
+        
+    return I
+
+
+def calculate_external_light_pow(n0, theta0, pos_source, pos_eval, I0):
+    # Calculate light produced by source (I0, pos_source) at pos_eval. 
+    r_s = distance.cdist(pos_source,  pos_eval)
+    
+    I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
+    
+    I_s = I0_s / (r_s/theta0)**n0
+    I_s[(r_s==0)] = 0
+    
+    return I_s.sum(axis=0)
+
+def calculate_external_light_mpow(n_s, theta_s, pos_source, pos_eval, I0):
+    # Calculate light produced by source (I0, pos_source) at pos_eval. 
+    r_s = distance.cdist(pos_source,  pos_eval)
+    r_inds = np.digitize(r_s, theta_s, right=True) - 1
+    r_inds[r_inds<0] = 0
+    
+    r_inds_uni, r_inds_inv = np.unique(r_inds, return_inverse=True)
+    
+    I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
+    
+    I_s = I0_s / r_s**(n_s[r_inds]) / theta_s[0]**(-n_s[0])
+    I_s[(r_s==0)] = 0
+    
+    factors = np.array([np.prod([theta_s[j+1]**(n_s[j+1]-n_s[j])
+                                 for j in range(i)]) for i in r_inds_uni])
+    I_s *= factors[r_inds_inv].reshape(len(I0),-1)
+    
+    return I_s.sum(axis=0)
+    
+# #deprecated
+# def I02I_mpow_2d(n_s, theta_s, r_s, I0=1):
+#     """ Convert Intensity I(r) at multiple r to I at theta_0 with multi-power law.
+#         theata_s and r in pixel
+        
+#         return I (# of I0, # of distance) """
+#     r_inds = np.digitize(r_s, theta_s, right=True) - 1
+#     r_inds_uni, r_inds_inv = np.unique(r_inds, return_inverse=True)
+#     I0 = np.atleast_1d(I0)
+
+#     I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
+    
+#     I_s = I0_s / r_s**(n_s[r_inds]) / theta_s[0]**(-n_s[0])
+    
+#     factors = np.array([np.prod([theta_s[j+1]**(n_s[j+1]-n_s[j])
+#                                  for j in range(i)]) for i in r_inds_uni])
+#     I_s *= factors[r_inds_inv]
+    
+#     return I_s
+
+# #deprecated
+# def extract_external_light(I_s):
+#     inds = np.arange(I_s.shape[0])
+#     comb_inds = np.array(list(combinations(inds, 2)))
+#     mutual = (comb_inds, inds[:,np.newaxis])
+#     I_sum = np.zeros_like(I_s.shape[0])
+#     for (c_ind, I) in zip(comb_inds,I_s[mutual]):
+#         I_sum[c_ind[0]] += I[1]
+#         I_sum[c_ind[1]] += I[0]
+#     return I_sum
+
+
+def I2Flux_mpow(frac, n_s, theta_s, r, I=1):
+    """ Convert Intensity I(r) at r to total flux with fraction of multi-power law.
+        theata_s and r in pixel """
+
+    I0 = I2I0_mpow(n_s, theta_s, r, I=I)
+    Flux_mpow = multi_power2d_Amp2Flux(n_s=n_s, theta_s=theta_s, Amp=I0)
     Flux_tot = Flux_mpow / frac
     
     return Flux_tot
 
-def Flux2I_mpow(frac, n_s, theta_s, r, Flux):
+def Flux2I_mpow(frac, n_s, theta_s, r, Flux=1):
     """ Convert total flux to Intensity I(r) at r.
         theata_s and r in pixel """
     i = np.digitize(r, theta_s, right=True) - 1
     
-    Flux_mpow = Flux / frac
-    I_0 = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s, Flux=Flux_mpow)
+    Flux_mpow = Flux * frac
+    I0 = multi_power2d_Flux2Amp(n_s=n_s, theta_s=theta_s, Flux=Flux_mpow)
     
-    I = I_0 / r**(n_s[i]) / theta_s[0]**(-n_s[0])
+    I = I0 / r**(n_s[i]) / theta_s[0]**(-n_s[0])
     for j in range(i):
         I /= theta_s[j+1]**(n_s[j]-n_s[j+1])
 
@@ -1246,7 +1396,7 @@ def generate_mock_image(psf, stars,
         image_gs = full_image.array
         
         func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
-                                                       frac * stars.Flux_verybright)
+                                                       Flux=frac * stars.Flux_verybright)
         image_real = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
         
         image = image_gs + image_real
@@ -1278,8 +1428,9 @@ def generate_mock_image(psf, stars,
 
 def generate_image_by_znorm(psf, stars,
                             contrast=[3e4,3e5],
-                            min_psf_range=192, 
-                            max_psf_range=768,
+                            psf_range=[None,None],
+                            min_psf_range=120, 
+                            max_psf_range=1200,
                             psf_scale=None,
                             parallel=False,
                             n_parallel=4,
@@ -1292,18 +1443,27 @@ def generate_image_by_znorm(psf, stars,
     yy, xx = psf.yy, psf.xx
     
     frac = psf.frac
-    psf_scale = psf.pixel_scale if psf_scale is None else 2
-    psf_c = getattr(psf, 'psf_core', psf.generate_core())
-
-    # Update stellar flux:
-    Flux = psf.I2Flux(stars.z_norm, stars.r_scale)
-    stars.update_Flux(Flux)
     
-#     stars = Stars.from_znorm(psf, stars0.star_pos,
-#                              stars0.z_norm,
-#                              r_scale=stars0.r_scale,
-#                              Flux_threshold=Flux_threshold)
+    if psf_scale is None:
+        psf_scale = psf.pixel_scale    
 
+    # Subtract external light from brightest stars
+    I_ext = psf.calculate_external_light(stars)
+    z_norm = stars.z_norm.copy()
+    z_norm[stars.bright] -= I_ext
+    
+    if draw_real & brightest_only:
+        # Skip computation of Flux, and ignore core PSF
+        I0_verybright = psf.I2I0(z_norm[stars.verybright], stars.r_scale)
+        
+    else:
+        # Core PSF
+        psf_c = getattr(psf, 'psf_core', psf.generate_core())
+
+        # Update stellar flux:
+        Flux = psf.I2Flux(z_norm, stars.r_scale)
+        stars.update_Flux(Flux) 
+        
     # Setup the canvas
     full_image = galsim.ImageF(image_size, image_size)
         
@@ -1311,13 +1471,11 @@ def generate_image_by_znorm(psf, stars,
         # 1. Draw medium bright stars with galsim in Fourier space
         psf_e, psf_size = psf.generate_aureole(contrast=contrast[0],
                                                psf_scale=psf_scale,
-                                               psf_range=None,
+                                               psf_range=psf_range[0],
                                                min_psf_range=min_psf_range//2,
                                                max_psf_range=max_psf_range//4,
                                                interpolant=interpolant)
-
-#         # Rounded PSF size to 2^k or 3*2^k for faster FT
-        psf_size = round_good_fft(psf_size)
+        psf_size = psf_size // 2 * 2
 
         # Draw medium bright stars with galsim in Fourier space
         psf_star = (1-frac) * psf_c + frac * psf_e               
@@ -1352,15 +1510,20 @@ def generate_image_by_znorm(psf, stars,
                 
            
     # 2. Draw very bright stars
-    if psf.n < n_real:
-        draw_real = True
+#     if psf.n < n_real:
+#         draw_real = True
         
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
         image_gs = full_image.array
         
-        func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
-                                                       frac * stars.Flux_verybright)
+        if brightest_only:
+            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+                                                           I0=I0_verybright)
+        else:
+            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+                                                           Flux=frac * stars.Flux_verybright)
+        
         image_real = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
         
         image = image_gs + image_real
@@ -1369,12 +1532,11 @@ def generate_image_by_znorm(psf, stars,
         # Draw very bright star in Fourier space 
         psf_e_2, psf_size_2 = psf.generate_aureole(contrast=contrast[1],
                                                    psf_scale=psf_scale,
-                                                   psf_range=None,
+                                                   psf_range=psf_range[1],
                                                    min_psf_range=min_psf_range,
                                                    max_psf_range=max_psf_range,
                                                    interpolant=interpolant)
-        
-        psf_size_2 = round_good_fft(psf_size_2)
+        psf_size_2 = psf_size_2 // 2 * 2
         
         psf_star_2 = (1-frac) * psf_c + frac * psf_e_2
         
@@ -1392,16 +1554,33 @@ def generate_image_by_znorm(psf, stars,
 
 def generate_image_fit(res, psf, stars, image_base):
     pmed, pmean, pcov = get_params_fit(res)
-    n_fit, mu_fit, logsigma_fit = pmed
+    N_n = (len(pmed)-2+1)//2
+    pixel_scale = psf.pixel_scale
+    
+    if psf.aureole_model == "power":
+        n_fit, mu_fit, logsigma_fit = pmed
+        
+    elif psf.aureole_model == "multi-power":
+        n_s_fit = np.concatenate([pmed[:N_n], [4]])
+        theta_0 = psf.theta_s[0]
+        theta_s_fit = np.concatenate([[theta_0],
+                                      np.atleast_1d(10**pmed[N_n:-2]),[900]])
+        mu_fit, logsigma_fit = pmed[-2:]
+        
     sigma_fit = 10**logsigma_fit
     print("Bakground : %.2f +/- %.2f"%(mu_fit, sigma_fit))
 
     psf_fit = psf.copy()
-    psf_fit.update({'n':n_fit})
+    
+    if psf.aureole_model == "power":
+        psf_fit.update({'n':n_fit})
+        
+    elif psf.aureole_model == "multi-power":
+        psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
     
     noise_fit = make_noise_image(psf_fit.image_size, sigma_fit, verbose=False)
-    image_fit = generate_image_by_znorm(psf_fit, stars,
-                                        psf_scale=psf_fit.pixel_scale, draw_real=True)
+    image_fit = generate_image_by_znorm(psf_fit, stars, psf_range=[640,1200],
+                                        psf_scale=pixel_scale, draw_real=False)
     image_fit = image_fit + image_base + mu_fit
     
     return image_fit, noise_fit, pmed
@@ -1411,23 +1590,35 @@ def generate_image_fit(res, psf, stars, image_base):
 # Priors and Likelihood Models for Fitting
 ############################################
 
-def set_prior(n_est, mu_est, std_est, theta_in=90, theta_out=500,
-              nspline=5, method='2p'):
+def set_prior(n_est, mu_est, std_est,
+              n_min=1, theta_in=90, theta_out=600,
+              nspline=5, method='2p', **kwargs):
     
     log_t_in = np.log10(theta_in)
     log_t_out = np.log10(theta_out)
     dlog_t = log_t_out - log_t_in
     
-    if method == '2p':
+    Prior_mu = stats.truncnorm(a=-2, b=0.1, loc=mu_est, scale=std_est)  # mu
+    Prior_sigma = stats.truncnorm(a=-2, b=0.1,
+                                  loc=np.log10(std_est), scale=0.5)   # sigma 
+    
+    if method == 'p':
+        from plotting import draw_independent_priors
+        Prior_n = stats.uniform(loc=n_est-0.5, scale=1.)   # n : n+/-0.5
+        Priors = [Prior_n, Prior_mu, Prior_sigma]
+        draw_independent_priors(Priors, **kwargs)
+
+        prior_tf_p = build_independent_priors(Priors)
+        return prior_tf_p
+
+    elif method == '2p':
         def prior_tf_2p(u):
             v = u.copy()
             v[0] = u[0] * 0.6 + n_est-0.3        # n0 : n +/- 0.3
-            v[1] = u[1] * (v[0]-1.5) + 1.2       # n1 : 1.2 - n0-0.3
+            v[1] = u[1] * (v[0]- 0.5 - n_min) + n_min        # n1 : n_min - n0-0.5
             v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
-            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
-                                        loc=mu_est, scale=std_est)         # mu
-            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
-                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            v[-2] = Prior_mu.ppf(u[-2])          # mu
+            v[-1] = Prior_sigma.ppf(u[-1])       # log sigma 
             return v
         
         return prior_tf_2p
@@ -1436,16 +1627,15 @@ def set_prior(n_est, mu_est, std_est, theta_in=90, theta_out=500,
         def prior_tf_3p(u):
             v = u.copy()
             v[0] = u[0] * 0.6 + n_est-0.3                   # n0 : n +/- 0.3
-            v[1] = u[1] * 0.7 + (v[0]-1)                    # n1 : n0-1 - n0-0.3
-            v[2] = u[2] * max(-0.7, 1.3-v[1]) + (v[1]-0.3)  # n2 : [1,n1-1] - n1-0.3
+            v[1] = u[1] * 0.5 + (v[0]-1)                    # n1 : n0-1 - n0-0.5
+            v[2] = u[2] * max(-0.5, n_min+0.5-v[1]) + (v[1]-0.5)
+                # n2 : [n_min, n1-1] - n1-0.5
             v[3] = u[3] * dlog_t + log_t_in                 
                 # log theta1 : t_in-t_out  arcsec
-            v[4] = u[4] * min(0.4, log_t_out-0.3 - v[3]) + (v[3]+0.3)
-                # log theta2 : 2 * theta1 - [5 * theta1, t_out]  arcsec
-            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
-                                        loc=mu_est, scale=std_est)         # mu
-            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
-                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            v[4] = u[4] * (log_t_out - v[3]) + v[3]
+                # log theta2 : theta1 - t_out  arcsec
+            v[-2] = Prior_mu.ppf(u[-2])          # mu
+            v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
             return v
         
         return prior_tf_3p
@@ -1458,21 +1648,20 @@ def set_prior(n_est, mu_est, std_est, theta_in=90, theta_out=500,
             # n0 : n +/- 0.3                                    
             
             for k in range(nspline-1):
-                v[k+1] = u[k+1] * max(-0.25, 1.25-v[1]) + (v[1]-0.25)         
-                # n_k+1 : [1, n_k-0.5] - n_k-0.25
+                v[k+1] = u[k+1] * max(-0.3, 1.3-v[1]) + (v[1]-0.3)         
+                # n_k+1 : [1, n_k-0.6] - n_k-0.3
 
             v[nspline] = u[nspline] * dlog_t + log_t_in
             # log theta1 : t_in-t_out  arcsec
 
             for k in range(nspline-2):
                 
-                v[k+nspline+1] = u[k+nspline+1] * min(0.4, log_t_out-0.3 - v[k+nspline]) + (v[k+nspline]+0.3)
-                # log theta_k+1: 2*theta_k - [5*theta_k, t_out]  # in arcsec
+                v[k+nspline+1] = u[k+nspline+1] * min(0.7, log_t_out - v[k+nspline]) + v[k+nspline]
+                # log theta_k+1: theta_k - [5*theta_k, t_out]  # in arcsec
 
-            v[-2] = stats.truncnorm.ppf(u[-2], a=-2, b=0.1,
-                                        loc=mu_est, scale=std_est)         # mu
-            v[-1] = stats.truncnorm.ppf(u[-1], a=-1, b=0.1,
-                                        loc=np.log10(std_est), scale=0.5)  # log sigma 
+            v[-2] = Prior_mu.ppf(u[-2])          # mu
+            v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
+            
             return v
         
         return prior_tf_sp
@@ -1483,14 +1672,38 @@ def set_likelihood(data, mask_fit, psf, stars,
                    brightest_only=True, parallel=False, draw_real=False,
                    draw_func=generate_mock_image, nspline=5, method='2p'):
     
+    theta_0 = psf.theta_0
+    
     if image_base is None:
         image_base = np.zeros((psf.image_size, psf.image_size))
         
-    if method == '2p':
+    if method =='p':
+        
+        def loglike(v):
+            n, mu = v[:-1]
+            sigma = 10**v[-1]
+
+            psf.update({'n':n})
+
+            image_tri = draw_func(psf, stars, psf_range=psf_range,
+                                  brightest_only=brightest_only,
+                                  parallel=parallel, draw_real=draw_real)
+            image_tri = image_tri + image_base + mu 
+
+            ypred = image_tri[~mask_fit].ravel()
+            residsq = (ypred - Y)**2 / sigma**2
+            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+
+            if not np.isfinite(loglike):
+                loglike = -1e100
+
+            return loglike
+    
+    elif method == '2p':
         
         def loglike_2p(v):
             n_s = v[:2]
-            theta_s = [psf.theta_0, 10**v[2]]
+            theta_s = [theta_0, 10**v[2]]
             mu, sigma = v[-2], 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
@@ -1515,7 +1728,7 @@ def set_likelihood(data, mask_fit, psf, stars,
         
         def loglike_3p(v):
             n_s = v[:3]
-            theta_s = [psf.theta_0, 10**v[3], 10**v[4]]
+            theta_s = [theta_0, 10**v[3], 10**v[4]]
             mu, sigma = v[-2], 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
@@ -1539,7 +1752,7 @@ def set_likelihood(data, mask_fit, psf, stars,
     elif method=='sp':
         def loglike_sp(v):
             n_s = v[:nspline]
-            theta_s = [psf.theta_0] + (10**v[nspline:-2]).tolist()
+            theta_s = [theta_0] + (10**v[nspline:-2]).tolist()
             mu, sigma = v[-2], 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})

@@ -1,12 +1,13 @@
-import sys
 import os
 import re
+import sys
 import math
 import time
 import numpy as np
-from scipy.special import gamma as Gamma
-from scipy.integrate import quad
 from scipy import stats
+from scipy.integrate import quad
+from scipy.spatial import distance
+from scipy.special import gamma as Gamma
 from skimage import morphology
 
 import matplotlib.pyplot as plt
@@ -27,8 +28,9 @@ norm0 = ImageNormalize(stretch=AsinhStretch())
 norm1 = ImageNormalize(stretch=LogStretch())
 norm2 = ImageNormalize(stretch=LogStretch())
 
+from photutils.segmentation import SegmentationImage
 from photutils import detect_sources, deblend_sources
-from photutils import CircularAperture, CircularAnnulus
+from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
 import dynesty
 from dynesty import plotting as dyplot
@@ -213,8 +215,9 @@ def make_mask_map_core(image, star_pos, r_core=12):
     
     return mask_deep, segmap
 
-def make_mask_map_dual(image, stars, xx=None, yy=None, pad=0,
-                       r_core=24, sn_thre=3, 
+def make_mask_map_dual(image, stars, xx=None, yy=None,
+                       pad=0, r_core=24, r_out=96,
+                       mask_base=None, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
                        b_size=25, n_dilation=1):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
@@ -235,48 +238,72 @@ def make_mask_map_dual(image, stars, xx=None, yy=None, pad=0,
         r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
                              for F in stars.Flux_bright])
 
-    print("Mask inner regions of stars in dual mode:  S/N > %.1f / r < %d (%d) pix "\
-          %(sn_thre, r_core_A, r_core_B))
+    print("Mask inner regions of stars in dual mode:")
+    print("S/N > %.1f / r < %d (%d) pix "%(sn_thre, r_core_A, r_core_B))
+    
+    if r_out is not None:
+        r_out_s = np.unique(r_out)[::-1]
+        if len(r_out_s) == 1:
+            r_out_A, r_out_B = r_out_s, r_out_s
+            r_out_s = np.ones(len(star_pos)) * r_out_s
+        else:
+            r_out_A, r_out_B = r_out_s[:2]
+            r_out_s = np.array([r_out_A if F >= stars.F_verybright else r_out_B
+                                 for F in stars.Flux_bright])
+        print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
+            
+    if mask_base is None:
+        # detect all source first 
+        back, back_rms = background_sub_SE(image, b_size=b_size)
+        threshold = back + (sn_thre * back_rms)
+        segm0 = detect_sources(image, threshold, npixels=npix)
 
-    # detect all source first 
-    back, back_rms = background_sub_SE(image, b_size=b_size)
-    threshold = back + (sn_thre * back_rms)
-    segm0 = detect_sources(image, threshold, npixels=npix)
-    
-    # deblend source
-    segm_deb = deblend_sources(image, segm0, npixels=npix,
-                               nlevels=nlevels, contrast=contrast)
-    segmap = segm_deb.data.copy()
-    
-#     for pos in star_pos:
-#         if (min(pos[0],pos[1]) > 0) & (pos[0] < image.shape[0]) & (pos[1] < image.shape[1]):
-#             star_lab = segmap[coord_Im2Array(pos[0], pos[1])]
-#             segm_deb.remove_label(star_lab)
-    
-    segmap2 = segm_deb.data.copy()
-    
-    # remove S/N mask map for input (bright) stars
-    for pos in star_pos:
-        rr2 = (xx-pos[0])**2+(yy-pos[1])**2
-        lab = segmap2[np.where(rr2==np.min(rr2))][0]
-        segmap2[segmap2==lab] = 0
-    
-    # dilation
-    for i in range(n_dilation):
-        segmap2 = morphology.dilation(segmap2)
+        # deblend source
+        segm_deb = deblend_sources(image, segm0, npixels=npix,
+                                   nlevels=nlevels, contrast=contrast)
 
+    #     for pos in star_pos:
+    #         if (min(pos[0],pos[1]) > 0) & (pos[0] < image.shape[0]) & (pos[1] < image.shape[1]):
+    #             star_lab = segmap[coord_Im2Array(pos[0], pos[1])]
+    #             segm_deb.remove_label(star_lab)
+
+        segmap = segm_deb.data.copy()
+        max_lab = segm_deb.max_label
+
+        # remove S/N mask map for input (bright) stars
+        for pos in star_pos:
+            rr2 = (xx-pos[0])**2+(yy-pos[1])**2
+            lab = segmap[np.where(rr2==np.min(rr2))][0]
+            segmap[segmap==lab] = 0
+
+        # dilation
+        for i in range(n_dilation):
+            segmap = morphology.dilation(segmap)
+            
+    else:
+        segmap = fits.getdata(mask_base)
+        max_lab - segmap.max()
+    
     # mask core for input (bright) stars
-    core_region= np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r for (pos,r) in zip(star_pos,r_core_s)])
+    core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r
+                                        for (pos,r) in zip(star_pos,r_core_s)])
+    mask_star = core_region.copy()
     
-    segmap2[core_region] = segmap.max()+1
+    if r_out is not None:
+        # mask outer region for input (bright) stars
+        outskirt = np.logical_and.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) > r
+                                         for (pos,r) in zip(star_pos,r_out_s)])
+        mask_star = (mask_star) | (outskirt)
+    
+    segmap[mask_star] = max_lab+1
     
     # set dilation border a different label (for visual)
-    segmap2[(segmap2!=0)&(segm_deb.data==0)] = segmap.max()+2
+    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+2
     
     # set mask map
-    mask_deep = (segmap2!=0)
+    mask_deep = (segmap!=0)
     
-    return mask_deep, segmap2, core_region
+    return mask_deep, segmap
 
 def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):    
     """ Make mask map in strips with width=width """
@@ -304,7 +331,7 @@ def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):
 
     return mask_strip_s, mask_cross_s
 
-def clean_lonely_stars(xx, yy, mask, star_pos, pad=0, dist_clean=48):
+def clean_lonely_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
     
     star_pos = star_pos + pad
     
@@ -319,7 +346,7 @@ def clean_lonely_stars(xx, yy, mask, star_pos, pad=0, dist_clean=48):
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="intensity",
                    seeing=2.5, pixel_scale=2.5, ZP=27.1, 
-                   sky_mean=884, sky_std=3, dr=1, 
+                   sky_mean=884, sky_std=3, dr=1.5, 
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, label=None, plot_line=False, mock=False,
                    plot=True, scatter=False, errorbar=False, verbose=False):
@@ -423,11 +450,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                             color=color, s=3, alpha=0.1, zorder=1)
                 
             if errorbar:
-                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin+sky_std,
-                                                     BKG=np.median(back),
+                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin,
+                                                     BKG=np.median(back)-sky_std,
                                                      ZP=ZP, pixel_scale=pixel_scale)
                 Ierr_rbin_lo = Intensity2SB(I=z_rbin-sky_std,
-                                            BKG=np.median(back),
+                                            BKG=np.median(back)+sky_std,
                                             ZP=ZP, pixel_scale=pixel_scale) - I_rbin
                 lolims = np.isnan(Ierr_rbin_lo)
                 uplims = np.isnan(Ierr_rbin_up)
@@ -454,9 +481,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.axvline(r_core,color="k",ls=":",alpha=0.9)
             plt.axhline(I_sky,color="gray",ls="-.",alpha=0.7)
 
-            use_range = (r_rbin>r_satr) & (r_rbin<r_core)
-        else:
-            use_range = True
+#             use_range = (r_rbin>r_satr) & (r_rbin<r_core)
+#         else:
+#             use_range = True
             
     return r_rbin, z_rbin, logzerr_rbin
 
@@ -496,7 +523,10 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     
     # crop
     img_thumb = data[x_min:x_max, y_min:y_max].copy()
-    seg_thumb = seg_map[x_min:x_max, y_min:y_max]
+    if seg_map is None:
+        seg_thumb = None
+    else:
+        seg_thumb = seg_map[x_min:x_max, y_min:y_max]
     mask_thumb = (seg_thumb!=0)    
     
     # the center position is converted from world with wcs
@@ -505,7 +535,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
-def extract_star(id, star_cat, wcs, data, seg_map, 
+def extract_star(id, star_cat, wcs, data, seg_map=None, 
                  seeing=2.5, sn_thre=3, n_win=20, n_dilation=3,
                  display_bg=False, display=True, verbose=False):
     
@@ -515,9 +545,6 @@ def extract_star(id, star_cat, wcs, data, seg_map,
     thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
                                           n_win=n_win, seeing=seeing, verbose=verbose)
     img_thumb, seg_thumb, mask_thumb = thumb_list
-    
-    # the same thumbnail size
-    fwhm = max([star_cat[id]["FWHM_IMAGE"], seeing])
     
     # measure background, use a scalar value if the thumbnail is small 
     b_size = round(img_thumb.shape[0]//5/25)*25
@@ -530,40 +557,49 @@ def extract_star(id, star_cat, wcs, data, seg_map,
         # show background subtraction
         display_background_sub(img_thumb, back)  
             
-    # do segmentation (a second time) to remove faint undetected stars using photutils
-    sigma = seeing * gaussian_fwhm_to_sigma
-    threshold = back + (sn_thre * back_rms)
-    segm = detect_sources(img_thumb, threshold, npixels=5)
-    
-    # do deblending using photutils
-    segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
-                                   nlevels=64, contrast=0.005)
-    
+    if seg_thumb is None:
+        # the same thumbnail size
+        fwhm = max([star_cat[id]["FWHM_IMAGE"], seeing])
+        
+        # do segmentation (a second time) to remove faint undetected stars using photutils
+        sigma = seeing * gaussian_fwhm_to_sigma
+        threshold = back + (sn_thre * back_rms)
+        segm = detect_sources(img_thumb, threshold, npixels=5)
+
+        # do deblending using photutils
+        segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
+                                       nlevels=64, contrast=0.005)
+    else:
+        segm_deblend = SegmentationImage(seg_thumb)
+
     # the target star is at the center of the thumbnail
     star_lab = segm_deblend.data[img_thumb.shape[0]//2, img_thumb.shape[1]//2]
     star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
+        
+    # dilation
     for i in range(n_dilation):
         star_ma = morphology.dilation(star_ma)
     
     if display:
-        fig, (ax1,ax2,ax3,ax4) = plt.subplots(nrows=1,ncols=4,figsize=(21,5))
-        ax1.imshow(img_thumb, vmin=np.median(back)-1, vmax=10000, norm=norm1, cmap="viridis")
-        ax1.set_title("star", fontsize=15)
-        ax2.imshow(segm, cmap=segm.make_cmap(random_state=12345))
-        ax2.set_title("segment", fontsize=15)
-        ax3.imshow(segm_deblend, cmap=segm_deblend.make_cmap(random_state=12345))
-        ax3.set_title("deblend", fontsize=15)
+        med_back = np.median(back)
+        fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(15,5))
+        ax1.imshow(img_thumb, vmin=med_back-1, vmax=10000, norm=norm1, cmap="viridis")
+        ax1.set_title("star", fontsize=16)
+
+        ax2.imshow(segm_deblend, cmap=segm_deblend.make_cmap(random_state=12345))
+        ax2.set_title("segment", fontsize=16)
 
         img_thumb_ma = img_thumb.copy()
         img_thumb_ma[star_ma] = -1
-        ax4.imshow(img_thumb_ma, cmap="viridis", norm=norm2,
-                   vmin=np.median(back)-1, vmax=np.median(back)+10*np.median(back_rms))
-        ax4.set_title("extracted star", fontsize=15)
+        ax3.imshow(img_thumb_ma, cmap="viridis", norm=norm2,
+                   vmin=med_back-1, vmax=med_back+10*np.median(back_rms))
+        ax3.set_title("extracted star", fontsize=16)
+        plt.tight_layout()
     
     return img_thumb, star_ma, back, cen_star
 
 
-def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=False, display=False):
+def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, display=False):
     """ Return 3 sigma-clipped mean, med and std of ring r=R (half-width=wid) for image.
         Note intensity is not background subtracted. """
     
@@ -725,11 +761,11 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def cross_match(header, SE_catalog, bounds, mag_threshold=14,
+def cross_match(header, SE_catalog, bounds, mag_threshold=22,
                 catalog={'Pan-STARRS': 'II/349/ps1'}, radius=2.5*u.deg, 
-                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'mfa',
+                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'objID', 'Qual',
                                         'gmag', 'e_gmag', 'rmag', 'e_rmag']},
-                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(8, 18)}},
+                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 24)}},
                 magnitude_name={'Pan-STARRS':'rmag'}):
     """ 
         Cross match SExtractor catalog with Vizier Online catalog.
@@ -771,7 +807,7 @@ def cross_match(header, SE_catalog, bounds, mag_threshold=14,
                       "RMAG_AUTO", "FWHM_IMAGE", "FLAGS"]
         keep_columns = SE_columns + ["ID"+'_'+cat_name, mag_name,
                                      "X_IMAGE"+'_'+cat_name, "Y_IMAGE"+'_'+cat_name]
-        tab_match = merge_catalog(SE_catalog, Cat_full, sep=5*u.arcsec,
+        tab_match = merge_catalog(SE_catalog, Cat_full, sep=3*u.arcsec,
                                   keep_columns=keep_columns)
         mag_match_name = mag_name+'_'+cat_name
         tab_match[mag_name].name = mag_match_name
@@ -783,12 +819,27 @@ def cross_match(header, SE_catalog, bounds, mag_threshold=14,
                                  join_type='left', metadata_conflicts='silent')
 
     tab_match_crop = crop_catalog(tab_match_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
+    Cat_crop = crop_catalog(Cat_full, bounds, keys=("X_IMAGE"+'_'+cat_name,
+                                                    "Y_IMAGE"+'_'+cat_name))
     
     target = tab_match_crop[mag_match_name] < mag_threshold
     tab_target = tab_match_crop[target].copy()
     tab_target.sort(keys=mag_match_name)
+    Cat_crop.sort(keys=mag_name)
     
-    return tab_target
+    return tab_target, Cat_crop
+
+# def make_segmap_from_catalog(catalog, cat_name='PS'):
+#     from usid_processing import parallel_compute
+#     from functools import partial
+    
+#     np.logical_or.reduce([np.sqrt((xx-(X-patch_Xmin))**2+(yy-(Y-patch_Ymin))**2) < r
+#                      for (X,Y, r) in zip(cat[i*200:(i+1)*200]['X_IMAGE_PS'],
+#                                       cat[i*200:(i+1)*200]['Y_IMAGE_PS'], R_est[i*200:(i+1)*200])])
+#     mask_stars = [ for i in range(20)]
+    
+    
+#     return mask_star
 
 
 def save_thumbs(obj, filename):
@@ -804,7 +855,7 @@ def load_thumbs(filename):
         return pickle.load(f)
 
 ### Prior Helper ###    
-def build_priors(priors):
+def build_independent_priors(priors):
     """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
     def prior_transform(u):
         v = u.copy()
@@ -817,7 +868,8 @@ def build_priors(priors):
 
 class DynamicNestedSampler:
     def __init__(self,  loglike,  prior_transform, ndim,
-                 sample='auto', bound='multi', n_cpu=None, n_thread=None):
+                 sample='auto', bound='multi',
+                 n_cpu=None, n_thread=None):
         
         self.ndim = ndim
 
@@ -834,6 +886,7 @@ class DynamicNestedSampler:
                                                 pool=self.pool, queue_size=n_thread,
                                                 use_pool={'update_bound': False})
         self.dsampler = dsampler
+        
         
     def run_fitting(self, nlive_init=100,
                     maxiter=10000,
@@ -885,15 +938,10 @@ class DynamicNestedSampler:
     
     def cornerplot(self, labels=None, truths=None, figsize=(16,14),
                    save=False, dir_name='.'):
-        fig = plt.subplots(self.ndim, self.ndim, figsize=figsize)
-        dyplot.cornerplot(self.results, truths=truths, labels=labels, 
-                          color="royalblue", truth_color="indianred",
-                          title_kwargs={'fontsize':18, 'y': 1.04},
-                          label_kwargs={'fontsize':16}, 
-                          show_titles=True, fig=fig)
-        if save:
-            plt.savefig(os.path.join(dir_name, "Cornerplot.png"), dpi=150)
-            plt.close()
+        from plotting import draw_cornerplot
+        draw_cornerplot(self.results, self.ndim,
+                        labels=labels, truths=truths, figsize=figsize,
+                        save=save, dir_name=dir_name)
         
     def cornerbound(self, prior_transform, labels=None, figsize=(10,10), save=False, dir_name='.'):
         fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
@@ -954,7 +1002,10 @@ def get_params_fit(res, return_sample=False):
     else:
         return pmed, pmean, pcov
         
-def cal_reduced_chi2(fit, data, sigma, n_param=4):
+def cal_reduced_chi2(fit, data, pmed, sky_only=True, n_param=4):
+    mu, sigma = pmed[-2], 10**pmed[-1]
+    if sky_only is False:
+        sigma = np.sqrt(data/0.37+sigma**2)
     chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-n_param)
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 
