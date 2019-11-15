@@ -23,6 +23,7 @@ def make_rand_cmap(n_label, rand_state = 12345):
     from photutils.utils import make_random_cmap
     rand_cmap = make_random_cmap(n_label, random_state=rand_state)
     rand_cmap.set_under(color='black')
+    rand_cmap.set_over(color='white')
     return rand_cmap
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
@@ -34,8 +35,9 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     im1 = ax1.imshow(image, cmap='gray', norm=norm1, vmin=vmin, vmax=1e4, aspect='auto')
     ax1.set_title("Mock")
     colorbar(im1)
-
-    ax2.imshow(seg_map)
+    
+    n_label = seg_map.max()
+    ax2.imshow(seg_map, vmin=1, vmax=n_label-1, cmap=make_rand_cmap(n_label))
     ax2.set_title("Deep Mask")
 
     image2 = image.copy()
@@ -91,8 +93,9 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     ax1.imshow(mask_strip, cmap="gray_r")
     ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
     ax1.set_title("Mask Strip")
-
-    ax2.imshow(seg_comb)
+    
+    n_label = seg_comb.max()
+    ax2.imshow(seg_comb, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
     ax2.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax2.set_title("Mask Comb.")
 
@@ -258,7 +261,7 @@ def plot_flux_dist(Flux, Flux_thresholds,
                 color='steelblue', alpha=0.15, zorder=0)
     sns.distplot(np.log10(Flux), kde=False, **kwargs)
     plt.yscale('log')
-    plt.xlabel('Estimated Total Flux/Mag', fontsize=15)
+    plt.xlabel('Estimated log Flux$_{tot}$ / Mag', fontsize=15)
     plt.ylabel('# of stars', fontsize=15)
     plt.legend(loc=1)
     plt.tight_layout()
@@ -492,7 +495,8 @@ def draw_comparison_fit_data(image_fit, data,
         plt.close()
     
     
-def plot_fit_PSF(res, psf, n_bootstrap=200, Amp_max=None, r_core=None,
+def plot_fit_PSF(res, psf, n_bootstrap=200,
+                 Amp_max=None, r_core=None, r_out=1200,
                  save=False, dir_name="./"):
 
     image_size = psf.image_size
@@ -543,7 +547,7 @@ def plot_fit_PSF(res, psf, n_bootstrap=200, Amp_max=None, r_core=None,
         elif psf.aureole_model == "multi-power":
             n_s_k = np.concatenate([sample[:N_n], [4]])
             theta_s_pix_k = np.concatenate([[theta_0_pix],
-                    np.atleast_1d(10**sample[N_n:-2])/pixel_scale, [900/pixel_scale]])
+                    np.atleast_1d(10**sample[N_n:-2])/pixel_scale, [r_out/pixel_scale]])
             comp2_k = func_aureole(r, n_s_k, theta_s_pix_k)
             
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
@@ -558,7 +562,7 @@ def plot_fit_PSF(res, psf, n_bootstrap=200, Amp_max=None, r_core=None,
             elif psf.aureole_model == "multi-power":
                 n_s_fit = np.concatenate([fits[:N_n], [4]])
                 theta_s_pix_fit = np.concatenate([[theta_0_pix],
-                         np.atleast_1d(10**fits[N_n:-2])/pixel_scale,[900/pixel_scale]])
+                         np.atleast_1d(10**fits[N_n:-2])/pixel_scale,[r_out/pixel_scale]])
                 comp2 = func_aureole(r, n_s_fit, theta_s_pix_fit)
             
             y_fit = (1-frac) * comp1 + frac * comp2
@@ -583,7 +587,7 @@ def plot_fit_PSF(res, psf, n_bootstrap=200, Amp_max=None, r_core=None,
             
     if r_core is not None:
         r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
-        plt.axvspan(np.atleast_1d(r_core).max(), 320,
+        plt.axvspan(np.atleast_1d(r_core).max(), r_out/pixel_scale,
                     color='steelblue', alpha=0.15, zorder=1)
         plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
                     color='gray', alpha=0.15, zorder=1)

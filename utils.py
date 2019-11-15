@@ -144,10 +144,8 @@ def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
     return back, back_rms
 
 def display_background_sub(field, back):
-    norm1 = ImageNormalize(stretch=LogStretch())
-    norm2 = ImageNormalize(stretch=LogStretch())
     # Display and save background subtraction result with comparison 
-    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(14,4))
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
     ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=norm1)
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
     colorbar(im2)
@@ -238,9 +236,6 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
         r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
                              for F in stars.Flux_bright])
 
-    print("Mask inner regions of stars in dual mode:")
-    print("S/N > %.1f / r < %d (%d) pix "%(sn_thre, r_core_A, r_core_B))
-    
     if r_out is not None:
         r_out_s = np.unique(r_out)[::-1]
         if len(r_out_s) == 1:
@@ -252,7 +247,8 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
                                  for F in stars.Flux_bright])
         print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
             
-    if mask_base is None:
+    if sn_thre is not None:
+        print("Detect and deblend source... Mask S/N > %.1f "%(sn_thre))
         # detect all source first 
         back, back_rms = background_sub_SE(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
@@ -280,11 +276,22 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
         for i in range(n_dilation):
             segmap = morphology.dilation(segmap)
             
-    else:
-        segmap = fits.getdata(mask_base)
-        max_lab - segmap.max()
-    
+    if mask_base is not None:
+        print("Use mask map built from catalog")
+        segmap2 = fits.getdata(mask_base)
+        
+        if sn_thre is not None:
+            # Combine Two mask
+            segmap[segmap2>50] = max_lab + segmap2[segmap2>50]
+            segm_deb = SegmentationImage(segmap)
+        else:
+            # Only use mask_base
+            segm_deb = SegmentationImage(segmap2)
+        
+        max_lab = segm_deb.max_label
+            
     # mask core for input (bright) stars
+    print("Mask core regions: r < %d (%d) pix "%(r_core_A, r_core_B))
     core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r
                                         for (pos,r) in zip(star_pos,r_core_s)])
     mask_star = core_region.copy()
@@ -295,17 +302,17 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
                                          for (pos,r) in zip(star_pos,r_out_s)])
         mask_star = (mask_star) | (outskirt)
     
-    segmap[mask_star] = max_lab+1
+    segmap[mask_star] = max_lab+2
     
     # set dilation border a different label (for visual)
-    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+2
+    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+1
     
     # set mask map
     mask_deep = (segmap!=0)
     
     return mask_deep, segmap
 
-def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):    
+def make_mask_strip(stars, xx, yy, pad=0, width=10, n_strip=16, dist_strip=300):    
     """ Make mask map in strips with width=width """
     
     print("Use sky strips crossing very bright stars")
@@ -313,7 +320,7 @@ def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):
     star_pos = stars.star_pos_verybright + pad
     
     phi_s = np.linspace(-90, 90, n_strip+1)
-    phi_s = np.setdiff1d(phi_s, [-90,0,90])
+#     phi_s = np.setdiff1d(phi_s, [-90,0,90])
     a_s = np.tan(phi_s*np.pi/180)
     
     mask_strip_s = np.empty((len(star_pos), xx.shape[0], xx.shape[1]))
@@ -325,7 +332,7 @@ def make_mask_strip(stars, xx, yy, pad=0, width=5, n_strip=12, dist_strip=300):
                                            for (a, m) in zip(a_s, m_s)])
         mask_cross = np.logical_or.reduce([abs(yy-y_b)< width, abs(xx-x_b)< width])
         dist_map1 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
-        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip//2
+        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip//4
         mask_strip_s[k] = mask_strip & dist_map1
         mask_cross_s[k] = mask_cross & dist_map2
 
@@ -536,7 +543,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=3, n_win=20, n_dilation=3,
+                 seeing=2.5, sn_thre=3, n_win=20, n_dilation=1,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
@@ -582,7 +589,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     
     if display:
         med_back = np.median(back)
-        fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(15,5))
+        fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
         ax1.imshow(img_thumb, vmin=med_back-1, vmax=10000, norm=norm1, cmap="viridis")
         ax1.set_title("star", fontsize=16)
 
@@ -611,9 +618,12 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
     if mask_cross:
         yy, xx = np.indices(image.shape)
         rr = np.sqrt((xx-cen[0])**2+(yy-cen[1])**2)
-        cross = ((abs(xx-cen[0])<1.)|(abs(yy-cen[1])<1.))
+        cross = ((abs(xx-cen[0])<2.5)|(abs(yy-cen[1])<2.5))
         mask_clean = mask_clean * (~cross)
-        
+    
+    if len(image[mask_clean]) < 5:
+        return [np.nan] * 3 + [1]
+    
     I_mean, I_med, I_std = sigma_clipped_stats(image[mask_clean], sigma=3)
     
     if display:
@@ -621,40 +631,79 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
         ax1.imshow(mask_clean * image, cmap="gray", norm=norm1, vmin=I_med-5*I_std, vmax=I_med+5*I_std)
         ax2 = plt.hist(sigma_clip(image[mask_clean]))
     
-    return I_mean, I_med, I_std
+    return I_mean, I_med, I_std, 0
 
 
-def compute_Rnorm_batch(df_target, SE_catalog, wcs, data, seg_map, 
+def compute_Rnorm_batch(table_target, data, seg_map, wcs,
                         R=10, wid=0.5, return_full=False):
-    """ Combining the above functions. Compute for all object in df_target.
+    """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
     
     # Initialize
     res_thumb = {}    
-    res_Rnorm = np.empty((len(df_target),4))
+    res_Rnorm = np.empty((len(table_target), 5))
     
-    for i, (num, rmag_auto) in enumerate(zip(df_target['NUMBER'], df_target['RMAG_AUTO'])):
-        process_counter(i, len(df_target))
-        ind = num - 1
+    for i, (num, mag_auto) in enumerate(zip(table_target['NUMBER'], table_target['MAG_AUTO'])):
+        process_counter(i, len(table_target))
+        ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
-        n_win = 30 if rmag_auto < 11 else 20
-            
-        img, ma, bkg, cen = extract_star(ind, SE_catalog, wcs, data, seg_map,
+        n_win = 30 if mag_auto < 12 else 20
+        img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
         
         res_thumb[num] = {"image":img, "mask":ma, "bkg":bkg, "center":cen}
         
         # Measure the mean, med and std of intensity at R
-        I_mean, I_med, I_std = compute_Rnorm(img, ma, cen, R=R, wid=wid)
+        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R, wid=wid)
+        
+        if Iflag==1: print ("Errorenous measurement: #", num)
         
         # Use the median value of background as the local background
         sky_mean = np.median(bkg)
         
-        res_Rnorm[i] = np.array([I_mean, I_med, I_std, sky_mean])
+        res_Rnorm[i] = np.array([I_mean, I_med, I_std, sky_mean, Iflag])
     
     return res_Rnorm, res_thumb
 
+def measure_Rnorm_all(table, image_bounds,
+                      wcs_data, image, seg_map=None, 
+                      R_scale=10, mag_thre=15,
+                      read=False, save=True,
+                      mag_name='rmag_PS', obj_name="",
+                      dir_name='./Measure'):
+    """ Measure normalization at R_scale for bright stars in table.
+        If seg_map is not given, source detection will be run."""
+    
+    Xmin, Ymin = image_bounds[:2]
+    
+    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%s%dmag_X%sY%s.txt'\
+                                    %(obj_name, R_scale, mag_name[0], mag_thre, Xmin, Ymin))
+    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%s%dmag_X%sY%s'\
+                                  %(obj_name, mag_name[0], mag_thre, Xmin, Ymin))
+    if read:
+        table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
+        res_thumb = load_thumbs(res_thumb_name)
+        
+    else:
+        tab = table[table[mag_name]<mag_thre]
+        res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
+                                                   R=R_scale, wid=0.5, return_full=True)
+
+        table_res_Rnorm = tab["NUMBER", 'X_IMAGE', 'Y_IMAGE'].copy()
+    
+        for j, name in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
+            table_res_Rnorm[name] = res_Rnorm[:,j]
+        
+        # Remove dubious measurement in the model list
+        table_res_Rnorm = table_res_Rnorm[table_res_Rnorm["Iflag"]==0]
+        
+        if save:
+            check_save_path(dir_name, make_new=False)
+            save_thumbs(res_thumb, res_thumb_name)
+            table_res_Rnorm.write(table_Rnorm_name, overwrite=True, format='ascii')
+            
+    return table_res_Rnorm, res_thumb
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
@@ -665,10 +714,10 @@ def id_generator(size=6, chars=None):
         chars = string.ascii_letters + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
 
-def check_save_path(dir_name):
+def check_save_path(dir_name, make_new=True):
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
-    else:
+    elif make_new:
         if len(os.listdir(dir_name)) != 0:
             while os.path.exists(dir_name):
                 dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
@@ -685,15 +734,15 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
 def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
                sky_mean=0, sky_std=1, origin=1, color="r", draw=False):
     from matplotlib import patches  
-    patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
-    patch_xmin, patch_ymin = coord_Im2Array(patch_Xmin, patch_Ymin, origin)
-    patch_xmax, patch_ymax = coord_Im2Array(patch_Xmax, patch_Ymax, origin)
+    Xmin, Ymin, Xmax, Ymax = bounds
+    xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
+    xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
 
-    patch = np.copy(data[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+    patch = np.copy(data[xmin:xmax, ymin:ymax])
     if SE_seg_map is None:
         seg_patch = None
     else:
-        seg_patch = np.copy(SE_seg_map[patch_xmin:patch_xmax, patch_ymin:patch_ymax])
+        seg_patch = np.copy(SE_seg_map[xmin:xmax, ymin:ymax])
     
     if draw:
         fig, ax = plt.subplots(figsize=(12,8))       
@@ -704,40 +753,42 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
                        vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
         plt.plot([600,840],[650,650],"w",lw=4)
         plt.text(560,400, r"$\bf 10'$",color='w', fontsize=20)
-        rect = patches.Rectangle((patch_Xmin, patch_Ymin), bounds[2]-bounds[0], bounds[3]-bounds[1],
+        width = Xmax-Xmin, Ymax-Ymin
+        rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
                                  linewidth=2, edgecolor=color, facecolor='none')
         ax.add_patch(rect)
         plt.show()
         
     return patch, seg_patch
 
-def query_vizier(catalog_name, radius, header, columns, column_filters):
-    """ Query catalog in Vizier database with the given catalog name, search radius and column names """
+def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
+    """ Query catalog in Vizier database with the given catalog name,
+    search radius and column names. If coords is not given, look for fits header """
     from astroquery.vizier import Vizier
     from astropy import units as u
     
     # Prepare for quearyinig Vizier with filters up to infinitely many rows. By default, this is 50.
     viz_filt = Vizier(columns=columns, column_filters=column_filters)
     viz_filt.ROW_LIMIT = -1
-
-    RA, DEC = re.split(",", header['RADEC'])
-    coords = SkyCoord(RA+" "+DEC , unit=(u.hourangle, u.deg))
+    
+    if coord==None:
+        RA, DEC = re.split(",", header['RADEC'])
+        coord = SkyCoord(RA+" "+DEC , unit=(u.hourangle, u.deg))
 
     # Query!
-    result = viz_filt.query_region(coords, 
-                                   radius=radius, 
+    result = viz_filt.query_region(coord, radius=radius, 
                                    catalog=[catalog_name])
     return result
 
-def transform_coords2pixel(table, wcs, cat_name='', RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
+def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
     """ Transform the RA/DEC columns in the table into pixel coordinates given wcs"""
     coords = np.vstack([np.array(table[RA_key]), 
                         np.array(table[DE_key])]).T
     pos = wcs.wcs_world2pix(coords, origin)
-    table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name='X_IMAGE'+'_'+cat_name)
-    table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name='Y_IMAGE'+'_'+cat_name)
+    table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name='X_IMAGE'+'_'+name)
+    table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name='Y_IMAGE'+'_'+name)
     table.add_column(Column(np.arange(len(table))+1, dtype=int), 
-                     index=0, name="ID"+'_'+cat_name)
+                     index=0, name="ID"+'_'+name)
     return table
 
 def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
@@ -761,12 +812,14 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def cross_match(header, SE_catalog, bounds, mag_threshold=22,
-                catalog={'Pan-STARRS': 'II/349/ps1'}, radius=2.5*u.deg, 
-                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'objID', 'Qual',
-                                        'gmag', 'e_gmag', 'rmag', 'e_rmag']},
-                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 24)}},
-                magnitude_name={'Pan-STARRS':'rmag'}):
+def cross_match(header, SE_catalog, bounds, radius=None, 
+                pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec,
+                clean_catalog=True, mag_name='rmag',
+                catalog={'Pan-STARRS': 'II/349/ps1'},
+                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
+                                        'objID', 'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
+                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 23)}},
+                magnitude_name={'Pan-STARRS':['rmag','gmag']}):
     """ 
         Cross match SExtractor catalog with Vizier Online catalog.
         
@@ -781,77 +834,210 @@ def cross_match(header, SE_catalog, bounds, mag_threshold=22,
                 column_filters: {"Rmag":'{0} .. {1}'.format(5, 15)}
                 
     """
-    import pandas as pd
     
     wcs_data = wcs.WCS(header)
-    for i, (catalog_name, table_name) in enumerate(catalog.items()):
+    
+    cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
+    coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
+    if radius is None:
+        L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
+        radius = L * pixel_scale * u.arcsec
+    
+    for j, (cat_name, table_name) in enumerate(catalog.items()):
         # Query from Vizier
-        result = query_vizier(catalog_name=catalog_name,
-                              radius=radius, header=header,
-                              columns=columns[catalog_name],
-                              column_filters=column_filters[catalog_name])
+        result = query_vizier(catalog_name=cat_name,
+                              radius=radius,
+                              columns=columns[cat_name],
+                              column_filters=column_filters[cat_name],
+                              coord=coord_cen)
 
         Cat_full = result[table_name]
-        if len(catalog_name) > 4:
-            cat_name = catalog_name[0] + catalog_name[-1]
-        else:
-            cat_name = catalog_name
         
-        mag_name = magnitude_name[catalog_name]
-        Cat_full = transform_coords2pixel(Cat_full, wcs_data, cat_name=cat_name) 
-        mag = Cat_full[mag_name]
-        print("%s %s:  %.3f ~ %.3f"%(catalog_name, mag_name, mag.min(), mag.max()))
+        if len(cat_name) > 4:
+            c_name = cat_name[0] + cat_name[-1]
+        else:
+            c_name = cat_name
+        
+        m_name = np.atleast_1d(mag_name)[j]
+            
+        Cat_full = transform_coords2pixel(Cat_full, wcs_data, name=c_name)
+        Cat_bright = Cat_full[Cat_full[m_name]<mag_thre]
+        
+        if clean_catalog:
+            # Clean duplicate items in the catalog
+            c_bright = SkyCoord(Cat_bright['RAJ2000'], Cat_bright['DEJ2000'], unit=u.deg)
+            c_catalog = SkyCoord(Cat_full['RAJ2000'], Cat_full['DEJ2000'], unit=u.deg)
+            idxc, idxcatalog, d2d, d3d = c_catalog.search_around_sky(c_bright, sep)
+            inds_c, counts = np.unique(idxc, return_counts=True)
+            
+            row_duplicate = np.array([], dtype=int)
+            
+            # Use the measurement with min error in RA/DEC
+            for i in inds_c[counts>1]:
+                obj_duplicate = Cat_full[idxcatalog][idxc==i]
+                
+                has_mag = obj_duplicate[m_name]>0
+                obj_duplicate = obj_duplicate[has_mag]
+                
+                e2_coord = obj_duplicate["e_RAJ2000"]**2 + obj_duplicate["e_DEJ2000"]**2
+                min_e2_coord = min(e2_coord)
+                
+                for ID in obj_duplicate[e2_coord>min_e2_coord]['ID'+'_'+c_name]:
+                    k = np.where(Cat_full['ID'+'_'+c_name]==ID)[0][0]
+                    row_duplicate = np.append(row_duplicate, k)
+            
+            Cat_full.remove_rows(np.unique(row_duplicate))
+            
+        for m_name in magnitude_name[cat_name]:
+            mag = Cat_full[m_name]
+            print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
 
         # Merge Catalog
-        SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "ELLIPTICITY",
-                      "RMAG_AUTO", "FWHM_IMAGE", "FLAGS"]
-        keep_columns = SE_columns + ["ID"+'_'+cat_name, mag_name,
-                                     "X_IMAGE"+'_'+cat_name, "Y_IMAGE"+'_'+cat_name]
-        tab_match = merge_catalog(SE_catalog, Cat_full, sep=3*u.arcsec,
+        SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
+                      "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "FLAGS"]
+        keep_columns = SE_columns + ["ID"+'_'+c_name] + magnitude_name[cat_name] + \
+                                    ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
+        tab_match = merge_catalog(SE_catalog, Cat_full, sep=sep,
                                   keep_columns=keep_columns)
-        mag_match_name = mag_name+'_'+cat_name
-        tab_match[mag_name].name = mag_match_name
+        tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
+                                         keep_columns=keep_columns)
         
-        if i==0:
+        for m_name in magnitude_name[cat_name]:
+            tab_match[m_name].name = m_name+'_'+c_name
+            tab_match_bright[m_name].name = m_name+'_'+c_name
+        
+        if j==0:
             tab_match_all = tab_match
+            tab_match_bright_all = tab_match_bright
         else:
             tab_match_all = join(tab_match_all, tab_match, keys=SE_columns,
                                  join_type='left', metadata_conflicts='silent')
+            tab_match_bright_all = join(tab_match_bright_all, tab_match_bright, keys=SE_columns,
+                                        join_type='left', metadata_conflicts='silent')
+            
+    tab_target_full = crop_catalog(tab_match_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
+    tab_target = crop_catalog(tab_match_bright_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
+    
+    Cat_crop = crop_catalog(Cat_full, bounds, keys=("X_IMAGE"+'_'+c_name,
+                                                    "Y_IMAGE"+'_'+c_name))
 
-    tab_match_crop = crop_catalog(tab_match_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
-    Cat_crop = crop_catalog(Cat_full, bounds, keys=("X_IMAGE"+'_'+cat_name,
-                                                    "Y_IMAGE"+'_'+cat_name))
+    mag = tab_target_full[mag_name+'_'+c_name]
+    print("Matched stars with %s %s:  %.3f ~ %.3f"%(cat_name, mag_name, mag.min(), mag.max()))
+    mag = tab_target[mag_name+'_'+c_name]
+    print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
+          %(cat_name, mag_name, mag.min(), mag.max()))
     
-    target = tab_match_crop[mag_match_name] < mag_threshold
-    tab_target = tab_match_crop[target].copy()
-    tab_target.sort(keys=mag_match_name)
-    Cat_crop.sort(keys=mag_name)
+    # Sort matched catalog by SE MAG_AUTO, and source catalog by the first used mag_name.
+    tab_target.sort(keys='MAG_AUTO')
+    tab_target_full.sort(keys='MAG_AUTO')
+    Cat_crop.sort(keys=np.atleast_1d(mag_name)[0])
     
-    return tab_target, Cat_crop
+    return tab_target, tab_target_full, Cat_crop
 
-# def make_segmap_from_catalog(catalog, cat_name='PS'):
-#     from usid_processing import parallel_compute
-#     from functools import partial
+def calculate_color_term(tab_target, mag_range=[12,18], mag_name='gmag_PS', plot=True):
+    mag = tab_target["MAG_AUTO"]
+    d_mag = tab_target["MAG_AUTO"] - tab_target[mag_name]
     
-#     np.logical_or.reduce([np.sqrt((xx-(X-patch_Xmin))**2+(yy-(Y-patch_Ymin))**2) < r
-#                      for (X,Y, r) in zip(cat[i*200:(i+1)*200]['X_IMAGE_PS'],
-#                                       cat[i*200:(i+1)*200]['Y_IMAGE_PS'], R_est[i*200:(i+1)*200])])
-#     mask_stars = [ for i in range(20)]
+    plt.scatter(mag, d_mag, s=8, alpha=0.2, color='gray')
+    d_mag = d_mag[(mag>mag_range[0])&(mag<mag_range[1])]
+    mag = mag[(mag>mag_range[0])&(mag<mag_range[1])]
+
+    d_mag_clip = sigma_clip(d_mag, 3, maxiters=5)
+    CT = np.mean(d_mag_clip)
+    print('Color Term = %.5f'%CT)
     
+    if plot:
+        plt.scatter(mag, d_mag_clip, s=5, alpha=0.3)
+        plt.axhline(CT, color='k', alpha=0.7)
+        plt.ylim(-3,3)
+        plt.xlabel("MAG_AUTO")
+        plt.ylabel("MAG_AUTO - %s"%mag_name)
+        
+    return np.around(CT,5)
+
+def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
+                           mag_range=[12, 20], K=2, degree=3, plot=True):
+    """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
+        based on SE segmentation. Radius is enlarged K times."""
+    # Read from SE segm map
+    segm_deb = SegmentationImage(seg_map)
+    R_aper = (segm_deb.get_areas(tab_SE["NUMBER"])/np.pi)**0.5
+    tab_SE['logR'] = np.log10(K * R_aper)
     
-#     return mask_star
+    mag = tab_SE[mag_name]
+    mag[np.isnan(mag)] = -1
+    tab = tab_SE[(mag>mag_range[0])&(mag<mag_range[1])]
+
+    rmag = tab[mag_name]
+    logR = tab['logR']
+    p_poly = np.polyfit(rmag, logR, degree)
+    f_poly = np.poly1d(p_poly)
+
+    if plot:
+        plt.scatter(tab_SE[mag_name], tab_SE['logR'], s=8, alpha=0.2, color='gray')
+        plt.scatter(rmag, logR, s=8, alpha=0.2, color='k')
+        
+    mag_ls = np.linspace(6,23)
+    clip = np.zeros_like(rmag, dtype='bool')
+    
+    for i in range(3):
+        if plot: plt.plot(mag_ls, f_poly(mag_ls), lw=1, ls='--')
+        mag, logr = rmag[~clip], logR[~clip]
+
+        p_poly = np.polyfit(mag, logr, degree)
+        f_poly = np.poly1d(p_poly)
+
+        dev = np.sqrt((logR-f_poly(rmag))**2)
+        clip = dev>3*np.mean(dev)
+        
+    if plot: 
+        plt.plot(mag_ls, f_poly(mag_ls), lw=2, color='gold')
+
+        plt.scatter(mag, logr, s=3, alpha=0.2, color='gold')
+
+        plt.xlabel("magnitude")
+        plt.ylabel(r"$\log_{10}\,R$")
+        plt.xlim(7,23)
+        plt.ylim(0,2.2)
+    
+    estimate_radius = lambda m: max(10**min(2, f_poly(m)), 2)
+    
+    return estimate_radius
+
+def make_segm_from_catalog(catalog, image_bounds, estimate_radius,
+                           mag_name='rmag', cat_name='PS'):
+    """ Make segmentation , aperture size from SE is fit based on SE"""
+    R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
+    Xmin, Ymin = image_bounds[:2]
+    
+    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
+             for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
+                                     catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
+    
+    image_size = image_bounds[2] - image_bounds[0]
+    seg_map_catalog = np.zeros((image_size, image_size))
+    
+    # Segmentation k sorted by mag of source catalog
+    for (k, aper) in enumerate(apers):
+        star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
+        if star_ma is not None:
+            seg_map_catalog[star_ma.astype(bool)] = k+2
+            
+    return seg_map_catalog
 
 
 def save_thumbs(obj, filename):
     import pickle
-    print("Save thumbs to: %s"%filename)
-    with open(filename + '.pkl', 'wb') as f:
+    fname = filename+'.pkl'
+    print("Save thumbs to: %s"%fname)
+    with open(fname, 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 def load_thumbs(filename):
     import pickle
-    print("Read thumbs from: %s"%filename) 
-    with open(filename + '.pkl', 'rb') as f:
+    fname = filename+'.pkl'
+    print("Read thumbs from: %s"%fname) 
+    with open(fname, 'rb') as f:
         return pickle.load(f)
 
 ### Prior Helper ###    

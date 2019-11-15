@@ -516,7 +516,7 @@ class Mask:
         
         seg_comb0 = self.seg_deep0.copy()
         ma_extra = (mask_strip_all|~mask_cross_all) & (self.seg_deep0==0)
-        seg_comb0[ma_extra] = self.seg_deep0.max()+1
+        seg_comb0[ma_extra] = self.seg_deep0.max()-2
         mask_comb0 = (seg_comb0!=0)
         
         self.mask_comb = mask_comb0[pad:self.image_size+pad, pad:self.image_size+pad]
@@ -534,7 +534,6 @@ class Mask:
             stars_new = Stars(stars.star_pos[~clean], stars.Flux[~clean],
                               stars.Flux_threshold, z_norm=z_norm_clean,
                               BKG=stars.BKG, verbose=False)
-            print(stars_new.z_norm.shape)
             self.stars_new = stars_new
             self.clean = clean
         
@@ -1188,7 +1187,7 @@ def make_noise_image(image_size, noise_std, random_seed=42, verbose=True):
     return noise_image.array
 
 
-def make_base_image(image_size, stars, psf_base, pad=0, verbose=True):
+def make_base_image(image_size, stars, psf_base, pad=0, psf_size=64, verbose=True):
     """ Background images composed of dim stars with fixed PSF psf_base"""
     if verbose:
         print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
@@ -1207,7 +1206,7 @@ def make_base_image(image_size, stars, psf_base, pad=0, verbose=True):
     for k in range(len(star_pos)):
         try:
             draw_star(k, star_pos=star_pos, Flux=Flux,
-                      psf_star=psf_base, psf_size=64, full_image=full_image0)
+                      psf_star=psf_base, psf_size=psf_size, full_image=full_image0)
         except GalSimBoundsError as e:
             if verbose:
                 print(e.__doc__)
@@ -1552,7 +1551,7 @@ def generate_image_by_znorm(psf, stars,
     return image
 
 
-def generate_image_fit(res, psf, stars, image_base):
+def generate_image_fit(res, psf, stars, image_base, r_out=1200):
     pmed, pmean, pcov = get_params_fit(res)
     N_n = (len(pmed)-2+1)//2
     pixel_scale = psf.pixel_scale
@@ -1564,7 +1563,7 @@ def generate_image_fit(res, psf, stars, image_base):
         n_s_fit = np.concatenate([pmed[:N_n], [4]])
         theta_0 = psf.theta_s[0]
         theta_s_fit = np.concatenate([[theta_0],
-                                      np.atleast_1d(10**pmed[N_n:-2]),[900]])
+                                      np.atleast_1d(10**pmed[N_n:-2]),[r_out]])
         mu_fit, logsigma_fit = pmed[-2:]
         
     sigma_fit = 10**logsigma_fit
@@ -1580,7 +1579,7 @@ def generate_image_fit(res, psf, stars, image_base):
     
     noise_fit = make_noise_image(psf_fit.image_size, sigma_fit, verbose=False)
     image_fit = generate_image_by_znorm(psf_fit, stars, psf_range=[640,1200],
-                                        psf_scale=pixel_scale, draw_real=False)
+                                        psf_scale=pixel_scale, draw_real=True)
     image_fit = image_fit + image_base + mu_fit
     
     return image_fit, noise_fit, pmed
