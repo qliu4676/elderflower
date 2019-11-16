@@ -1551,7 +1551,7 @@ def generate_image_by_znorm(psf, stars,
     return image
 
 
-def generate_image_fit(res, psf, stars, image_base, r_out=1200):
+def generate_image_fit(res, psf, stars, image_base, n_out=3, r_out=1200):
     pmed, pmean, pcov = get_params_fit(res)
     N_n = (len(pmed)-2+1)//2
     pixel_scale = psf.pixel_scale
@@ -1560,7 +1560,7 @@ def generate_image_fit(res, psf, stars, image_base, r_out=1200):
         n_fit, mu_fit, logsigma_fit = pmed
         
     elif psf.aureole_model == "multi-power":
-        n_s_fit = np.concatenate([pmed[:N_n], [4]])
+        n_s_fit = np.concatenate([pmed[:N_n], [n_out]])
         theta_0 = psf.theta_s[0]
         theta_s_fit = np.concatenate([[theta_0],
                                       np.atleast_1d(10**pmed[N_n:-2]),[r_out]])

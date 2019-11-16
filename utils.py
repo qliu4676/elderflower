@@ -82,7 +82,7 @@ def pol2cart(rho, phi):
     return(x, y)
 
 def process_counter(i, number):
-    if np.mod((i+1), number//5) == 0:
+    if np.mod((i+1), number//4) == 0:
         print("completed: %d/%d"%(i+1, number))
 
 def round_good_fft(x):
@@ -635,7 +635,7 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=10, wid=0.5, return_full=False):
+                        R=10, wid=0.5, return_full=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
     
@@ -644,7 +644,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
     res_Rnorm = np.empty((len(table_target), 5))
     
     for i, (num, mag_auto) in enumerate(zip(table_target['NUMBER'], table_target['MAG_AUTO'])):
-        process_counter(i, len(table_target))
+        if verbose: process_counter(i, len(table_target))
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
@@ -657,7 +657,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         # Measure the mean, med and std of intensity at R
         I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R, wid=wid)
         
-        if Iflag==1: print ("Errorenous measurement: #", num)
+        if (Iflag==1) & verbose: print ("Errorenous measurement: #", num)
         
         # Use the median value of background as the local background
         sky_mean = np.median(bkg)
@@ -666,16 +666,16 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
     
     return res_Rnorm, res_thumb
 
-def measure_Rnorm_all(table, image_bounds,
+def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
                       R_scale=10, mag_thre=15,
                       read=False, save=True,
                       mag_name='rmag_PS', obj_name="",
-                      dir_name='./Measure'):
+                      dir_name='.', verbose=True):
     """ Measure normalization at R_scale for bright stars in table.
         If seg_map is not given, source detection will be run."""
     
-    Xmin, Ymin = image_bounds[:2]
+    Xmin, Ymin = image_bound[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%s%dmag_X%sY%s.txt'\
                                     %(obj_name, R_scale, mag_name[0], mag_thre, Xmin, Ymin))
@@ -688,7 +688,7 @@ def measure_Rnorm_all(table, image_bounds,
     else:
         tab = table[table[mag_name]<mag_thre]
         res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                   R=R_scale, wid=0.5, return_full=True)
+                                                   R=R_scale, wid=0.5, return_full=True, verbose=verbose)
 
         table_res_Rnorm = tab["NUMBER", 'X_IMAGE', 'Y_IMAGE'].copy()
     
@@ -699,7 +699,7 @@ def measure_Rnorm_all(table, image_bounds,
         table_res_Rnorm = table_res_Rnorm[table_res_Rnorm["Iflag"]==0]
         
         if save:
-            check_save_path(dir_name, make_new=False)
+            check_save_path(dir_name, make_new=False, verbose=False)
             save_thumbs(res_thumb, res_thumb_name)
             table_res_Rnorm.write(table_Rnorm_name, overwrite=True, format='ascii')
             
@@ -714,7 +714,7 @@ def id_generator(size=6, chars=None):
         chars = string.ascii_letters + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
 
-def check_save_path(dir_name, make_new=True):
+def check_save_path(dir_name, make_new=True, verbose=True):
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
     elif make_new:
@@ -722,17 +722,22 @@ def check_save_path(dir_name, make_new=True):
             while os.path.exists(dir_name):
                 dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
             os.makedirs(dir_name)
-    print("Results will be saved in %s\n"%dir_name)
+    if verbose: print("Results will be saved in %s\n"%dir_name)
     
 
-def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE")):
+def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
     Xmin, Ymin, Xmax, Ymax = bounds
     A, B = keys
     crop = (cat[A]>=Xmin) & (cat[A]<=Xmax) & (cat[B]>=Ymin) & (cat[B]<=Ymax)
-    return cat[crop]
+    if sortby is not None:
+        cat_crop = cat[crop]
+        cat_crop.sort(keys=sortby)
+        return cat_crop
+    else:
+        return cat[crop]
 
 def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
-               sky_mean=0, sky_std=1, origin=1, color="r", draw=False):
+               sub_bounds=None, origin=1, color="w", draw=False):
     from matplotlib import patches  
     Xmin, Ymin, Xmax, Ymax = bounds
     xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
@@ -745,18 +750,34 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         seg_patch = np.copy(SE_seg_map[xmin:xmax, ymin:ymax])
     
     if draw:
+        sky_mean = np.median(data) if SE_seg_map is None else np.median(data[SE_seg_map==0])
+        sky_std = mad_std(data) if SE_seg_map is None else mad_std(data[SE_seg_map==0])
         fig, ax = plt.subplots(figsize=(12,8))       
         plt.imshow(data, norm=norm1, cmap="viridis",
                    vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
         if weight_map is not None:
             plt.imshow(data*weight_map, norm=norm1, cmap="viridis",
                        vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
-        plt.plot([600,840],[650,650],"w",lw=4)
-        plt.text(560,400, r"$\bf 10'$",color='w', fontsize=20)
+        
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
-                                 linewidth=2, edgecolor=color, facecolor='none')
+                                 linewidth=2.5, edgecolor=color, facecolor='none')
         ax.add_patch(rect)
+        
+        plt.plot([Xmin+width[0]//2-360,Xmin+width[0]//2+360], [450,450],"whitesmoke",lw=3)
+        plt.plot([Xmin+width[0]//2+360,Xmin+width[0]//2+360], [420,480],"whitesmoke",lw=3)
+        plt.plot([Xmin+width[0]//2-360,Xmin+width[0]//2-360], [420,480],"whitesmoke",lw=3)
+        plt.text(Xmin+width[0]//2, 220, r"$\bf 0.5\,deg$", color='whitesmoke', ha='center', fontsize=18)
+        
+        if sub_bounds is not None:
+            for bounds in sub_bounds:
+                Xmin, Ymin, Xmax, Ymax = bounds
+                width = Xmax-Xmin, Ymax-Ymin
+                rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
+                                         linewidth=2.5, edgecolor='indianred', facecolor='none')
+                ax.add_patch(rect)
+                
+        
         plt.show()
         
     return patch, seg_patch
@@ -817,7 +838,7 @@ def cross_match(header, SE_catalog, bounds, radius=None,
                 clean_catalog=True, mag_name='rmag',
                 catalog={'Pan-STARRS': 'II/349/ps1'},
                 columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
-                                        'objID', 'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
+                                        'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
                 column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 23)}},
                 magnitude_name={'Pan-STARRS':['rmag','gmag']}):
     """ 
@@ -839,9 +860,13 @@ def cross_match(header, SE_catalog, bounds, radius=None,
     
     cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
     coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
+    
     if radius is None:
         L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
         radius = L * pixel_scale * u.arcsec
+        
+    print("Search", np.around(radius.to(u.deg), 3), "around:")
+    print(coord_cen)
     
     for j, (cat_name, table_name) in enumerate(catalog.items()):
         # Query from Vizier
@@ -915,11 +940,14 @@ def cross_match(header, SE_catalog, bounds, radius=None,
             tab_match_bright_all = join(tab_match_bright_all, tab_match_bright, keys=SE_columns,
                                         join_type='left', metadata_conflicts='silent')
             
-    tab_target_full = crop_catalog(tab_match_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
-    tab_target = crop_catalog(tab_match_bright_all, bounds, keys=("X_IMAGE", "Y_IMAGE"))
+    # Crop & Sort matched catalog by SE MAG_AUTO, and source catalog by the first used mag_name.
+    tab_target_full = crop_catalog(tab_match_all, bounds,
+                                   keys=("X_IMAGE", "Y_IMAGE"), sortby='MAG_AUTO')
+    tab_target = crop_catalog(tab_match_bright_all, bounds,
+                              keys=("X_IMAGE", "Y_IMAGE"), sortby='MAG_AUTO')
     
-    Cat_crop = crop_catalog(Cat_full, bounds, keys=("X_IMAGE"+'_'+c_name,
-                                                    "Y_IMAGE"+'_'+c_name))
+    Cat_crop = crop_catalog(Cat_full, bounds, sortby=np.atleast_1d(mag_name)[0],
+                            keys=("X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name))
 
     mag = tab_target_full[mag_name+'_'+c_name]
     print("Matched stars with %s %s:  %.3f ~ %.3f"%(cat_name, mag_name, mag.min(), mag.max()))
@@ -927,38 +955,37 @@ def cross_match(header, SE_catalog, bounds, radius=None,
     print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
           %(cat_name, mag_name, mag.min(), mag.max()))
     
-    # Sort matched catalog by SE MAG_AUTO, and source catalog by the first used mag_name.
-    tab_target.sort(keys='MAG_AUTO')
-    tab_target_full.sort(keys='MAG_AUTO')
-    Cat_crop.sort(keys=np.atleast_1d(mag_name)[0])
-    
     return tab_target, tab_target_full, Cat_crop
 
-def calculate_color_term(tab_target, mag_range=[12,18], mag_name='gmag_PS', plot=True):
+def calculate_color_term(tab_target, mag_range=[12,18], mag_name='gmag_PS', draw=True):
     mag = tab_target["MAG_AUTO"]
     d_mag = tab_target["MAG_AUTO"] - tab_target[mag_name]
     
-    plt.scatter(mag, d_mag, s=8, alpha=0.2, color='gray')
     d_mag = d_mag[(mag>mag_range[0])&(mag<mag_range[1])]
     mag = mag[(mag>mag_range[0])&(mag<mag_range[1])]
 
     d_mag_clip = sigma_clip(d_mag, 3, maxiters=5)
     CT = np.mean(d_mag_clip)
-    print('Color Term = %.5f'%CT)
+    print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
-    if plot:
+    if draw:
+        plt.scatter(mag, d_mag, s=8, alpha=0.2, color='gray')
         plt.scatter(mag, d_mag_clip, s=5, alpha=0.3)
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
-        plt.xlabel("MAG_AUTO")
-        plt.ylabel("MAG_AUTO - %s"%mag_name)
+        plt.xlabel("MAG_AUTO (SE)")
+        plt.ylabel("MAG_AUTO $-$ %s"%mag_name)
+        plt.show()
         
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
-                           mag_range=[12, 20], K=2, degree=3, plot=True):
+                           mag_range=[12, 20], K=2, degree=3, draw=True):
     """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
         based on SE segmentation. Radius is enlarged K times."""
+    
+    print("\nFit %dth empirical relation of (X%d) aperture radii for catalog stars based on SE."%(degree, K))
+
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)
     R_aper = (segm_deb.get_areas(tab_SE["NUMBER"])/np.pi)**0.5
@@ -973,7 +1000,7 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     p_poly = np.polyfit(rmag, logR, degree)
     f_poly = np.poly1d(p_poly)
 
-    if plot:
+    if draw:
         plt.scatter(tab_SE[mag_name], tab_SE['logR'], s=8, alpha=0.2, color='gray')
         plt.scatter(rmag, logR, s=8, alpha=0.2, color='k')
         
@@ -981,7 +1008,7 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     clip = np.zeros_like(rmag, dtype='bool')
     
     for i in range(3):
-        if plot: plt.plot(mag_ls, f_poly(mag_ls), lw=1, ls='--')
+        if draw: plt.plot(mag_ls, f_poly(mag_ls), lw=1, ls='--')
         mag, logr = rmag[~clip], logR[~clip]
 
         p_poly = np.polyfit(mag, logr, degree)
@@ -990,30 +1017,35 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
         dev = np.sqrt((logR-f_poly(rmag))**2)
         clip = dev>3*np.mean(dev)
         
-    if plot: 
+    if draw: 
         plt.plot(mag_ls, f_poly(mag_ls), lw=2, color='gold')
 
         plt.scatter(mag, logr, s=3, alpha=0.2, color='gold')
 
-        plt.xlabel("magnitude")
+        plt.xlabel("%s (catalog)"%mag_name)
         plt.ylabel(r"$\log_{10}\,R$")
         plt.xlim(7,23)
-        plt.ylim(0,2.2)
+        plt.ylim(0.15,2.2)
+        plt.show()
     
     estimate_radius = lambda m: max(10**min(2, f_poly(m)), 2)
     
     return estimate_radius
 
-def make_segm_from_catalog(catalog, image_bounds, estimate_radius,
+def make_segm_from_catalog0(catalog_star, image_bounds, estimate_radius,
                            mag_name='rmag', cat_name='PS'):
     """ Make segmentation , aperture size from SE is fit based on SE"""
+    
+
+    
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
     Xmin, Ymin = image_bounds[:2]
     
     apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
              for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
                                      catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
-    
+    plt.hist(np.log10(R_est))
+    plt.show()
     image_size = image_bounds[2] - image_bounds[0]
     seg_map_catalog = np.zeros((image_size, image_size))
     
@@ -1023,6 +1055,44 @@ def make_segm_from_catalog(catalog, image_bounds, estimate_radius,
         if star_ma is not None:
             seg_map_catalog[star_ma.astype(bool)] = k+2
             
+    return seg_map_catalog
+
+def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
+                           mag_name='rmag', cat_name='PS',
+                           draw=True, save=False, dir_name='./Measure'):
+    """ Make segmentation , aperture size from SE is fit based on SE"""
+    
+    catalog = catalog_star[~catalog_star['gmag'].mask]
+    print("\nMake segmentation map based on catalog %s %s: %d stars"%(cat_name, mag_name, len(catalog)))
+    
+    R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
+    Xmin, Ymin = image_bound[:2]
+
+    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
+             for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
+                                     catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
+    
+    image_size = image_bound[2] - image_bound[0]
+    seg_map_catalog = np.zeros((image_size, image_size))
+    
+    # Segmentation k sorted by mag of source catalog
+    for (k, aper) in enumerate(apers):
+        star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
+        if star_ma is not None:
+            seg_map_catalog[star_ma.astype(bool)] = k+2
+    if draw:
+        from plotting import make_rand_cmap
+        plt.figure(figsize=(5,5))
+        plt.imshow(seg_map_catalog, vmin=1, cmap=make_rand_cmap(int(seg_map_catalog.max())))
+        plt.show()
+        
+    # Save segmentation map built from catalog
+    if save:
+        check_save_path(dir_name, make_new=False, verbose=False)
+        hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
+        file_name = os.path.join(dir_name, "Seg_%s_X%dY%d.fits" %(cat_name, Xmin, Ymin))
+        hdu_seg.writeto(file_name, overwrite=True)
+        
     return seg_map_catalog
 
 

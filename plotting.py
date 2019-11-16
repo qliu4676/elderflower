@@ -496,7 +496,7 @@ def draw_comparison_fit_data(image_fit, data,
     
     
 def plot_fit_PSF(res, psf, n_bootstrap=200,
-                 Amp_max=None, r_core=None, r_out=1200,
+                 Amp_max=None, r_core=None, n_out=3, r_out=1200,
                  save=False, dir_name="./"):
 
     image_size = psf.image_size
@@ -545,7 +545,7 @@ def plot_fit_PSF(res, psf, n_bootstrap=200,
             comp2_k = func_aureole(r, n_k, theta_0_pix)
             
         elif psf.aureole_model == "multi-power":
-            n_s_k = np.concatenate([sample[:N_n], [4]])
+            n_s_k = np.concatenate([sample[:N_n], [n_out]])
             theta_s_pix_k = np.concatenate([[theta_0_pix],
                     np.atleast_1d(10**sample[N_n:-2])/pixel_scale, [r_out/pixel_scale]])
             comp2_k = func_aureole(r, n_s_k, theta_s_pix_k)
@@ -560,7 +560,7 @@ def plot_fit_PSF(res, psf, n_bootstrap=200,
                 comp2 = func_aureole(r, n_fit, theta_0_pix)
                 
             elif psf.aureole_model == "multi-power":
-                n_s_fit = np.concatenate([fits[:N_n], [4]])
+                n_s_fit = np.concatenate([fits[:N_n], [n_out]])
                 theta_s_pix_fit = np.concatenate([[theta_0_pix],
                          np.atleast_1d(10**fits[N_n:-2])/pixel_scale,[r_out/pixel_scale]])
                 comp2 = func_aureole(r, n_s_fit, theta_s_pix_fit)
