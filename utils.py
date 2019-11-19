@@ -217,7 +217,7 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
                        pad=0, r_core=24, r_out=96,
                        mask_base=None, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
-                       b_size=25, n_dilation=1):
+                       b_size=25, n_dilation=3):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
     for bright stars, mask core (r < r_core pix) """
     from photutils import detect_sources, deblend_sources
@@ -248,7 +248,7 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
         print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
             
     if sn_thre is not None:
-        print("Detect and deblend source... Mask S/N > %.1f "%(sn_thre))
+        print("Detect and deblend source... Mask S/N > %.1f (%dth enlarged)"%(sn_thre, n_dilation))
         # detect all source first 
         back, back_rms = background_sub_SE(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
@@ -317,14 +317,17 @@ def make_mask_strip(stars, xx, yy, pad=0, width=10, n_strip=16, dist_strip=300):
     
     print("Use sky strips crossing very bright stars")
     
+    if stars.n_verybright>0:
+        mask_strip_s = np.empty((stars.n_verybright, xx.shape[0], xx.shape[1]))
+        mask_cross_s = np.empty_like(mask_strip_s)
+    else:
+        return None, None
+    
     star_pos = stars.star_pos_verybright + pad
     
     phi_s = np.linspace(-90, 90, n_strip+1)
 #     phi_s = np.setdiff1d(phi_s, [-90,0,90])
     a_s = np.tan(phi_s*np.pi/180)
-    
-    mask_strip_s = np.empty((len(star_pos), xx.shape[0], xx.shape[1]))
-    mask_cross_s = np.empty_like(mask_strip_s)
     
     for k, (x_b, y_b) in enumerate(star_pos):
         m_s = (y_b-a_s*x_b)
@@ -356,7 +359,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    sky_mean=884, sky_std=3, dr=1.5, 
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, label=None, plot_line=False, mock=False,
-                   plot=True, scatter=False, errorbar=False, verbose=False):
+                   plot=True, scatter=False, fill=False, errorbar=False, verbose=False):
     """Calculate 1d radial profile of a given star postage"""
     if mask is None:
         mask =  np.zeros_like(img, dtype=bool)
@@ -434,8 +437,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             if scatter:
                 plt.scatter(r[r<3*r_core], np.log10(z[r<3*r_core]), color=color, s=6, alpha=0.2, zorder=1)
                 plt.scatter(r[r>3*r_core], np.log10(z[r>3*r_core]), color=color, s=3, alpha=0.1, zorder=1)
-            plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
-                             color=color, alpha=0.2, zorder=1)
+            if fill:
+                plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
+                                 color=color, alpha=0.2, zorder=1)
             plt.ylabel("log Intensity")
             plt.xscale("log")
             plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8, r_rbin[np.isfinite(r_rbin)][-1]*1.2)
@@ -1134,13 +1138,18 @@ class DynamicNestedSampler:
             
         if n_thread is not None:
             n_thread = max(n_thread, n_cpu-1)
-            
-        self.open_pool(n_cpu)
         
+        if n_cpu > 1:
+            self.open_pool(n_cpu)
+            use_pool = {'update_bound': False}
+        else:
+            self.pool=None
+            use_pool = None
+            
         dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                 sample=sample, bound=bound,
                                                 pool=self.pool, queue_size=n_thread,
-                                                use_pool={'update_bound': False})
+                                                use_pool=use_pool)
         self.dsampler = dsampler
         
         
@@ -1168,7 +1177,7 @@ class DynamicNestedSampler:
         
         print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
         
-        if close_pool:
+        if (self.pool is not None) & close_pool:
             self.close_pool()
         
     def open_pool(self, n_cpu):
@@ -1207,9 +1216,16 @@ class DynamicNestedSampler:
         if save:
             plt.savefig(os.path.join(dir_name, "Cornerbound.png"), dpi=150)
             plt.close()
+    
+    def plot_fit_PSF(self, psf, n_bootstrap=500,
+                     Amp_max=None, r_core=None,
+                     save=False, dir_name='.'):
+        from plotting import plot_fit_PSF
+        plot_fit_PSF(self.results, psf, n_bootstrap=n_bootstrap,
+                     Amp_max=Amp_max, r_core=r_core, save=save, dir_name=dir_name)
 
             
-def Run_Dynamic_Nested_Fitting(loglike,  prior_transform, ndim,
+def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
                                nlive_init=100, sample='auto', 
                                nlive_batch=50, maxbatch=2,
                                pfrac=0.8, n_cpu=None, print_progress=True):
@@ -1258,10 +1274,8 @@ def get_params_fit(res, return_sample=False):
     else:
         return pmed, pmean, pcov
         
-def cal_reduced_chi2(fit, data, pmed, sky_only=True, n_param=4):
+def cal_reduced_chi2(fit, data, pmed, n_param=4):
     mu, sigma = pmed[-2], 10**pmed[-1]
-    if sky_only is False:
-        sigma = np.sqrt(data/0.37+sigma**2)
     chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-n_param)
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 

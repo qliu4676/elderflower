@@ -15,7 +15,7 @@ def main(argv):
     try:
         opts, args = getopt.getopt(argv, "f:b:m:r:I:S:W:",
                                    ["FILTER=", "IMAGE_BOUNDS=", "R_SCALE=", "MAG_THRESHOLD=",
-                                    "IMAGE=", "CATALOG=", "SEGMENT=", "WEIGHT="])
+                                    "IMAGE=", "SE_CATALOG=", "SEGMENT=", "WEIGHT="])
     except getopt.GetoptError:
         print('Wrong Option.')
         sys.exit(2)
@@ -42,7 +42,7 @@ def main(argv):
             mag_thre = np.float(arg)
         elif opt in ("-I", "--IMAGE"):
             hdu_path = arg
-        elif opt in ("-C", "--CATALOG"):
+        elif opt in ("-C", "--SE_CATALOG"):
             SE_catalog = arg
         elif opt in ("-S", "--SEGMENT"):
             seg_map = arg
@@ -113,12 +113,10 @@ def Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds,
     
     # Save matched table and catalog
     if save:
-        tab_target_name = './Measure/%s-catalog-%s-_match_X%sY%s.txt'\
-                            %(obj_name, band, field_bounds[0], field_bounds[1])
+        tab_target_name = './Measure/%s-catalog_match_%s%dmag.txt'%(obj_name, mag_name[0], mag_thre)
         tab_target.write(tab_target_name, overwrite=True, format='ascii')
 
-        catalog_star_name = './Measure/%s-catalog-%s-_PS_X%sY%s.txt'\
-                            %(obj_name, band, field_bounds[0], field_bounds[1])
+        catalog_star_name = './Measure/%s-catalog_PS_%s%dmag.txt'%(obj_name, mag_name[0], mag_thre)
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
 
         

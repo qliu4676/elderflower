@@ -33,7 +33,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     from matplotlib import patches
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
     im1 = ax1.imshow(image, cmap='gray', norm=norm1, vmin=vmin, vmax=1e4, aspect='auto')
-    ax1.set_title("Mock")
+    ax1.set_title("Image")
     colorbar(im1)
     
     n_label = seg_map.max()
@@ -64,8 +64,8 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
         aper.plot(color='c',lw=1.5,label="",alpha=0.7, axes=ax3)
     
     patch_size = image.shape[0] - pad * 2
-    rec = patches.Rectangle((pad, pad), patch_size, patch_size,
-                            facecolor='none', edgecolor='w', linestyle='--',alpha=0.8)
+    rec = patches.Rectangle((pad, pad), patch_size, patch_size, facecolor='none',
+                            edgecolor='w', linewidth=2, linestyle='--',alpha=0.8)
     ax3.add_patch(rec)
     
     plt.tight_layout()
@@ -73,6 +73,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     if save:
         plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=150)
         plt.close()
+
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
                         ma_example=None,
@@ -92,7 +93,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     mask_strip[mask_cross.astype(bool)]=0.5
     ax1.imshow(mask_strip, cmap="gray_r")
     ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
-    ax1.set_title("Mask Strip")
+    ax1.set_title("Strip/Cross")
     
     n_label = seg_comb.max()
     ax2.imshow(seg_comb, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
@@ -103,7 +104,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     image3[mask_comb] = 0
     im3 = ax3.imshow(image3, norm=norm1, aspect='auto', vmin=vmin, vmax=vmax) 
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
-    ax3.set_title("'Sky'")
+    ax3.set_title("'Sky' ver.2")
     colorbar(im3)
 
     aper = CircularAperture(star_pos_A, r=r_core[0])
@@ -112,14 +113,15 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
 
     size = image.shape[0] - pad * 2
-    rec = patches.Rectangle((pad, pad), size, size,
-                            facecolor='none', edgecolor='w', linestyle='--',alpha=0.8)
+    rec = patches.Rectangle((pad, pad), size, size, facecolor='none',
+                            edgecolor='w', linewidth=2, linestyle='--',alpha=0.8)
     ax3.add_patch(rec)
     
     plt.tight_layout()
     if save:
         plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=150)
         plt.close()
+
         
 def Fit_background_distribution(image, mask_deep):
     # Check background, fit with gaussian and exp-gaussian distribution
@@ -297,6 +299,8 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
     if save:
         plt.savefig(os.path.join(dir_name, "Cornerplot.png"), dpi=150)
         plt.close()
+    else:
+        plt.show()
         
 def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
                                  Amp_max=None, r_core=None,
@@ -584,14 +588,14 @@ def plot_fit_PSF(res, psf, n_bootstrap=200,
                 plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
                 plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
                 plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
-            
+                r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
+                plt.xlim(0.9, 5*r_max)  
+                
     if r_core is not None:
-        r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
         plt.axvspan(np.atleast_1d(r_core).max(), r_out/pixel_scale,
                     color='steelblue', alpha=0.15, zorder=1)
         plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
                     color='gray', alpha=0.15, zorder=1)
-        plt.xlim(0.9, 5*r_max)  
         for t in theta_s_pix_fit:
             plt.axvline(t, lw=1, ls='--', color='k', alpha=0.5)        
         
@@ -605,6 +609,8 @@ def plot_fit_PSF(res, psf, n_bootstrap=200,
     if save:
         plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
         plt.close()
+    else:
+        plt.show()
         
     
 def plot_fit_res_SB(params, psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
