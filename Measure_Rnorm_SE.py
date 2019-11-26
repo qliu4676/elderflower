@@ -5,16 +5,22 @@ from modeling import *
 from plotting import *
 
 def main(argv):  
+    # Default Parameters
     band = "G"
     save, draw = True, True
-    mag_thre, R_norm = 10, 15
+    mag_thre, R_norm = 15, 12
 
     image_bounds = [[800, 1600, 1800, 2600],
-                    [3100, 1400, 4100, 2400]]  # in image coords  
+                    [3100, 1400, 4100, 2400]]  # in image coords
+    
+    hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
+    seg_map = "./SE_APASS/coadd_Sloan%s_NGC_5907_seg.fits"%band
+    SE_catalog = "./SE_APASS/coadd_Sloan%s_NGC_5907.cat"%band
+    weight_map = "./SE_APASS/weight_NGC5907.fits"
     
     try:
-        opts, args = getopt.getopt(argv, "f:b:m:r:I:S:W:",
-                                   ["FILTER=", "IMAGE_BOUNDS=", "R_SCALE=", "MAG_THRESHOLD=",
+        opts, args = getopt.getopt(argv, "f:b:m:r:I:C:S:W:",
+                                   ["FILTER=", "IMAGE_BOUNDS=", "MAG_THRESHOLD=", "R_SCALE=", 
                                     "IMAGE=", "SE_CATALOG=", "SEGMENT=", "WEIGHT="])
     except getopt.GetoptError:
         print('Wrong Option.')
@@ -27,14 +33,7 @@ def main(argv):
             else:
                 print("Filter Not Available.")
                 sys.exit(1)
-            
-    hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
-    seg_map = "./SE_APASS/coadd_Sloan%s_NGC_5907_seg.fits"%band
-    SE_catalog = "./SE_APASS/coadd_Sloan%s_NGC_5907.cat"%band
-    weight_map = "./weight_NGC5907.fits"
-        
-    for opt, arg in opts:
-        if opt in ("-b", "--IMAGE_BOUNDS"):    
+        elif opt in ("-b", "--IMAGE_BOUNDS"):    
             image_bounds = np.array(re.findall(r'\d+', arg), dtype=int).reshape(-1,4)
         elif opt in ("-r", "--R_SCALE"):
             R_norm = np.float(arg)
@@ -49,14 +48,25 @@ def main(argv):
         elif opt in ("-W", "--WEIGHT"):
             weight_map = arg
 
-    Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds, weight_map,
-                       band=band, R_norm=R_norm, mag_thre=mag_thre, save=save, draw=draw)
+    Match_Mask_Measure(hdu_path, seg_map,
+                       SE_catalog, image_bounds,
+                       weight_map=weight_map, band=band,
+                       R_norm=R_norm, mag_thre=mag_thre,
+                       save=save, draw=draw)
     return opts
     
     
-def Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds,
-                       weight_map=None, band="G", R_norm=10, mag_thre=15,
-                       save=True, draw=True):   
+def Match_Mask_Measure(hdu_path,
+                       seg_map,
+                       SE_catalog,
+                       image_bounds,
+                       weight_map=None,
+                       band="G",
+                       R_norm=12,
+                       mag_thre=15,
+                       save=True,
+                       draw=True):
+    
     print("Measure the intensity at R = %d for stars < %.1f as normalization of fitting\n"%(R_norm, mag_thre))
     
     mag_name = band.lower() + 'mag'
@@ -68,16 +78,17 @@ def Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds,
     ############################################
 
     # Read hdu
-    hdu = fits.open(hdu_path)[0]
-    data = hdu.data
-    header = hdu.header
-    wcs_data = wcs.WCS(header)
+    with fits.open(hdu_path) as hdul:
+        data = hdul[0].data
+        header = hdul[0].header
+        wcs_data = wcs.WCS(header)
 
     # Read output from create_photometric_light_APASS 
-    seg_map = fits.open(seg_map)[0].data
-    if weight_map is not None:
-        weight_edge = fits.open(weight_map)[0].data
+    seg_map = fits.getdata(seg_map)
     SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
+    
+    if weight_map is not None:
+        weight_edge = fits.getdata(weight_map)
 
     # Read homogeneous background model and stddev, zero point and pixel scale from header
     BKG, std = np.float(hdu.header["BACKVAL"]), mad_std(hdu.data[seg_map==0&(weight_edge>0.5)]) 

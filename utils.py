@@ -215,7 +215,7 @@ def make_mask_map_core(image, star_pos, r_core=12):
 
 def make_mask_map_dual(image, stars, xx=None, yy=None,
                        pad=0, r_core=24, r_out=96,
-                       mask_base=None, sn_thre=3, 
+                       mask_base=None, n_bright=25, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
                        b_size=25, n_dilation=3):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
@@ -282,7 +282,7 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
         
         if sn_thre is not None:
             # Combine Two mask
-            segmap[segmap2>50] = max_lab + segmap2[segmap2>50]
+            segmap[segmap2>n_bright] = max_lab + segmap2[segmap2>n_bright]
             segm_deb = SegmentationImage(segmap)
         else:
             # Only use mask_base
@@ -333,9 +333,9 @@ def make_mask_strip(stars, xx, yy, pad=0, width=10, n_strip=16, dist_strip=300):
         m_s = (y_b-a_s*x_b)
         mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < width 
                                            for (a, m) in zip(a_s, m_s)])
-        mask_cross = np.logical_or.reduce([abs(yy-y_b)< width, abs(xx-x_b)< width])
+        mask_cross = np.logical_or.reduce([abs(yy-y_b)<10, abs(xx-x_b)<10])
         dist_map1 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
-        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip//4
+        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < 100
         mask_strip_s[k] = mask_strip & dist_map1
         mask_cross_s[k] = mask_cross & dist_map2
 
@@ -391,10 +391,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         
     d_r = dr * pixel_scale if xunit == "arcsec" else dr
     
+#     z = z[~np.isnan(z)]
     if mock:
-        clip = lambda z: sigma_clip((z), sigma=3, maxiters=10)
+        clip = lambda z: sigma_clip((z), sigma=3, maxiters=5)
     else:
-        clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=10)
+        clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
         
     if bins is None:
         # Radial bins: discrete/linear within r_core + log beyond it
@@ -498,6 +499,18 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             
     return r_rbin, z_rbin, logzerr_rbin
 
+def calculate_fit_SB(psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
+    
+    frac = psf.frac
+        
+    I_s = [10**((mag-ZP)/-2.5) for mag in mags]
+    
+    comp1 = psf.f_core1D(r)
+    comp2 = psf.f_aureole1D(r)
+
+    I_tot_s = [Intensity2SB(((1-frac) * comp1 + comp2 * frac) * I,
+                            0, ZP, psf.pixel_scale) for I in I_s]
+    return I_tot_s
 
 ### Funcs for measuring scaling ###
 
@@ -622,18 +635,20 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
     if mask_cross:
         yy, xx = np.indices(image.shape)
         rr = np.sqrt((xx-cen[0])**2+(yy-cen[1])**2)
-        cross = ((abs(xx-cen[0])<2.5)|(abs(yy-cen[1])<2.5))
+        cross = ((abs(xx-cen[0])<4)|(abs(yy-cen[1])<4))
         mask_clean = mask_clean * (~cross)
     
     if len(image[mask_clean]) < 5:
         return [np.nan] * 3 + [1]
     
-    I_mean, I_med, I_std = sigma_clipped_stats(image[mask_clean], sigma=3)
+    z = 10**sigma_clip(np.log10(image[mask_clean]), sigma=3, maxiters=10)
+    I_mean, I_med, I_std = np.mean(z), np.median(z.compressed()), np.std(z)
     
     if display:
         fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
         ax1.imshow(mask_clean * image, cmap="gray", norm=norm1, vmin=I_med-5*I_std, vmax=I_med+5*I_std)
-        ax2 = plt.hist(sigma_clip(image[mask_clean]))
+        ax2 = plt.hist(sigma_clip(z))
+        plt.axvline(I_mean, color='k')
     
     return I_mean, I_med, I_std, 0
 
@@ -652,7 +667,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
-        n_win = 30 if mag_auto < 12 else 20
+        n_win = 30 if mag_auto < 12 else 25
         img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
         
@@ -672,17 +687,17 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 
 def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
-                      R_scale=10, mag_thre=15,
+                      r_scale=10, width=0.5, mag_thre=15,
                       read=False, save=True,
                       mag_name='rmag_PS', obj_name="",
                       dir_name='.', verbose=True):
-    """ Measure normalization at R_scale for bright stars in table.
+    """ Measure normalization at r_scale for bright stars in table.
         If seg_map is not given, source detection will be run."""
     
     Xmin, Ymin = image_bound[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%s%dmag_X%sY%s.txt'\
-                                    %(obj_name, R_scale, mag_name[0], mag_thre, Xmin, Ymin))
+                                    %(obj_name, r_scale, mag_name[0], mag_thre, Xmin, Ymin))
     res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%s%dmag_X%sY%s'\
                                   %(obj_name, mag_name[0], mag_thre, Xmin, Ymin))
     if read:
@@ -692,7 +707,7 @@ def measure_Rnorm_all(table, image_bound,
     else:
         tab = table[table[mag_name]<mag_thre]
         res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                   R=R_scale, wid=0.5, return_full=True, verbose=verbose)
+                                                   R=r_scale, wid=width, return_full=True, verbose=verbose)
 
         table_res_Rnorm = tab["NUMBER", 'X_IMAGE', 'Y_IMAGE'].copy()
     
@@ -988,7 +1003,7 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
         based on SE segmentation. Radius is enlarged K times."""
     
-    print("\nFit %dth empirical relation of (X%d) aperture radii for catalog stars based on SE."%(degree, K))
+    print("\nFit %dth empirical relation of (X%.1f) aperture radii for catalog stars based on SE."%(degree, K))
 
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)
@@ -1195,11 +1210,19 @@ class DynamicNestedSampler:
         res = getattr(self.dsampler, 'results', {})
         return res
     
-    def save_result(self, filename, dir_name='.'):
-        self.results['run_time'] = self.run_time
+    def save_result(self, filename, fit_info=None, dir_name='.'):
+        res = {}
+        if fit_info is not None:
+            for key, val in fit_info.items():
+                res[key] = val
+
+        res['run_time'] = self.run_time
+        res['fit_res'] = self.results
         
         fname = os.path.join(dir_name, filename)
-        save_nested_fitting_result(self.results, fname)
+        save_nested_fitting_result(res, fname)
+        
+        self.res = res
     
     def cornerplot(self, labels=None, truths=None, figsize=(16,14),
                    save=False, dir_name='.'):
@@ -1217,12 +1240,11 @@ class DynamicNestedSampler:
             plt.savefig(os.path.join(dir_name, "Cornerbound.png"), dpi=150)
             plt.close()
     
-    def plot_fit_PSF(self, psf, n_bootstrap=500,
-                     Amp_max=None, r_core=None,
-                     save=False, dir_name='.'):
-        from plotting import plot_fit_PSF
-        plot_fit_PSF(self.results, psf, n_bootstrap=n_bootstrap,
-                     Amp_max=Amp_max, r_core=r_core, save=save, dir_name=dir_name)
+    def plot_fit_PSF1D(self, psf, n_bootstrap=500, leg2d=False,
+                       Amp_max=None, r_core=None, save=False, dir_name='.'):
+        from plotting import plot_fit_PSF1D
+        plot_fit_PSF1D(self.results, psf, n_bootstrap=n_bootstrap, leg2d=leg2d,
+                       Amp_max=Amp_max, r_core=r_core, save=save, dir_name=dir_name)
 
             
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
@@ -1262,21 +1284,53 @@ def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
 def merge_run(re_list):
     return dyfunc.merge_runs(res_list)
 
-def get_params_fit(res, return_sample=False):
-    samples = res.samples                                 # samples
-    weights = np.exp(res.logwt - res.logz[-1])            # normalized weights 
-    pmean, pcov = dyfunc.mean_and_cov(samples, weights)   # weighted mean and covariance
-    samples_eq = dyfunc.resample_equal(samples, weights)  # resample weighted samples
+
+def get_params_fit(results, return_sample=False):
+    samples = results.samples                                 # samples
+    weights = np.exp(results.logwt - results.logz[-1])        # normalized weights 
+    pmean, pcov = dyfunc.mean_and_cov(samples, weights)       # weighted mean and covariance
+    samples_eq = dyfunc.resample_equal(samples, weights)      # resample weighted samples
     pmed = np.median(samples_eq,axis=0)
     
     if return_sample:
         return pmed, pmean, pcov, samples_eq
     else:
         return pmed, pmean, pcov
+    
+def make_psf_from_fit(fit_res, psf, n_out=3, theta_out=1200, leg2d=False):
+    
+    image_size = psf.image_size
+    psf_fit = psf.copy()
+    
+    params, _, _ = get_params_fit(fit_res)
+    
+    if leg2d:
+        N_n = (len(params)-4+1)//2
+        N_theta = len(params)-4-N_n
+        psf_fit.A10, psf_fit.A01 = 10**params[-3], 10**params[-4]
+    else:
+        N_n = (len(params)-2+1)//2
+        N_theta = len(params)-2-N_n
+    
+    if psf.aureole_model == "power":
+        n_fit, mu_fit, logsigma_fit = params
+        psf_fit.update({'n':n_fit})
         
-def cal_reduced_chi2(fit, data, pmed, n_param=4):
-    mu, sigma = pmed[-2], 10**pmed[-1]
-    chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-n_param)
+    elif psf.aureole_model == "multi-power":
+        n_s_fit = np.concatenate([params[:N_n], [n_out]])
+        theta_s_fit = np.concatenate([[psf.theta_0],
+                                      np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
+        psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
+        
+    mu_fit, sigma_fit = params[-2], 10**params[-1]
+    psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
+    
+    return psf_fit, params
+    
+
+def cal_reduced_chi2(fit, data, params):
+    mu, sigma = params[-2], 10**params[-1]
+    chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-len(params))
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 
 def save_nested_fitting_result(res, filename='fit.res'):
@@ -1284,7 +1338,7 @@ def save_nested_fitting_result(res, filename='fit.res'):
     with open(filename,'wb') as file:
         dill.dump(res, file)
         
-def open_nested_fitting_result(filename='fit.res'):        
+def load_nested_fitting_result(filename='fit.res'):        
     import dill
     with open(filename, "rb") as file:
         res = dill.load(file)
