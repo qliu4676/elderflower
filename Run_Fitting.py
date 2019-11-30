@@ -97,7 +97,8 @@ def main(argv):
                             %(band, r_scale, r_core[0], image_bounds0[0], image_bounds0[1]))
     if save:
         check_save_path(dir_name, make_new=False)
-        
+    
+    # Run Fitting!
     ds = Run_Fitting(hdu_path, image_bounds0, method,
                      band=band, Mag_threshold=Mag_threshold,
                      r_scale=r_scale, r_core=r_core, r_out=r_out,
