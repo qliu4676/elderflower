@@ -3,7 +3,8 @@ from modeling import *
 from matplotlib import rcParams
 plt.rcParams['image.origin'] = 'lower'
 plt.rcParams['image.cmap'] = 'gnuplot2'
-plt.rcParams['font.serif'] = 'Times New Roman'
+# plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["font.serif"] = "Times New Roman"
 rcParams.update({'xtick.major.pad': '5.0'})
 rcParams.update({'xtick.major.size': '4'})
 rcParams.update({'xtick.major.width': '1.'})
@@ -18,6 +19,7 @@ rcParams.update({'ytick.minor.size': '4'})
 rcParams.update({'ytick.minor.width': '0.8'})
 rcParams.update({'axes.labelsize': 14})
 rcParams.update({'font.size': 14})
+
 
 def make_rand_cmap(n_label, rand_state = 12345):
     from photutils.utils import make_random_cmap
@@ -37,7 +39,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     colorbar(im1)
     
     n_label = seg_map.max()
-    ax2.imshow(seg_map, vmin=1, vmax=n_label-1, cmap=make_rand_cmap(n_label))
+    ax2.imshow(seg_map, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
     ax2.set_title("Deep Mask")
 
     image2 = image.copy()
@@ -71,7 +73,8 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     plt.tight_layout()
     
     if save:
-        plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=150)
+        plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=120)
+        plt.show()
         plt.close()
 
 
@@ -96,7 +99,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     ax1.set_title("Strip/Cross")
     
     n_label = seg_comb.max()
-    ax2.imshow(seg_comb, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
+    ax2.imshow(seg_comb, vmin=1, vmax=n_label-3, cmap=make_rand_cmap(n_label))
     ax2.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax2.set_title("Mask Comb.")
 
@@ -104,7 +107,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     image3[mask_comb] = 0
     im3 = ax3.imshow(image3, norm=norm1, aspect='auto', vmin=vmin, vmax=vmax) 
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
-    ax3.set_title("'Sky' ver.2")
+    ax3.set_title("'Sky'")
     colorbar(im3)
 
     aper = CircularAperture(star_pos_A, r=r_core[0])
@@ -119,7 +122,8 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=150)
+        plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=120)
+        plt.show()
         plt.close()
 
         
@@ -144,98 +148,92 @@ def Fit_background_distribution(image, mask_deep):
 
     plt.legend(fontsize=12)
     
-def plot_PSF_model_1D(frac, f_core, f_aureole,
-                      psf_range=400, yunit='Intensity',
-                      ZP=27.1, pixel_scale=2.5):
+def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
+                      yunit='Intensity', label='combined', log_scale=True,
+                      ZP=27.1, pixel_scale=2.5, decompose=True):
     
     r = np.logspace(0, np.log10(psf_range), 100)
     
     I_core = (1-frac) * f_core(r)
     I_aureole = frac * f_aureole(r)
     I_tot = I_core + I_aureole
+    if log_scale:
+        I_core, I_aureole, I_tot = np.log10(I_core), np.log10(I_aureole), np.log10(I_tot) 
     
     if yunit=='Intensity':
-        plt.semilogx(r, np.log10(I_tot),
-                 ls="-", lw=3,alpha=0.9, zorder=5, label='combined')
-        plt.semilogx(r, np.log10(I_core),
-                 ls="--", lw=3, alpha=0.9, zorder=1, label='core')
-        plt.semilogx(r, np.log10(I_aureole),
-                 ls="--", lw=3, alpha=0.9, label='aureole')
+        plt.semilogx(r, I_tot,
+                 ls="-", lw=3,alpha=0.9, zorder=5, label=label)
+        if decompose:
+            plt.semilogx(r, I_core,
+                     ls="--", lw=3, alpha=0.9, zorder=1, label='core')
+            plt.semilogx(r, I_aureole,
+                     ls="--", lw=3, alpha=0.9, label='aureole')
         plt.ylabel('log Intensity', fontsize=14)
-        plt.ylim(np.log10(I_aureole).min(), -0.5)
+        plt.ylim(I_aureole.min(), I_tot.max())
         
     elif yunit=='SB':
         plt.semilogx(r, -14.5+Intensity2SB(I=I_tot, BKG=0,
                                            ZP=27.1, pixel_scale=pixel_scale),
-                     ls="-", lw=3,alpha=0.9, zorder=5, label='combined')
-        plt.semilogx(r, -14.5+Intensity2SB(I=I_core, BKG=0,
-                                           ZP=27.1, pixel_scale=pixel_scale),
-                     ls="--", lw=3, alpha=0.9, zorder=1, label='core')
-        plt.semilogx(r, -14.5+Intensity2SB(I=I_aureole, BKG=0,
-                                           ZP=27.1, pixel_scale=pixel_scale),
-                     ls="--", lw=3, alpha=0.9, label='aureole')
+                     ls="-", lw=3,alpha=0.9, zorder=5, label=label)
+        if decompose:
+            plt.semilogx(r, -14.5+Intensity2SB(I=I_core, BKG=0,
+                                               ZP=27.1, pixel_scale=pixel_scale),
+                         ls="--", lw=3, alpha=0.9, zorder=1, label='core')
+            plt.semilogx(r, -14.5+Intensity2SB(I=I_aureole, BKG=0,
+                                               ZP=27.1, pixel_scale=pixel_scale),
+                         ls="--", lw=3, alpha=0.9, label='aureole')
         plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
         plt.ylim(31,17)
 
     plt.legend(loc=1, fontsize=12)
     plt.xlabel('r [pix]', fontsize=14)
+
     
-def plot_PSF_model_galsim(psf_inner, psf_outer, params,
-                          image_size, pixel_scale,
-                          contrast=None, save=False, dir_name='.',
-                          aureole_model="Power"):
+def plot_PSF_model_galsim(psf, contrast=None, save=False, dir_name='.'):
+    """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
+    image_size = psf.image_size
+    pixel_scale = psf.pixel_scale
     
-    frac, gamma_pix, beta = params['frac'], params['gamma'] / pixel_scale, params['beta']
+    frac = psf.frac
+    psf_core = psf.psf_core
+    psf_aureole = psf.psf_aureole
     
-    c_mof2Dto1D = C_mof2Dto1D(gamma_pix, beta)
+    star_psf = (1-frac) * psf_core + frac * psf_aureole
     
-    if aureole_model == "power":
-        n, theta_0_pix = params['n'], params['theta_0'] / pixel_scale
-        c_aureole_2Dto1D = C_pow2Dto1D(n, theta_0_pix)
-        profile = lambda r: trunc_power1d_normed(r, n, theta_0_pix)
-        
-    if aureole_model == "multi-power":
-        n_s, theta_s_pix = params['n_s'], params['theta_s'] / pixel_scale
-        c_aureole_2Dto1D = C_mpow2Dto1D(n_s, theta_s_pix)
-        profile = lambda r: multi_power1d_normed(r, n_s, theta_s_pix)
-        
-    star_psf = (1-frac) * psf_inner + frac * psf_outer
-    
-    img_outer = psf_outer.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel").array
-    img_inner = psf_inner.drawImage(scale=pixel_scale, method="no_pixel").array
-    img_star = star_psf.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel").array
+    img_core = psf_core.drawImage(scale=pixel_scale, method="no_pixel")
+    img_aureole = psf_aureole.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel")
+    img_star = star_psf.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel")
     
     plt.figure(figsize=(7,6))
 
-    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_outer, color="g",
-                                                  pixel_scale=pixel_scale, seeing=2.5, 
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_aureole.array, color="g",
+                                                  pixel_scale=pixel_scale,
                                                   core_undersample=True, mock=True,
                                                   xunit="pix", yunit="Intensity",
-                                                  label=aureole_model)
-    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d((1-frac)*img_inner, color="orange",
-                                                  pixel_scale=pixel_scale, seeing=2.5, 
+                                                  label=psf.aureole_model)
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d((1-frac)*img_core.array, color="orange",
+                                                  pixel_scale=pixel_scale, 
                                                   core_undersample=True, mock=True,
                                                   xunit="pix", yunit="Intensity",
                                                   label="Moffat")
-    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_star,
-                                                  pixel_scale=pixel_scale, seeing=2.5,  
+    r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(img_star.array,
+                                                  pixel_scale=pixel_scale, 
                                                   core_undersample=True, mock=True,
                                                   xunit="pix", yunit="Intensity",
                                                   label="Combined")
 
-    r = np.logspace(0, np.log10(image_size), 100)
-    
-    comp1 = moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
-    comp2 = profile(r) / c_aureole_2Dto1D
-    
     plt.legend(loc=1, fontsize=12)
+    
+    r = np.logspace(0, np.log10(image_size), 100)
+    comp1 = psf.f_core1D(r)
+    comp2 = psf.f_aureole1D(r)
     
     plt.plot(r, np.log10((1-frac) * comp1 + comp2 * frac), ls="-", lw=3, zorder=5)
     plt.plot(r, np.log10((1-frac) * comp1), ls="--", lw=3, zorder=1)
     plt.plot(r, np.log10(comp2 * frac), ls="--", lw=3)
     
-    if aureole_model == "multi-power":
-        for t in theta_s_pix:
+    if psf.aureole_model == "multi-power":
+        for t in psf.theta_s_pix:
             plt.axvline(t, ls="--", color="k",alpha=0.3, zorder=1)
         
     if contrast is not None:
@@ -249,10 +247,12 @@ def plot_PSF_model_galsim(psf_inner, psf_outer, params,
         plt.savefig(os.path.join(dir_name, "Model_PSF.png"), dpi=120)
         plt.close()
     
-def plot_flux_dist(Flux, Flux_thresholds,
+def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
                    save=False, dir_name='.', **kwargs):
     import seaborn as sns
     F_bright, F_verybright = Flux_thresholds
+#     if ax is None:
+#         fig, ax = plt.subplots(1,1)
     plt.axvline(np.log10(F_bright), color="k", ls="-",alpha=0.7, zorder=1)
     plt.axvline(np.log10(F_verybright), color="k", ls="--",alpha=0.7, zorder=1)
     plt.axvspan(1, np.log10(F_bright),
@@ -262,13 +262,24 @@ def plot_flux_dist(Flux, Flux_thresholds,
     plt.axvspan(np.log10(F_verybright), 9,
                 color='steelblue', alpha=0.15, zorder=0)
     sns.distplot(np.log10(Flux), kde=False, **kwargs)
+    
     plt.yscale('log')
     plt.xlabel('Estimated log Flux$_{tot}$ / Mag', fontsize=15)
     plt.ylabel('# of stars', fontsize=15)
     plt.legend(loc=1)
+    
+    if ZP is not None:
+        ax1 = plt.gca()
+        xticks1 = ax1.get_xticks()
+        ax2 = ax1.twiny()
+        ax2.set_xticks(xticks1)
+        ax2.set_xticklabels(np.around(-2.5*xticks1+ZP ,1))
+        ax2.set_xbound(ax1.get_xbound())
+            
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Flux_dist.png"), dpi=120)
+        plt.savefig(os.path.join(dir_name, "Flux_dist.png"), dpi=80)
+        plt.show()
         plt.close()
 
 def draw_independent_priors(priors, xlabels=None, plabels=None,
@@ -298,135 +309,27 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                       show_titles=True, fig=fig)
     if save:
         plt.savefig(os.path.join(dir_name, "Cornerplot.png"), dpi=150)
+        plt.show()
         plt.close()
     else:
         plt.show()
+
         
-def plot1D_fit_vs_truth_PSF_mpow(res, psf, labels, n_bootstrap=400,
-                                 Amp_max=None, r_core=None,
-                                 plot_truth=True, save=False, dir_name="."):
-    """ Compare 1D fit and truth PSF """
-    image_size = psf.image_size
-    pixel_scale = psf.pixel_scale
-    
-    plt.figure(figsize=(7,6))
-    r = np.logspace(0., np.log10(image_size), 100)
-    
-    # read fitting results
-    pmed, pmean, pcov, samples_eq = get_params_fit(res, return_sample=True)
-    print("Fitting (mean) : ", np.around(pmean,3))
-    print("Fitting (median) : ", np.around(pmed,3))
-    
-    from astropy.stats import bootstrap
-    samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
-    
-    # truth psf params
-    gamma_pix, beta, frac = psf.gamma_pix, psf.beta, psf.frac
-    n_s, theta_s_pix = psf.n_s, psf.theta_s_pix
-    print('Truth : ', n_s)
-    
-    # 2D - 1D conversion for visual
-    c_mof2Dto1D =  C_mof2Dto1D(gamma_pix, beta)
-    c_mpow2Dto1D = C_mpow2Dto1D(n_s=n_s, theta_s=theta_s_pix)
-    
-    # 1D truth psf
-    comp1 = moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
-    comp2 = multi_power1d_normed(r, n_s, theta_s_pix) / c_mpow2Dto1D
-    
-    # plot truth
-    if plot_truth:
-        plt.semilogy(r, (1-frac) * comp1 + frac * comp2,
-                     label="Truth", color="steelblue", lw=4, zorder=2)
-    
-    N_n = len([lab for lab in labels if "n" in lab])
-    N_theta = len([lab for lab in labels if "theta" in lab])
-    
-    for sample_k in samples_eq_bs:
-        
-        n_s_k = sample_k[:N_n]
-        
-        if N_theta > 0:
-            theta_s_pix_k = np.append([theta_s_pix[0]],
-                                      10**sample_k[N_n:-2] / pixel_scale) 
-        else:
-            theta_s_pix_k = theta_s_pix 
-            
-        comp2_k = multi_power1d_normed(r, n_s_k, theta_s_pix_k) / c_mpow2Dto1D
-
-        plt.semilogy(r, (1-frac) * comp1 + frac * comp2_k,
-                     color="lightblue", lw=2, alpha=0.1, zorder=1)
-        
-    for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
-                              ["-.","--"], ["mean", "med"]):
-
-        n_s_fit = fits[:N_n]
-
-        if N_theta > 0:
-            theta_s_pix_fit = np.append([theta_s_pix[0]],
-                                        10**fits[N_n:-2] / pixel_scale)
-        else:
-            theta_s_pix_fit = theta_s_pix 
-
-        comp2 = multi_power1d_normed(r,n_s=n_s_fit, theta_s=theta_s_pix_fit) / c_mpow2Dto1D
-        y_fit = (1-frac) * comp1 + frac * comp2
-
-        plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls,
-                     alpha=0.8, label=lab+' comb.', zorder=4)
-
-        if lab=="med":
-            plt.semilogy(r, (1-frac) * comp1,
-                         color="orange", lw=2, ls="--",
-                         alpha=0.7, label="med core", zorder=4)
-            plt.semilogy(r, frac * comp2,
-                         color="seagreen", lw=2, ls="--",
-                         alpha=0.7, label="med aureole", zorder=4)
-
-        std_fit = 10**fits[-1]
-        if Amp_max is not None:
-            contrast = Amp_max / std_fit
-            plt.axhline(y_fit.max()/contrast, color="k", ls="--", alpha=0.9)
-            plt.text(1, y_fit.max()/contrast*1.5, '1 $\sigma$', fontsize=10)
-            
-    for theta in theta_s_pix:
-        plt.axvline(theta, ls=":", color="gray",alpha=0.3)
-    if N_theta > 0:    
-        for logtheta_fit in fits[N_n:-2]:
-            plt.axvline(10**logtheta_fit / pixel_scale, ls="-", color="k",alpha=0.7)
-    
-    if r_core is not None:
-        r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
-        plt.axvspan(np.atleast_1d(r_core).max(), r_max,
-                    color='steelblue', alpha=0.15, zorder=1)
-        plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
-                    color='gray', alpha=0.15, zorder=1)
-    plt.legend(loc=1, fontsize=12)    
-    plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
-    plt.ylabel(r"$\rm Intensity$",fontsize=18)
-    plt.title("Recovered PSF from Fitting vs Truth",fontsize=18)
-    plt.xscale("log")
-    plt.ylim(1e-9, 0.5)    
-    plt.tight_layout()
-    
-    if save:
-        plt.savefig(os.path.join(dir_name, "Fit_PSF_mock.png"), dpi=120)
-        plt.close()
-
-
-def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels, image,
+def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  image_base=None, vmin=None, vmax=None,
                                  avg_func='median', save=False, dir_name="."):
     """ Compare 2D fit and truth image """
     N_n = len([lab for lab in labels if "n" in lab])
     N_theta = len([lab for lab in labels if "theta" in lab])
     
-    pmed, pmean, pcov = get_params_fit(res)
+    pmed, pmean, pcov = get_params_fit(results)
     fits = pmed if avg_func=='median' else pmean
     print("Fitting (mean) : ", np.around(pmean,3))
     print("Fitting (median) : ", np.around(pmed,3))
     
     n_s_fit = fits[:N_n]
     if N_theta > 0:
-        theta_s_fit = np.append([psf.theta_s[0]], 10**fits[N_n:-2])
+        theta_s_fit = np.append([psf.theta_s[0]], 10**fits[N_n:N_n+N_theta])
     else:
         theta_s_fit = psf.theta_s
     
@@ -465,169 +368,172 @@ def draw2D_fit_vs_truth_PSF_mpow(res,  psf, stars, labels, image,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
-def draw_comparison_fit_data(image_fit, data, 
-                             noise_fit, mask_fit, vmin=None, vmax=None,
-                             save=False, dir_name=".", suffix=""):
-    # Difference between real vs conv
-    
-    image_fit = image_fit + noise_fit
+def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
+                       r_core=None, vmin=None, vmax=None, cmap='gnuplot2',
+                       save=False, dir_name=".", suffix=""):
+    """ Compare data and fit in 2D """
     
     if vmin is None:
         vmin = np.median(image_fit[~mask_fit]) - 1
     if vmax is None:
         vmax = vmin + 150
+    
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
+    
+    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
+    
+    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)    
+    ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
+    
+    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=norm0, cmap=cmap)    
+    ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
+    
+    frac_diff = (image_fit-data)/data
+    im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="seismic")
+    ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
+    
+    residual = (data-image_star)
+    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
+    
+    residual[mask_fit] = 0
+    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
+    
+    if r_core is not None:
+        aper1 = CircularAperture([100,100], r=r_core[0])
+        aper1.plot(color='lime',lw=3,alpha=0.9, axes=ax6)
+        aper2 = CircularAperture([100,100], r=r_core[1])
+        aper2.plot(color='c',lw=3,label="",alpha=0.7, axes=ax6)
         
-    fig, ((ax1,ax2), (ax3,ax4)) = plt.subplots(2,2,figsize=(12,10))
-    im = ax1.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm1, cmap="gnuplot2")
-    ax1.set_title("Fitted I$_f$"); colorbar(im)
-    
-    im = ax2.imshow(data, vmin=vmin, vmax=vmax, norm=norm1, cmap="gnuplot2")    
-    ax2.set_title("Data I$_0$"); colorbar(im)
-    
-    diff = (image_fit-data)/data
-    im = ax3.imshow(diff, vmin=-0.1, vmax=0.1, cmap="seismic")
-    diff = (image_fit-data)/data
-    ax3.set_title("(I$_f$ - I$_0$) / I$_0$"); colorbar(im)
-    
-    diff[mask_fit] = np.nan
-    im = ax4.imshow(diff, vmin=-0.05, vmax=0.05, cmap="seismic")
-    ax4.set_title("(I$_f$ - I$_0$) / I$_0$  (w/ mask)"); colorbar(im)
-
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Comparison_fit_data%s.png"%suffix), dpi=120)
+        plt.savefig(os.path.join(dir_name, "Comparison_fit_data2D%s.png"%suffix), dpi=120)
+        plt.show()
         plt.close()
+    else:
+        plt.show()
     
     
-def plot_fit_PSF(res, psf, n_bootstrap=200,
-                 Amp_max=None, r_core=None, n_out=3, r_out=1200,
-                 save=False, dir_name="./"):
+def plot_fit_PSF1D(results, psf, n_bootstrap=200, 
+                   truth=None, Amp_max=None, leg2d=False,
+                   r_core=None, n_out=4, theta_out=1200,
+                   save=False, dir_name="./"):
 
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
+    frac = psf.frac
+    theta_0 = psf.theta_0
+    
     plt.figure(figsize=(7,6))
-    r = np.logspace(0., np.log10(image_size), 100)
+    
+    if truth is not None:
+        print("Truth : ", psf.params)
+        psf.plot1D(psf_range=600, decompose=False, label='Truth')
     
     # read fitting results
-    pmed, pmean, pcov, samples_eq = get_params_fit(res, return_sample=True)
+    pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
     print("Fitting (mean) : ", np.around(pmean,3))
     print("Fitting (median) : ", np.around(pmed,3))
     
     from astropy.stats import bootstrap
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
-    N_n = (len(pmed)-2+1)//2
-    
-    # truth psf params
-    gamma_pix, beta, frac = psf.gamma_pix, psf.beta, psf.frac
-    
-    # 2D - 1D conversion for visual
-    if psf.aureole_model == "power":
-        theta_0_pix = psf.theta_0_pix
-        c_aureole_2Dto1D = C_pow2Dto1D(n, theta_0_pix)
-        func_aureole = lambda r, n, theta_0_pix: trunc_power1d_normed(r, n, theta_0_pix) / c_aureole_2Dto1D
+    # Number of n and theta in the fitting
+    if leg2d:
+        N_n = (len(pmed)-4+1)//2
+        N_theta = len(pmed)-4-N_n
+    else:
+        N_n = (len(pmed)-2+1)//2
+        N_theta = len(pmed)-2-N_n
         
-    elif psf.aureole_model == "multi-power":
-        n_s = psf.n_s
-        theta_s_pix = psf.theta_s_pix
-        theta_0_pix = theta_s_pix[0]
-        
-        c_aureole_2Dto1D = C_mpow2Dto1D(n_s, theta_s_pix)
-        func_aureole = lambda r, n_s, theta_s_pix: multi_power1d_normed(r, n_s, theta_s_pix) / c_aureole_2Dto1D
-        
-    c_mof2Dto1D =  C_mof2Dto1D(gamma_pix, beta)
+#     N_n = len([lab for lab in labels if "n" in lab])
+#     N_theta = len([lab for lab in labels if "theta" in lab])
+
+    psf_fit = psf.copy()
     
     r = np.logspace(0., np.log10(image_size), 100)
-    comp1 = moffat1d_normed(r, gamma=gamma_pix, alpha=beta) / c_mof2Dto1D
+    comp1 = psf.f_core1D(r)
     
+    # Sample distribution from joint PDF
     for sample in samples_eq_bs:
         frac_k = frac
         
         if psf.aureole_model == "power":
             n_k = sample[0]
-            comp2_k = func_aureole(r, n_k, theta_0_pix)
+            psf_fit.update({'n':n_k})
             
         elif psf.aureole_model == "multi-power":
             n_s_k = np.concatenate([sample[:N_n], [n_out]])
-            theta_s_pix_k = np.concatenate([[theta_0_pix],
-                    np.atleast_1d(10**sample[N_n:-2])/pixel_scale, [r_out/pixel_scale]])
-            comp2_k = func_aureole(r, n_s_k, theta_s_pix_k)
+            theta_s_k = np.concatenate([[theta_0], np.atleast_1d(10**sample[N_n:N_n+N_theta]), [theta_out]])
+            psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
+            
+        comp2_k = psf_fit.f_aureole1D(r)
             
         plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
                      color="lightblue", lw=2,alpha=0.1,zorder=1)
-    else:
-        for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
-                                  ["-.","-"], ["mean", "med"]):
-            if psf.aureole_model == "power":
-                n_fit = fits[0]
-                comp2 = func_aureole(r, n_fit, theta_0_pix)
-                
-            elif psf.aureole_model == "multi-power":
-                n_s_fit = np.concatenate([fits[:N_n], [n_out]])
-                theta_s_pix_fit = np.concatenate([[theta_0_pix],
-                         np.atleast_1d(10**fits[N_n:-2])/pixel_scale,[r_out/pixel_scale]])
-                comp2 = func_aureole(r, n_s_fit, theta_s_pix_fit)
+        
+    # Median and mean fitting
+    for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
+                              ["-.","-"], ["mean", "med"]):
+        
+        if psf.aureole_model == "power":
+            n_fit = fits[0]
+            psf_fit.update({'n':n_fit})
+
+        elif psf.aureole_model == "multi-power":
+            n_s_fit = np.concatenate([fits[:N_n], [n_out]])
+            theta_s_fit = np.concatenate([[theta_0], np.atleast_1d(10**fits[N_n:N_n+N_theta]),[theta_out]])
+            psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
             
-            y_fit = (1-frac) * comp1 + frac * comp2
-            
-            plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls, alpha=0.8, label=lab+' comb.', zorder=4)
-            
-            if lab=="med":
-                plt.semilogy(r, (1-frac) * comp1,
-                             color="orange", lw=2, ls="--", alpha=0.7, label="med core",zorder=4)
-                plt.semilogy(r, frac * comp2,
-                             color="seagreen", lw=2, ls="--", alpha=0.7, label="med aureole",zorder=4)
-                
+        comp2 = psf_fit.f_aureole1D(r)
+
+        y_fit = (1-frac) * comp1 + frac * comp2
+
+        plt.semilogy(r, y_fit, color=c, lw=2.5, ls=ls, alpha=0.8, label=lab+' comb.', zorder=4)
+
+        if lab=="med":
+            plt.semilogy(r, (1-frac) * comp1,
+                         color="orange", lw=2, ls="--", alpha=0.7, label="med core",zorder=4)
+            plt.semilogy(r, frac * comp2,
+                         color="seagreen", lw=2, ls="--", alpha=0.7, label="med aureole",zorder=4)
+
+        if Amp_max is not None:
             std_fit = 10**fits[-1]
+            contrast = Amp_max/(std_fit)
+            y_min_contrast = y_fit.max()/contrast
             
-            if Amp_max is not None:
-                contrast = Amp_max/(std_fit)
-                y_min_contrast = y_fit.max()/contrast
-                plt.axhline(y_min_contrast, color="k", ls="-.", alpha=0.5)
-                plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
-                plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
-                plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
-                r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
-                plt.xlim(0.9, 5*r_max)  
+            plt.axhline(y_min_contrast, color="k", ls="-.", alpha=0.5)
+            plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
+            plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
+            plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
+            
+            r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
+            plt.xlim(0.9, 5*r_max)  
                 
+    # Draw boundaries etc.
     if r_core is not None:
-        plt.axvspan(np.atleast_1d(r_core).max(), r_out/pixel_scale,
+        plt.axvspan(np.atleast_1d(r_core).max(), theta_out/pixel_scale,
                     color='steelblue', alpha=0.15, zorder=1)
+        plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
+                    color='seagreen', alpha=0.15, zorder=1)
         plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
                     color='gray', alpha=0.15, zorder=1)
-        for t in theta_s_pix_fit:
-            plt.axvline(t, lw=1, ls='--', color='k', alpha=0.5)        
+        for t in psf_fit.theta_s_pix:
+            plt.axvline(t, lw=2, ls='--', color='k', alpha=0.5)        
         
     plt.legend(loc=1, fontsize=12)    
     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
     plt.ylabel(r"$\rm Intensity$",fontsize=18)
     plt.title("Recovered PSF from Fitting",fontsize=18)
-    plt.xscale("log")
     plt.ylim(3e-9, 0.5)    
+    plt.xscale("log")
     plt.tight_layout()
+    
     if save:
-        plt.savefig("%s/Fit_PSF.png"%dir_name,dpi=150)
-        plt.close()
-    else:
+        plt.savefig("%s/Fit_PSF1D.png"%dir_name,dpi=150)
         plt.show()
-        
+        plt.close()
     
-def plot_fit_res_SB(params, psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
-    
-    print("Fit results: ", params)
-    # PSF Parameters
-    n_fit = params[1]                     # true power index
-    f_fit = 10**params[0]                 # fraction of power law component
-    
-    c_mof2Dto1D =  C_mof2Dto1D(psf.gamma_pix, psf.beta)
-    c_pow2Dto1D = C_pow2Dto1D(n_fit, psf.theta_0_pix)
-
-    I_A, I_B, I_C = [10**((mag-ZP)/-2.5) for mag in mags]
-    comp1 = moffat1d_normed(r, gamma=psf.gamma_pix, alpha=psf.beta) / c_mof2Dto1D 
-    comp2 = trunc_power1d_normed(r, n_fit, psf.theta_0_pix) / c_pow2Dto1D
-
-    [I_tot_A, I_tot_B, I_tot_C] = [Intensity2SB(((1-f_fit) * comp1 + comp2 * f_fit) * I,
-                                                0, ZP, psf.pixel_scale)
-                                   for I in [I_A, I_B, I_C]]
-    return I_tot_A, I_tot_B, I_tot_C

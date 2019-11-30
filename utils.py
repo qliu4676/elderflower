@@ -81,7 +81,7 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
-def process_counter(i, number):
+def counter(i, number):
     if np.mod((i+1), number//4) == 0:
         print("completed: %d/%d"%(i+1, number))
 
@@ -99,6 +99,7 @@ def vmax_2sig(img):
     return np.median(img)+2*np.std(img)
 
 def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args):
+    """ Customized colorbar """
     ax = mappable.axes
     fig = ax.figure
     divider = make_axes_locatable(ax)
@@ -217,7 +218,7 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
                        pad=0, r_core=24, r_out=96,
                        mask_base=None, n_bright=25, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
-                       b_size=25, n_dilation=3):
+                       b_size=64, n_dilation=3):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
     for bright stars, mask core (r < r_core pix) """
     from photutils import detect_sources, deblend_sources
@@ -312,7 +313,8 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
     
     return mask_deep, segmap
 
-def make_mask_strip(stars, xx, yy, pad=0, width=10, n_strip=16, dist_strip=300):    
+def make_mask_strip(stars, xx, yy, pad=0,
+                    width=10, n_strip=16, dist_strip=500, dist_cross=100):    
     """ Make mask map in strips with width=width """
     
     print("Use sky strips crossing very bright stars")
@@ -335,7 +337,7 @@ def make_mask_strip(stars, xx, yy, pad=0, width=10, n_strip=16, dist_strip=300):
                                            for (a, m) in zip(a_s, m_s)])
         mask_cross = np.logical_or.reduce([abs(yy-y_b)<10, abs(xx-x_b)<10])
         dist_map1 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
-        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < 100
+        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_cross
         mask_strip_s[k] = mask_strip & dist_map1
         mask_cross_s[k] = mask_cross & dist_map2
 
@@ -663,7 +665,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
     res_Rnorm = np.empty((len(table_target), 5))
     
     for i, (num, mag_auto) in enumerate(zip(table_target['NUMBER'], table_target['MAG_AUTO'])):
-        if verbose: process_counter(i, len(table_target))
+        if verbose: counter(i, len(table_target))
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
@@ -709,7 +711,8 @@ def measure_Rnorm_all(table, image_bound,
         res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
                                                    R=r_scale, wid=width, return_full=True, verbose=verbose)
 
-        table_res_Rnorm = tab["NUMBER", 'X_IMAGE', 'Y_IMAGE'].copy()
+        table_res_Rnorm = tab['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr',
+                              mag_name, 'X_IMAGE', 'Y_IMAGE'].copy()
     
         for j, name in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
             table_res_Rnorm[name] = res_Rnorm[:,j]
@@ -769,8 +772,13 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         seg_patch = np.copy(SE_seg_map[xmin:xmax, ymin:ymax])
     
     if draw:
-        sky_mean = np.median(data) if SE_seg_map is None else np.median(data[SE_seg_map==0])
-        sky_std = mad_std(data) if SE_seg_map is None else mad_std(data[SE_seg_map==0])
+        if SE_seg_map is not None:
+            sky = data[(SE_seg_map==0)]
+        else:
+            sky = sigma_clip(data, 3)
+        sky_mean = np.median(sky)
+        sky_std = max(mad_std(sky[sky>sky_mean]),5)
+
         fig, ax = plt.subplots(figsize=(12,8))       
         plt.imshow(data, norm=norm1, cmap="viridis",
                    vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
@@ -903,10 +911,13 @@ def cross_match(header, SE_catalog, bounds, radius=None,
             c_name = cat_name
         
         m_name = np.atleast_1d(mag_name)[j]
-            
-        Cat_full = transform_coords2pixel(Cat_full, wcs_data, name=c_name)
-        Cat_bright = Cat_full[Cat_full[m_name]<mag_thre]
         
+        Cat_full = transform_coords2pixel(Cat_full, wcs_data, name=c_name)
+        mag_full = Cat_full[m_name]
+        mag_full[np.isnan(mag_full)] = 99
+        Cat_bright = Cat_full[mag_full<mag_thre]
+        mag_full.mask[mag_full==99] = True
+
         if clean_catalog:
             # Clean duplicate items in the catalog
             c_bright = SkyCoord(Cat_bright['RAJ2000'], Cat_bright['DEJ2000'], unit=u.deg)
@@ -924,7 +935,7 @@ def cross_match(header, SE_catalog, bounds, radius=None,
                 obj_duplicate = obj_duplicate[has_mag]
                 
                 e2_coord = obj_duplicate["e_RAJ2000"]**2 + obj_duplicate["e_DEJ2000"]**2
-                min_e2_coord = min(e2_coord)
+                min_e2_coord = np.nanmin(e2_coord)
                 
                 for ID in obj_duplicate[e2_coord>min_e2_coord]['ID'+'_'+c_name]:
                     k = np.where(Cat_full['ID'+'_'+c_name]==ID)[0][0]
@@ -976,7 +987,8 @@ def cross_match(header, SE_catalog, bounds, radius=None,
     
     return tab_target, tab_target_full, Cat_crop
 
-def calculate_color_term(tab_target, mag_range=[12,18], mag_name='gmag_PS', draw=True):
+def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
+    """ Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and matched mag. """
     mag = tab_target["MAG_AUTO"]
     d_mag = tab_target["MAG_AUTO"] - tab_target[mag_name]
     
@@ -1003,37 +1015,37 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
         based on SE segmentation. Radius is enlarged K times."""
     
-    print("\nFit %dth empirical relation of (X%.1f) aperture radii for catalog stars based on SE."%(degree, K))
+    print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)."%(degree, K))
 
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)
     R_aper = (segm_deb.get_areas(tab_SE["NUMBER"])/np.pi)**0.5
     tab_SE['logR'] = np.log10(K * R_aper)
     
-    mag = tab_SE[mag_name]
-    mag[np.isnan(mag)] = -1
-    tab = tab_SE[(mag>mag_range[0])&(mag<mag_range[1])]
+    mag_match = tab_SE[mag_name]
+    mag_match[np.isnan(mag_match)] = -1
+    tab = tab_SE[(mag_match>mag_range[0])&(mag_match<mag_range[1])]
 
-    rmag = tab[mag_name]
+    mag_all = tab[mag_name]
     logR = tab['logR']
-    p_poly = np.polyfit(rmag, logR, degree)
+    p_poly = np.polyfit(mag_all, logR, degree)
     f_poly = np.poly1d(p_poly)
 
     if draw:
         plt.scatter(tab_SE[mag_name], tab_SE['logR'], s=8, alpha=0.2, color='gray')
-        plt.scatter(rmag, logR, s=8, alpha=0.2, color='k')
+        plt.scatter(mag_all, logR, s=8, alpha=0.2, color='k')
         
     mag_ls = np.linspace(6,23)
-    clip = np.zeros_like(rmag, dtype='bool')
+    clip = np.zeros_like(mag_all, dtype='bool')
     
     for i in range(3):
         if draw: plt.plot(mag_ls, f_poly(mag_ls), lw=1, ls='--')
-        mag, logr = rmag[~clip], logR[~clip]
+        mag, logr = mag_all[~clip], logR[~clip]
 
         p_poly = np.polyfit(mag, logr, degree)
         f_poly = np.poly1d(p_poly)
 
-        dev = np.sqrt((logR-f_poly(rmag))**2)
+        dev = np.sqrt((logR-f_poly(mag_all))**2)
         clip = dev>3*np.mean(dev)
         
     if draw: 
@@ -1051,37 +1063,13 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     
     return estimate_radius
 
-def make_segm_from_catalog0(catalog_star, image_bounds, estimate_radius,
-                           mag_name='rmag', cat_name='PS'):
-    """ Make segmentation , aperture size from SE is fit based on SE"""
-    
-
-    
-    R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
-    Xmin, Ymin = image_bounds[:2]
-    
-    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
-             for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
-                                     catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
-    plt.hist(np.log10(R_est))
-    plt.show()
-    image_size = image_bounds[2] - image_bounds[0]
-    seg_map_catalog = np.zeros((image_size, image_size))
-    
-    # Segmentation k sorted by mag of source catalog
-    for (k, aper) in enumerate(apers):
-        star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
-        if star_ma is not None:
-            seg_map_catalog[star_ma.astype(bool)] = k+2
-            
-    return seg_map_catalog
 
 def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
                            mag_name='rmag', cat_name='PS',
                            draw=True, save=False, dir_name='./Measure'):
     """ Make segmentation , aperture size from SE is fit based on SE"""
     
-    catalog = catalog_star[~catalog_star['gmag'].mask]
+    catalog = catalog_star[~catalog_star[mag_name].mask]
     print("\nMake segmentation map based on catalog %s %s: %d stars"%(cat_name, mag_name, len(catalog)))
     
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
@@ -1111,6 +1099,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
         hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
         file_name = os.path.join(dir_name, "Seg_%s_X%dY%d.fits" %(cat_name, Xmin, Ymin))
         hdu_seg.writeto(file_name, overwrite=True)
+        print("Save segmentation map made from catalog as %s\n"%file_name)
         
     return seg_map_catalog
 
@@ -1224,7 +1213,7 @@ class DynamicNestedSampler:
         
         self.res = res
     
-    def cornerplot(self, labels=None, truths=None, figsize=(16,14),
+    def cornerplot(self, labels=None, truths=None, figsize=(16,15),
                    save=False, dir_name='.'):
         from plotting import draw_cornerplot
         draw_cornerplot(self.results, self.ndim,
@@ -1240,12 +1229,32 @@ class DynamicNestedSampler:
             plt.savefig(os.path.join(dir_name, "Cornerbound.png"), dpi=150)
             plt.close()
     
-    def plot_fit_PSF1D(self, psf, n_bootstrap=500, leg2d=False,
+    def plot_fit_PSF1D(self, psf, n_bootstrap=500, truth=None, leg2d=False,
                        Amp_max=None, r_core=None, save=False, dir_name='.'):
         from plotting import plot_fit_PSF1D
-        plot_fit_PSF1D(self.results, psf, n_bootstrap=n_bootstrap, leg2d=leg2d,
+        plot_fit_PSF1D(self.results, psf, n_bootstrap=n_bootstrap, truth=truth, leg2d=leg2d,
                        Amp_max=Amp_max, r_core=r_core, save=save, dir_name=dir_name)
+    
+    def generate_fit(self, psf, stars, image_base, draw_real=True,
+                     mock=False, leg2d=False, n_out=4, theta_out=1200):
+        psf_fit, params = make_psf_from_fit(self.results, psf,
+                                            n_out=n_out, theta_out=theta_out)
+        from modeling import generate_image_fit
+        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, mock=mock,
+                                                            draw_real=draw_real, leg2d=leg2d)
+        image_fit = image_star + image_base + bkg_fit
+        
+        self.image_fit = image_fit
+        self.image_star = image_star
+        self.bkg_fit = bkg_fit
+        self.noise_fit = noise_fit
+        
+        return psf_fit, params
+        
+    def draw_comparison_2D(self, image, mask_fit, **kwargs):
+        from plotting import draw_comparison_2D
 
+        draw_comparison_2D(self.image_fit, image, mask_fit, self.image_star, self.noise_fit, **kwargs)
             
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
                                nlive_init=100, sample='auto', 
@@ -1297,7 +1306,7 @@ def get_params_fit(results, return_sample=False):
     else:
         return pmed, pmean, pcov
     
-def make_psf_from_fit(fit_res, psf, n_out=3, theta_out=1200, leg2d=False):
+def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, leg2d=False):
     
     image_size = psf.image_size
     psf_fit = psf.copy()
@@ -1329,7 +1338,7 @@ def make_psf_from_fit(fit_res, psf, n_out=3, theta_out=1200, leg2d=False):
     
 
 def cal_reduced_chi2(fit, data, params):
-    mu, sigma = params[-2], 10**params[-1]
+    sigma = 10**params[-1]
     chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-len(params))
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 
