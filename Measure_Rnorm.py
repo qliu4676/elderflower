@@ -52,7 +52,7 @@ def main(argv):
             dir_name = arg
             check_save_path(dir_name, make_new=False)
 
-
+    # Run Measurement
     Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds,
                        weight_map=weight_map, band=band,
                        r_scale=r_scale, mag_thre=mag_thre,
