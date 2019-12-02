@@ -256,7 +256,7 @@ class PSF_Model:
         I = self.Flux2I(Flux, r=r)
         return Intensity2SB(I+ BKG, BKG, ZP, self.pixel_scale)
     
-    def plot_model_galsim(self, contrast=None, save=False, dir_name='.'):
+    def plot_PSF_model_galsim(self, contrast=None, save=False, dir_name='.'):
         """ Plot Galsim 2D model averaged in 1D """
         from plotting import plot_PSF_model_galsim
         plot_PSF_model_galsim(self, contrast=contrast,
@@ -1602,7 +1602,7 @@ def set_prior(n_est, mu_est, std_est, method='2p',
             v = u.copy()
 #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)        # n0 : n +/- d_n0
             v[0] = Prior_n.ppf(u[0])
-            v[1] = u[1] * 0.7 + (v[0]-1)               # n1 : n0-1.2 - n0-0.5
+            v[1] = u[1] * 0.5 + (v[0]-1)               # n1 : n0-1.0 - n0-0.5
             v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
                 # n2 : max[n_min, n1-1.5] - n1-0.5
             v[3] = u[3] * dlog_t + log_t_in                 

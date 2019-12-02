@@ -28,6 +28,14 @@ def make_rand_cmap(n_label, rand_state = 12345):
     rand_cmap.set_over(color='white')
     return rand_cmap
 
+def make_rand_color(n_color, seed=1234,
+                    colour = ["indianred", "plum", "seagreen", "lightcyan",
+                              "orchid", 'gray', 'orange', 'yellow', "brown" ]):
+    import random
+    random.seed(seed)
+    rand_colours = [random.choice(colour) for i in range(n_color)]
+    return rand_colours
+
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=24, r_out=None, vmin=884, vmax=1e3,
                   pad=0, save=False, dir_name='./'):
@@ -169,7 +177,7 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
             plt.semilogx(r, I_aureole,
                      ls="--", lw=3, alpha=0.9, label='aureole')
         plt.ylabel('log Intensity', fontsize=14)
-        plt.ylim(I_aureole.min(), I_tot.max())
+        plt.ylim(I_aureole.min(), I_tot.max()+0.25)
         
     elif yunit=='SB':
         plt.semilogx(r, -14.5+Intensity2SB(I=I_tot, BKG=0,
@@ -189,7 +197,7 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     plt.xlabel('r [pix]', fontsize=14)
 
     
-def plot_PSF_model_galsim(psf, contrast=None, save=False, dir_name='.'):
+def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_name='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
@@ -204,8 +212,9 @@ def plot_PSF_model_galsim(psf, contrast=None, save=False, dir_name='.'):
     img_aureole = psf_aureole.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel")
     img_star = star_psf.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel")
     
-    plt.figure(figsize=(7,6))
-
+    if figsize is not None:
+        fig, ax = plt.subplots(1,1, figsize=figsize)
+        
     r_rbin, z_rbin, logzerr_rbin = cal_profile_1d(frac*img_aureole.array, color="g",
                                                   pixel_scale=pixel_scale,
                                                   core_undersample=True, mock=True,
@@ -248,11 +257,11 @@ def plot_PSF_model_galsim(psf, contrast=None, save=False, dir_name='.'):
         plt.close()
     
 def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
-                   save=False, dir_name='.', **kwargs):
+                   save=False, dir_name='.', figsize=None, **kwargs):
     import seaborn as sns
     F_bright, F_verybright = Flux_thresholds
-#     if ax is None:
-#         fig, ax = plt.subplots(1,1)
+    if figsize is not None:
+        fig, ax = plt.subplots(1,1, figsize=figsize)
     plt.axvline(np.log10(F_bright), color="k", ls="-",alpha=0.7, zorder=1)
     plt.axvline(np.log10(F_verybright), color="k", ls="--",alpha=0.7, zorder=1)
     plt.axvspan(1, np.log10(F_bright),
@@ -300,7 +309,7 @@ def draw_independent_priors(priors, xlabels=None, plabels=None,
 
         
 def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
-                    save=False, dir_name='.'):
+                    save=False, dir_name='.', suffix=''):
     fig = plt.subplots(ndim, ndim, figsize=figsize)
     dyplot.cornerplot(results, truths=truths, labels=labels, 
                       color="royalblue", truth_color="indianred",
@@ -308,7 +317,7 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                       label_kwargs={'fontsize':16}, 
                       show_titles=True, fig=fig)
     if save:
-        plt.savefig(os.path.join(dir_name, "Cornerplot.png"), dpi=150)
+        plt.savefig(os.path.join(dir_name, "Cornerplot%s.png"%suffix), dpi=150)
         plt.show()
         plt.close()
     else:
@@ -405,7 +414,7 @@ def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
         aper1 = CircularAperture([100,100], r=r_core[0])
         aper1.plot(color='lime',lw=3,alpha=0.9, axes=ax6)
         aper2 = CircularAperture([100,100], r=r_core[1])
-        aper2.plot(color='c',lw=3,label="",alpha=0.7, axes=ax6)
+        aper2.plot(color='skyblue',lw=3,label="",alpha=0.7, axes=ax6)
         
     plt.tight_layout()
     if save:
@@ -416,18 +425,18 @@ def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
         plt.show()
     
     
-def plot_fit_PSF1D(results, psf, n_bootstrap=200, 
+def plot_fit_PSF1D(results, psf, n_bootstrap=500, 
                    truth=None, Amp_max=None, leg2d=False,
                    r_core=None, n_out=4, theta_out=1200,
-                   save=False, dir_name="./"):
+                   save=False, dir_name="./", suffix='', figsize=(7,6)):
 
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac
     theta_0 = psf.theta_0
-    
-    plt.figure(figsize=(7,6))
+    if figsize is not None:
+        fig, ax = plt.subplots(1,1, figsize=figsize)
     
     if truth is not None:
         print("Truth : ", psf.params)
@@ -533,7 +542,7 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=200,
     plt.tight_layout()
     
     if save:
-        plt.savefig("%s/Fit_PSF1D.png"%dir_name,dpi=150)
+        plt.savefig("%s/Fit_PSF1D%s.png"%(dir_name,suffix),dpi=150)
         plt.show()
         plt.close()
     

@@ -278,7 +278,7 @@ def make_mask_map_dual(image, stars, xx=None, yy=None,
             segmap = morphology.dilation(segmap)
             
     if mask_base is not None:
-        print("Use mask map built from catalog")
+        print("Use mask map built from catalog: ", mask_base)
         segmap2 = fits.getdata(mask_base)
         
         if sn_thre is not None:
@@ -995,7 +995,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     d_mag = d_mag[(mag>mag_range[0])&(mag<mag_range[1])]
     mag = mag[(mag>mag_range[0])&(mag<mag_range[1])]
 
-    d_mag_clip = sigma_clip(d_mag, 3, maxiters=5)
+    d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
     CT = np.mean(d_mag_clip)
     print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
@@ -1214,26 +1214,25 @@ class DynamicNestedSampler:
         self.res = res
     
     def cornerplot(self, labels=None, truths=None, figsize=(16,15),
-                   save=False, dir_name='.'):
+                   save=False, dir_name='.', suffix=''):
         from plotting import draw_cornerplot
         draw_cornerplot(self.results, self.ndim,
                         labels=labels, truths=truths, figsize=figsize,
-                        save=save, dir_name=dir_name)
+                        save=save, dir_name=dir_name, suffix=suffix)
         
-    def cornerbound(self, prior_transform, labels=None, figsize=(10,10), save=False, dir_name='.'):
+    def cornerbound(self, prior_transform, labels=None, figsize=(10,10),
+                    save=False, dir_name='.', suffix=''):
         fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
         fg, ax = dyplot.cornerbound(self.results, it=1000, labels=labels,
                                     prior_transform=prior_transform,
                                     show_live=True, fig=(fig, axes))
         if save:
-            plt.savefig(os.path.join(dir_name, "Cornerbound.png"), dpi=150)
+            plt.savefig(os.path.join(dir_name, "Cornerbound%s.png"%suffix), dpi=120)
             plt.close()
     
-    def plot_fit_PSF1D(self, psf, n_bootstrap=500, truth=None, leg2d=False,
-                       Amp_max=None, r_core=None, save=False, dir_name='.'):
+    def plot_fit_PSF1D(self, psf, **kwargs):
         from plotting import plot_fit_PSF1D
-        plot_fit_PSF1D(self.results, psf, n_bootstrap=n_bootstrap, truth=truth, leg2d=leg2d,
-                       Amp_max=Amp_max, r_core=r_core, save=save, dir_name=dir_name)
+        plot_fit_PSF1D(self.results, psf, **kwargs)
     
     def generate_fit(self, psf, stars, image_base, draw_real=True,
                      mock=False, leg2d=False, n_out=4, theta_out=1200):
@@ -1253,7 +1252,6 @@ class DynamicNestedSampler:
         
     def draw_comparison_2D(self, image, mask_fit, **kwargs):
         from plotting import draw_comparison_2D
-
         draw_comparison_2D(self.image_fit, image, mask_fit, self.image_star, self.noise_fit, **kwargs)
             
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
@@ -1333,6 +1331,9 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, leg2d=False):
         
     mu_fit, sigma_fit = params[-2], 10**params[-1]
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
+    
+    _ = psf_fit.generate_core()
+    _, _ = psf_fit.generate_aureole(psf_range=image_size)
     
     return psf_fit, params
     
