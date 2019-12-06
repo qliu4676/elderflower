@@ -524,12 +524,13 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
                 
     # Draw boundaries etc.
     if r_core is not None:
-        plt.axvspan(np.atleast_1d(r_core).max(), theta_out/pixel_scale,
-                    color='steelblue', alpha=0.15, zorder=1)
-        plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
-                    color='seagreen', alpha=0.15, zorder=1)
-        plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
-                    color='gray', alpha=0.15, zorder=1)
+        if figsize is not None:
+            plt.axvspan(np.atleast_1d(r_core).max(), theta_out/pixel_scale,
+                        color='steelblue', alpha=0.15, zorder=1)
+            plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
+                        color='seagreen', alpha=0.15, zorder=1)
+            plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
+                        color='gray', alpha=0.15, zorder=1)
         for t in psf_fit.theta_s_pix:
             plt.axvline(t, lw=2, ls='--', color='k', alpha=0.5)        
         

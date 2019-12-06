@@ -9,15 +9,9 @@ def main(argv):
     band = "G"
     save, draw = True, True
     mag_thre, r_scale = 15, 12
-
+    
     image_bounds = [[800, 1600, 1800, 2600],
                     [3100, 1400, 4100, 2400]]  # in image coords
-    
-    hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
-    seg_map = "./SE_APASS/coadd_Sloan%s_NGC_5907_seg.fits"%band
-    SE_catalog = "./SE_APASS/coadd_Sloan%s_NGC_5907.cat"%band
-    weight_map = "./SE_APASS/weight_NGC5907.fits"
-    dir_name = './Measure'
     
     try:
         opts, args = getopt.getopt(argv, "f:b:m:r:I:C:S:W:",
@@ -26,7 +20,7 @@ def main(argv):
     except getopt.GetoptError:
         print('Wrong Option.')
         sys.exit(2)
-        
+    
     for opt, arg in opts:
         if opt in ("-f", "--FILTER"):
             if arg in ["G", "R", "r", "g"]:
@@ -34,14 +28,23 @@ def main(argv):
             else:
                 print("Filter Not Available.")
                 sys.exit(1)
+                
+    # Default Path
+    hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
+    seg_map = "./SE_APASS/coadd_Sloan%s_NGC_5907_seg.fits"%band
+    SE_catalog = "./SE_APASS/coadd_Sloan%s_NGC_5907.cat"%band
+    weight_map = "./SE_APASS/weight_NGC5907.fits"
+    dir_name = './Measure'
+        
+    for opt, arg in opts:
+        if opt in ("-I", "--IMAGE"):
+            hdu_path = arg
         elif opt in ("-b", "--IMAGE_BOUNDS"):    
             image_bounds = np.array(re.findall(r'\d+', arg), dtype=int).reshape(-1,4)
         elif opt in ("-r", "--R_SCALE"):
             r_scale = np.float(arg)
         elif opt in ("-m", "--MAG_THRESHOLD"):
             mag_thre = np.float(arg)
-        elif opt in ("-I", "--IMAGE"):
-            hdu_path = arg
         elif opt in ("-C", "--SE_CATALOG"):
             SE_catalog = arg
         elif opt in ("-S", "--SEGMENT"):
@@ -83,7 +86,10 @@ def Match_Mask_Measure(hdu_path,
     ############################################
 
     # Read hdu
+    if os.path.isfile(hdu_path) is False:
+        sys.exit("Image does not exist. Check path.")
     with fits.open(hdu_path) as hdul:
+        print("Read Image :", hdu_path)
         data = hdul[0].data
         header = hdul[0].header
         wcs_data = wcs.WCS(header)

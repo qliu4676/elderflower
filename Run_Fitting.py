@@ -347,32 +347,6 @@ def Run_Fitting(hdu_path, image_bounds0,
     # Make Priors
     prior_tf = set_prior(n_est=n0, mu_est=mu_patch, std_est=std_patch, leg2d=leg2d,
                          n_min=1, theta_in=60, theta_out=300, method=method)
-    
-#     def loglike_2p(v):
-#         _n_s = np.append(v[:2], 4)
-#         _theta_s = np.append([theta_0, 10**v[2]], 1200)
-#         _mu, _sigma = v[-2], 10**v[-1]
-
-#         psf.update({'n_s':_n_s, 'theta_s':_theta_s})
-
-#         # I varies with sky background
-#         stars_tri.z_norm = z_norm_stars + (stars_tri.BKG - _mu)
-
-#         image_tri = generate_image_by_znorm(psf, stars_tri, psf_range=[320,640],
-#                                             brightest_only=brightest_only,
-#                                             subtract_external=subtract_external,
-#                                             psf_scale=pixel_scale,
-#                                             parallel=parallel, draw_real=draw_real)
-#         image_tri = image_tri + image_base + _mu
-                
-#         ypred = image_tri[~mask_fit].ravel()
-#         residsq = (ypred - Y)**2 / _sigma**2
-#         loglike = -0.5 * np.sum(residsq + math.log(2 * np.pi * _sigma**2))
-
-#         if not np.isfinite(loglike):
-#             loglike = -1e100
-
-#         return loglike
    
     if method=='2p':
         labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
@@ -380,7 +354,8 @@ def Run_Fitting(hdu_path, image_bounds0,
             labels = np.insert(labels, 3, [r'$\log\,A_{01}}$', r'$\log\,A_{10}}$'])
             
     elif method=='3p':
-        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$', r'$\mu$', r'$\log\,\sigma$']
+        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$',
+                  r'$\mu$', r'$\log\,\sigma$']
         if leg2d:
             labels = np.insert(labels, 5, [r'$\log\,A_{01}}$', r'$\log\,A_{10}}$'])
             

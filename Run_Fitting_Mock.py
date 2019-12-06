@@ -12,7 +12,7 @@ matplotlib.use('Agg')
 
 # Option
 save = True
-dir_name = os.oath.join('tmp', id_generator())
+dir_name = os.path.join('tmp', id_generator())
 check_save_path(dir_name)
 # dir_name = 'mp_mock'
 print_progress = True
@@ -21,7 +21,7 @@ n_thread = None
 n_cpu = 4
 
 
-############################################
+############################################Z
 # Setting
 ############################################
 
@@ -53,13 +53,12 @@ psf = PSF_Model(params=params_mpow, aureole_model='multi-power')
 # Build grid of image for drawing
 psf.make_grid(image_size, pixel_scale=pixel_scale)
 
-
 ############################################
 # Star Distribution (position, flux)
 ############################################
 
 # Generate randomn star positions
-np.random.seed(626)
+np.random.seed(62)
 star_pos = (image_size-2) * np.random.random(size=(n_star,2)) + 1
 
 # Read SE measurement based on APASS
@@ -70,7 +69,7 @@ Flux_Auto_SE = SE_cat_full[SE_cat_full['FLAGS']<8]["FLUX_AUTO"]
 np.random.seed(888)
 Flux = Flux_Auto_SE.sample(n=n_star).values
 
-Flux[Flux>5e5] *= 20
+Flux[Flux>5e5] *= 15
 
 # Flux Thresholds 
 F_bright = 1e5
@@ -109,7 +108,7 @@ image = image + image_base + mu + noise_image
 mask = Mask(image, stars, image_size, mu=mu)
 
 # Core mask
-r_core_s = [36, 36]
+r_core_s = [48, 36]
 mask.make_mask_map_dual(r_core_s, sn_thre=2.5, n_dilation=3,
                         draw=True, save=True, dir_name=dir_name)
 
@@ -122,21 +121,23 @@ stars = mask.stars_new
 # Fitting Preparation
 ############################################ 
 mask_fit = mask.mask_comb
+mask_deep = mask.mask_deep
 
 X = np.array([psf.xx,psf.yy])
 Y = image[~mask_fit].copy().ravel()
 
 # Estimated mu and sigma used as prior
-Y_clip = sigma_clip(Y, sigma=3, maxiters=10)
+Y_clip = sigma_clip(image[~mask_deep].ravel(), sigma=3, maxiters=10)
 mu_patch, std_patch = np.mean(Y_clip), np.std(Y_clip)
 print("\nEstimate of Background: (%.3f, %.3f)"%(mu_patch, std_patch))
 
 # Choose fitting parameterization
 prior_tf = set_prior(3.3, mu_patch, std_patch,
                      theta_in=90, theta_out=500, method=method)
-loglike = set_likelihood(Y, mask_fit, psf, stars, image_base, psf_range=[320, 640],
-                         brightest_only=True, parallel=False, draw_real=False,
-                         draw_func=generate_mock_image, method=method)
+
+loglike = set_likelihood(Y, mask_fit, psf, stars, image_base,
+                         psf_range=[320, 640], method=method, mock=True,
+                         brightest_only=True, parallel=False, draw_real=False)
 
 if method == '2p':
     labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
@@ -145,9 +146,10 @@ elif method == '3p':
     labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$', r'$\mu$', r'$\log\,\sigma$']
     
 elif method == 'sp':
-    labels_sp = [r'$n_%d$'%d for d in range(nspline)] \
-                + [r'$\theta_%d$'%(d+1) for d in range(nspline-1)] \
-                + [r'$\mu$', r'$\log\,\sigma$']
+    nspline = 5
+    labels = [r'$n_%d$'%d for d in range(nspline)] \
+           + [r'$\theta_%d$'%(d+1) for d in range(nspline-1)] \
+           + [r'$\mu$', r'$\log\,\sigma$']
     
 ndim = len(labels)
 print("Labels: ", labels)
@@ -167,10 +169,9 @@ ds.save_result(filename='Mock-fit_best_%s.res'%method,
 
 ds.cornerplot(labels=labels, save=save, dir_name=dir_name, figsize=(22, 20))
 
+ds.plot_fit_PSF1D(psf0, labels, n_bootstrap=500,
+                  Amp_max=Amp_m, r_core=r_core_s, save=save, dir_name=dir_name)
+
 draw2D_fit_vs_truth_PSF_mpow(ds.results, psf0, stars, labels, image,
                              save=save, dir_name=dir_name)
 
-plot1D_fit_vs_truth_PSF_mpow(ds.results, psf0, labels,
-                             n_bootstrap=800,
-                             Amp_max=Amp_m, r_core=r_core_s,
-                             save=save, dir_name=dir_name)
