@@ -1235,11 +1235,11 @@ class DynamicNestedSampler:
         plot_fit_PSF1D(self.results, psf, **kwargs)
     
     def generate_fit(self, psf, stars, image_base, draw_real=True,
-                     mock=False, leg2d=False, n_out=4, theta_out=1200):
-        psf_fit, params = make_psf_from_fit(self.results, psf,
+                     norm='brightness', leg2d=False, n_out=4, theta_out=1200):
+        psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d,
                                             n_out=n_out, theta_out=theta_out)
         from modeling import generate_image_fit
-        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, mock=mock,
+        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
                                                             draw_real=draw_real, leg2d=leg2d)
         image_fit = image_star + image_base + bkg_fit
         
@@ -1253,6 +1253,14 @@ class DynamicNestedSampler:
     def draw_comparison_2D(self, image, mask_fit, **kwargs):
         from plotting import draw_comparison_2D
         draw_comparison_2D(self.image_fit, image, mask_fit, self.image_star, self.noise_fit, **kwargs)
+        
+    def draw_background(self, save=False, dir_name='.', suffix=''):
+        plt.figure()
+        im = plt.imshow(self.bkg_fit); colorbar(im)
+        if save:
+            plt.savefig(os.path.join(dir_name,'Legendre2D%s.png'%(suffix)), dpi=80)
+        else:
+            plt.show()
             
 def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
                                nlive_init=100, sample='auto', 

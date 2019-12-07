@@ -349,9 +349,8 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
     psf_fit.update({'n_s':n_s_fit, 'theta_s': theta_s_fit})
     
     psf_range = psf.image_size * psf.pixel_scale
-    image_fit = generate_mock_image(psf_fit, stars,
-                                    psf_range=[psf_range//2, psf_range],
-                                    draw_real=True)
+    image_fit = generate_image_by_flux(psf_fit, stars, draw_real=True,
+                                       psf_range=[psf_range//2, psf_range])
     image_fit = image_fit + mu_fit + noise_fit
     
     if image_base is not None:

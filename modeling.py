@@ -262,6 +262,16 @@ class PSF_Model:
         plot_PSF_model_galsim(self, contrast=contrast,
                               save=save, dir_name=dir_name)
         
+    def draw_core2D_in_real(self, star_pos, Flux=None):
+        gamma, alpha = self.gamma_pix, self.beta
+        Amps = np.array([moffat2d_Flux2Amp(gamma, alpha, Flux=flux)
+                       for flux in Flux])
+        f_core_2d_s = np.array([models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0,
+                                                gamma=gamma, alpha=alpha)
+                                for ((x0,y0), amp) in zip(star_pos, Amps)])
+            
+        return f_core_2d_s
+        
     def draw_aureole2D_in_real(self, star_pos, Flux=None, I0=None):
         
         if self.aureole_model == "power":
@@ -1255,12 +1265,7 @@ def make_truth_image(psf, stars, contrast=1e6,
     image_gs = full_image.array
 
     # Draw bright stars in real space
-    Amps_A = np.array([moffat2d_Flux2Amp(gamma_pix, beta, Flux=(1-frac)*flux)
-                       for flux in Flux_A])
-    func_core_2d_s = np.array([models.Moffat2D(amplitude=amp, x_0=x0, y_0=y0,
-                                               gamma=gamma_pix, alpha=beta)
-                               for ((x0,y0), amp) in zip(star_pos_A, Amps_A)])
-    
+    func_core_2d_s = psf.draw_core2D_in_real(star_pos_A, (1-frac) * Flux_A)
     func_aureole_2d_s = psf.draw_aureole2D_in_real(star_pos_A, frac * Flux_A)
 
     # option for drawing in parallel
@@ -1292,25 +1297,26 @@ def make_truth_image(psf, stars, contrast=1e6,
     
     return image
         
-def generate_mock_image(psf, stars,
-                        contrast=[1e6,1e7],
-                        psf_range=[None, None],
-                        min_psf_range=90, 
-                        max_psf_range=1200,
-                        psf_scale=None,
-                        parallel=False,
-                        draw_real=False,
-                        n_real=2.5,
-                        subtract_external=False,
-                        brightest_only=False,
-                        interpolant='cubic'):
-    
+def generate_image_by_flux(psf, stars,
+                           contrast=[3e4,3e5],
+                           psf_range=[None,None],
+                           min_psf_range=120,
+                           max_psf_range=1200,
+                           psf_scale=None,
+                           parallel=False,
+                           draw_real=True,
+                           n_real=2.5,
+                           subtract_external=False,
+                           brightest_only=False,
+                           interpolant='cubic'):
+
     image_size = psf.image_size
     yy, xx = psf.yy, psf.xx
     
     frac = psf.frac
     
-    psf_scale = psf.pixel_scale if psf_scale is None else 2
+    if psf_scale is None:
+        psf_scale = psf.pixel_scale
     
     if not(draw_real & brightest_only):
         psf_c = psf.psf_core
@@ -1404,7 +1410,7 @@ def generate_image_by_znorm(psf, stars,
                             max_psf_range=1200,
                             psf_scale=None,
                             parallel=False,
-                            draw_real=False,
+                            draw_real=True,
                             brightest_only=False,
                             subtract_external=True,
                             interpolant='cubic'):
@@ -1478,18 +1484,23 @@ def generate_image_by_znorm(psf, stars,
                 full_image[bounds] += stamp[bounds]
                 
     if draw_real:
-        # Draw aureole of very bright star (if high cost in FFT) in real space
+        # Draw very bright star in real space (high cost in convolution)
         image_gs = full_image.array
         
         if brightest_only:
+            # Only plot the aureole. A Deeper mask is required.
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
                                                            I0=I0_verybright)
         else:
+            # Plot core + aureole. 
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
                                                            Flux=frac * stars.Flux_verybright)
+            func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright,
+                                                     Flux=(1-frac) * stars.Flux_verybright)
+            image_gs += np.sum([f2d(xx,yy) for f2d in func_core_2d_s], axis=0)
         
         image_real = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
-        
+
         image = image_gs + image_real
         
     else:
@@ -1505,7 +1516,8 @@ def generate_image_by_znorm(psf, stars,
         psf_star_2 = (1-frac) * psf_c + frac * psf_e_2
         
         for k in range(stars.n_verybright):
-            draw_star(k, star_pos=stars.star_pos_verybright,
+            draw_star(k,
+                      star_pos=stars.star_pos_verybright,
                       Flux=stars.Flux_verybright,
                       psf_star=psf_star_2,
                       psf_size=psf_size_2,
@@ -1516,13 +1528,16 @@ def generate_image_by_znorm(psf, stars,
     return image
 
 
-def generate_image_fit(psf_fit, stars, mock=False, draw_real=True, leg2d=False):
+def generate_image_fit(psf_fit, stars, norm='brightness', draw_real=True, leg2d=False):
 
     image_size  = psf_fit.image_size
     
     noise_fit = make_noise_image(image_size, psf_fit.bkg_std, verbose=False)
     
-    draw_func = generate_image_by_znorm if mock is False else generate_mock_image
+    if norm=='brightness':
+        draw_func = generate_image_by_znorm
+    elif norm=='flux':
+        draw_func = generate_image_by_flux
     
     image_fit = draw_func(psf_fit, stars, psf_range=[900,1800],
                           brightest_only=False, psf_scale=psf_fit.pixel_scale, draw_real=draw_real)
@@ -1547,8 +1562,8 @@ def generate_image_fit(psf_fit, stars, mock=False, draw_real=True, leg2d=False):
 # Priors and Likelihood Models for Fitting
 ############################################
 
-def set_prior(n_est, mu_est, std_est, method='2p',
-              n_min=1, theta_in=90, theta_out=600, d_n0=0.3, 
+def set_prior(n_est, mu_est, std_est, n_spline=2,
+              n_min=1, d_n0=0.3, theta_in=90, theta_out=600, 
               nspline=None, std_poi=None, leg2d=False, **kwargs):
     
     """ Setup priors for models. Estimate of the first power index, background and uncertainty
@@ -1570,7 +1585,7 @@ def set_prior(n_est, mu_est, std_est, method='2p',
         Prior_sigma = stats.uniform(loc=np.log10(std_poi),
                                     scale=np.log10(std_est)-np.log10(std_poi))   # logsigma
     
-    if method == 'p':
+    if n_spline == 1:
         from plotting import draw_independent_priors
 #         Prior_n = stats.uniform(loc=n_est-d_n0, scale=1.)   # n : n+/-d_n0
         Priors = [Prior_n, Prior_mu, Prior_sigma]
@@ -1579,7 +1594,7 @@ def set_prior(n_est, mu_est, std_est, method='2p',
         prior_tf_p = build_independent_priors(Priors)
         return prior_tf_p
     
-    elif method == '2p':
+    elif n_spline==2:
         def prior_tf_2p(u):
             v = u.copy()
 #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
@@ -1597,10 +1612,9 @@ def set_prior(n_est, mu_est, std_est, method='2p',
         
         return prior_tf_2p
     
-    elif method == '3p':
+    elif n_spline==3:
         def prior_tf_3p(u):
             v = u.copy()
-#             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)        # n0 : n +/- d_n0
             v[0] = Prior_n.ppf(u[0])
             v[1] = u[1] * 0.5 + (v[0]-1)               # n1 : n0-1.0 - n0-0.5
             v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
@@ -1619,47 +1633,53 @@ def set_prior(n_est, mu_est, std_est, method='2p',
         
         return prior_tf_3p
     
-    elif method=='sp':
+    else:
         def prior_tf_sp(u):
             v = u.copy()
 
-#             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)        # n0 : n +/- 0.3
             v[0] = Prior_n.ppf(u[0])
             
-            for k in range(nspline-1):
-                v[k+1] = u[k+1] * max(-0.3, 1.3-v[1]) + (v[1]-0.3)         
-                # n_k+1 : [1, n_k-0.6] - n_k-0.3
-
-            v[nspline] = u[nspline] * dlog_t + log_t_in
+            for k in range(n_spline-1):
+                v[k+1] = u[k+1] * max(-0.3, 1.3-v[k]) + (v[k]-0.3)         
+                # n_k+1 : [1, n_k-0.6] - n_k-0.3a
+            v[n_spline] = u[n_spline] * dlog_t + log_t_in
             # log theta1 : t_in-t_out  arcsec
 
-            for k in range(nspline-2):
+            for k in range(n_spline-2):
                 
-                v[k+nspline+1] = u[k+nspline+1] * min(0.7, log_t_out - v[k+nspline]) + v[k+nspline]
-                # log theta_k+1: theta_k - [5*theta_k, t_out]  # in arcsec
+                v[k+n_spline+1] = u[k+n_spline+1] * \
+                                    min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
+                # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
 
             v[-2] = Prior_mu.ppf(u[-2])          # mu
             v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
+            if leg2d:
+                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-2, scale=2)  # log A10
+                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-2, scale=2)  # log A01
             
             return v
         
         return prior_tf_sp
         
 
-def set_likelihood(data, mask_fit, psf, stars, method='2p',
-                   mock=False, nspline=None, z_norm=None, 
+def set_likelihood(data, mask_fit, psf, stars,
+                   norm='brightness', n_spline=2, z_norm=None, 
                    image_base=None, psf_range=[None,None], leg2d=False,
                    brightest_only=False, parallel=False, draw_real=False):
     
     theta_0 = psf.theta_0
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
-    draw_func = generate_image_by_znorm if mock is False else generate_mock_image
     
-    if stars.n_verybright == 0:
-        subtract_external = False
-    else:
+    if norm=='brightness':
+        draw_func = generate_image_by_znorm
+    elif norm=='flux':
+        draw_func = generate_image_by_flux
+    
+    if (stars.n_verybright > 0) & (norm=='brightness'):
         subtract_external = True
+    else:
+        subtract_external = False
     
     if image_base is None:
         image_base = np.zeros((image_size, image_size))
@@ -1669,7 +1689,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
     H10 = leggrid2d((x_grid-cen[1])/image_size, (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
     H01 = leggrid2d((x_grid-cen[1])/image_size, (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
         
-    if method =='p':
+    if n_spline==1:
         
         def loglike(v):
             n, mu = v[:-1]
@@ -1677,7 +1697,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
 
             psf.update({'n':n})
         
-            if draw_func == generate_image_by_znorm:
+            if norm=='brightness':
                 # I varies with sky background
                 stars.z_norm = z_norm + (stars.BKG - mu)
             
@@ -1695,7 +1715,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
 
             return loglike
     
-    elif method == '2p':
+    elif n_spline==2:
         
         def loglike_2p(v):
             n_s = np.append(v[:2], 4)
@@ -1704,7 +1724,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
             
-            if draw_func == generate_image_by_znorm:
+            if norm=='brightness':
                 # I varies with sky background
                 stars.z_norm = z_norm + (stars.BKG - mu)
             
@@ -1714,6 +1734,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
                                   brightest_only=brightest_only,
                                   subtract_external=subtract_external,
                                   parallel=parallel, draw_real=draw_real)
+            
             image_tri += image_base + mu 
             
             if leg2d:
@@ -1732,7 +1753,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
         return loglike_2p        
         
         
-    elif method == '3p':
+    elif n_spline==3:
     
         def loglike_3p(v):
             n_s = np.append(v[:3], 4)
@@ -1741,7 +1762,7 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
             
-            if draw_func == generate_image_by_znorm:
+            if norm=='brightness':
                 # I varies with sky background
                 stars.z_norm = z_norm + (stars.BKG - mu)
                 
@@ -1758,37 +1779,56 @@ def set_likelihood(data, mask_fit, psf, stars, method='2p',
                 image_tri += A10 * H10 + A01 * H01
 
             ypred = image_tri[~mask_fit].ravel()
-            residsq = (ypred - data)**2 / sigma**2
-            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
 
-            if not np.isfinite(loglike):
-                loglike = -1e100
-
-            return loglike
+            return calculate_loglikelihood(ypred, data, sigma)
         
         return loglike_3p
     
-    elif method=='sp':
+    else:
+        
         def loglike_sp(v):
-            n_s = v[:nspline]
-            theta_s = [theta_0] + (10**v[nspline:-2]).tolist()
-            mu, sigma = v[-2], 10**v[-1]
+            n_s = np.append(v[:n_spline], 4)
+            theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [1200]])
+            sigma = 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
 
-            image_tri = draw_func(psf, stars, psf_range=psf_range,
-                                  brightest_only=brightest_only,
-                                  parallel=parallel, draw_real=draw_real)
-            image_tri = image_tri + image_base + mu 
-
+            image_tri = draw_proposal(draw_func, psf, stars, image_base,
+                                      proposal=v, leg2d=leg2d,
+                                      psf_range=psf_range, psf_scale=pixel_scale,
+                                      brightest_only=brightest_only,
+                                      subtract_external=subtract_external,
+                                      parallel=parallel, draw_real=draw_real)
+            
             ypred = image_tri[~mask_fit].ravel()
-            residsq = (ypred - data)**2 / sigma**2
-            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
-
-            if not np.isfinite(loglike):
-                loglike = -1e100
+            loglike = calculate_likelihood(ypred, data, sigma)
 
             return loglike
         
         return loglike_sp
+
+def draw_proposal(draw_func, psf, stars, image_base,
+                  proposal=None, leg2d=False, **kwargs):
+    # Draw image and calculate log-likelihood
+    mu = proposal[-2] 
+    
+    image_tri = draw_func(psf, stars, **kwargs)
+    image_tri = image_tri + image_base + mu 
+
+    if leg2d:
+        A10, A01 = 10**proposal[-3], 10**proposal[-4]
+        image_tri += A10 * H10 + A01 * H01
+
+    return image_tri 
+    
+def calculate_likelihood(ypred, data, sigma):
+    # Calculate log-likelihood
+    residsq = (ypred - data)**2 / sigma**2
+    loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
+
+    if not np.isfinite(loglike):
+        loglike = -1e100
+        
+    return loglike
+    
         

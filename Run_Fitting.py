@@ -14,11 +14,12 @@ def main(argv):
     
     # Fitting Setup (default)
     n_cpu = 4
-    method = '3p'
+    n_spline = 2
     draw_real = True
-    brightest_only = True
+    brightest_only = False
     parallel = False 
     leg2d = False
+    fit_frac = False
     
     # Fitting Option (default)
     print_progress = True
@@ -36,11 +37,12 @@ def main(argv):
     
     # Get Script Options
     try:
-        optlists, args = getopt.getopt(argv, "f:b:n:r:c:m:I:BLCP",
-                                       ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=", "N_COMP=",
-                                        "R_SCALE=", "R_CORE=", "MAG_THRESHOLD=", "N_CPU=",
-                                        "BRIGHTEST_ONLY", "CONV", "PARALLEL", "NO_PRINT",
-                                        "W_STRIP=", "N_STRIP=", "DIR_NAME=", "DIR_MEASURE="])
+        optlists, args = getopt.getopt(argv, "f:b:n:r:c:m:I:BLFCP",
+                                       ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=",
+                                        "N_COMP=", "R_SCALE=", "R_CORE=", "MAG_THRESHOLD=",
+                                        "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", "CONV",
+                                        "NO_PRINT", "NO_SAVE", "W_STRIP=", "N_STRIP=",
+                                        "DIR_NAME=", "DIR_MEASURE="])
         opts = [opt for opt, arg in optlists]        
         
     except getopt.GetoptError:
@@ -65,20 +67,14 @@ def main(argv):
         elif opt in ("-b", "--IMAGE_BOUNDS"):    
             image_bounds0 = np.array(re.findall(r'\d+', arg), dtype=int)
         elif opt in ("-n", "--N_COMP"):
-            n_comp = np.int(arg)
-            if n_comp == 1:
-                method = 'p'
-            else:
-                if n_comp == 2:
-                    method = '2p'
-                elif n_comp == 3:
-                    method = '3p'
-                else:
-                    sys.exit("Not available model. Use: 'p','2p','3p'")
+            try:
+                n_spline = np.int(arg)
+            except ValueError:
+                sys.exit("Model Not Available.")
         elif opt in ("-r", "--r_SCALE"):
             R_norm = np.float(arg)
         elif opt in ("-c", "--R_CORE"):    
-            r_core = np.array(re.findall(r'\d+', arg), dtype=float)
+            r_core = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
         elif opt in ("-m", "--MAG_THRESHOLD"):    
             Mag_threshold = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
         elif opt in ("--W_STRIP"):
@@ -93,24 +89,27 @@ def main(argv):
             dir_measure = arg 
         
     if '-L' in opts: leg2d = True
-    if not (('-B' in opts)|("--BRIGHTEST_ONLY" in opts)): brightest_only = False
+    if '-F' in opts: fit_frac = True
+    if ('-B' in opts)|("--BRIGHTEST_ONLY" in opts): brightest_only = True
     if ('-C' in opts)|("--CONV" in opts): draw_real = False
     if ('-P' in opts)|("--PARALLEL" in opts): parallel = True
     if ("--NO_PRINT" in opts): print_progress = False
+    if ("--NO_SAVE" in opts): save = False
     
-    dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d"\
+    dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d_flux"\
                             %(band, r_scale, r_core[0], image_bounds0[0], image_bounds0[1]))
     if save:
         check_save_path(dir_name, make_new=False)
     
     # Run Fitting!
-    ds = Run_Fitting(hdu_path, image_bounds0, method,
-                     band=band, Mag_threshold=Mag_threshold,
-                     r_scale=r_scale, r_core=r_core, r_out=r_out,
+    ds = Run_Fitting(hdu_path, image_bounds0, n_spline, band,
+                     Mag_threshold=Mag_threshold, r_scale=r_scale,
+                     r_core=r_core, r_out=r_out,
+                     fit_frac=fit_frac, leg2d=leg2d,
                      pixel_scale=pixel_scale, n_cpu=n_cpu,
                      wid_strip=wid_strip, n_strip=n_strip,
                      parallel=parallel, draw_real=draw_real,
-                     brightest_only=brightest_only, leg2d=leg2d,
+                     brightest_only=brightest_only,
                      print_progress=print_progress, draw=draw,
                      save=save, dir_name=dir_name, dir_measure=dir_measure)
 
@@ -118,15 +117,16 @@ def main(argv):
 
     
 def Run_Fitting(hdu_path, image_bounds0,
-                method='2p', band="G",
+                n_spline=2, band="G",
                 Mag_threshold=[14,11], r_scale=12,
+                fit_frac=False, leg2d=False,
                 r_core=[36,24], r_out=None,
                 pad=100, pixel_scale=2.5, 
                 wid_strip=24, n_strip=48, 
                 n_cpu=None, parallel=False, 
-                brightest_only=True, leg2d=False,
-                print_progress=True, draw_real=True,
-                draw=True, save=False, dir_name='./',
+                brightest_only=True, draw_real=True,
+                draw=True, print_progress=True,
+                save=False, dir_name='./',
                 dir_measure='./Measure'):
     
     ############################################
@@ -146,8 +146,8 @@ def Run_Fitting(hdu_path, image_bounds0,
 
     n_s = np.array([n0, 4])                 # power index
     theta_s = np.array([theta_0, 1200])     # transition radius in arcsec
-
-    if method == 'p':
+    
+    if n_spline == 1:
         # Single-power PSF
         params_pow = {"fwhm":fwhm, "beta":beta, "frac":frac, "n":n0, 'theta_0':theta_0}
         psf = PSF_Model(params=params_pow, aureole_model='power')
@@ -346,23 +346,34 @@ def Run_Fitting(hdu_path, image_bounds0,
 
     # Make Priors
     prior_tf = set_prior(n_est=n0, mu_est=mu_patch, std_est=std_patch, leg2d=leg2d,
-                         n_min=1, theta_in=60, theta_out=300, method=method)
-   
-    if method=='2p':
+                         n_min=1, theta_in=50, theta_out=300, n_spline=n_spline)
+                         
+    if n_spline==1:
+        labels = [r'$n0$', r'$\mu$', r'$\log\,\sigma$']
+                         
+    elif n_spline==2:
         labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
-        if leg2d:
-            labels = np.insert(labels, 3, [r'$\log\,A_{01}}$', r'$\log\,A_{10}}$'])
             
-    elif method=='3p':
+    elif n_spline==3:
         labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$',
                   r'$\mu$', r'$\log\,\sigma$']
-        if leg2d:
-            labels = np.insert(labels, 5, [r'$\log\,A_{01}}$', r'$\log\,A_{10}}$'])
-            
+        
+    else:
+        labels = [r'$n_%d$'%d for d in range(n_spline)] \
+               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)] \
+               + [r'$\mu$', r'$\log\,\sigma$']
+        
+    if leg2d:
+        labels = np.insert(labels, -2, [r'$\log\,A_{01}$', r'$\log\,A_{10}$'])
+        
+    if fit_frac:
+        labels = np.insert(labels, -2, [r'$f_{pow}$'])
+
     ndim = len(labels)
+    method = str(n_spline)+'p'
     
-    loglike = set_likelihood(Y, mask_fit, psf_tri, stars_tri,
-                             method=method, psf_range=[360,720],
+    loglike = set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
+                             n_spline=n_spline, psf_range=[360,720], norm='flux',
                              z_norm=z_norm_stars, image_base=image_base,
                              brightest_only=brightest_only, leg2d=leg2d,
                              parallel=parallel, draw_real=draw_real)
@@ -370,12 +381,11 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Run & Plot
     ############################################
-    
     ds = DynamicNestedSampler(loglike, prior_tf, ndim, n_cpu=n_cpu)
     ds.run_fitting(nlive_init=50, nlive_batch=15, maxbatch=2, print_progress=print_progress)
     
     if save:
-        fit_info = {'method':method, 'image_size':image_size,
+        fit_info = {'n_spline':n_spline, 'image_size':image_size,
                     'image_bounds0':image_bounds0, 'leg2d':leg2d,
                     'r_core':r_core, 'r_scale':r_scale}
         
@@ -386,24 +396,23 @@ def Run_Fitting(hdu_path, image_bounds0,
         ds.save_result(fname+'.res', fit_info, dir_name=dir_name)
     
     ds.cornerplot(labels=labels, figsize=(18, 16), save=save, dir_name=dir_name, suffix='_'+method)
+    
+    # Plot recovered PSF
     ds.plot_fit_PSF1D(psf, n_bootstrap=800, Amp_max=Amp_m, r_core=r_core, leg2d=leg2d,
                       save=save, dir_name=dir_name, suffix='_'+method)
 
-    # Fitted PSF
+    # Recovered PSF
     psf_fit, params = ds.generate_fit(psf, stars0, image_base, leg2d=leg2d, n_out=4, theta_out=1200)
-
+    
+    # Calculate Chi^2
     cal_reduced_chi2((ds.image_fit[~mask_fit]).ravel(), Y, params)
+    
+    # Draw compaison
     ds.draw_comparison_2D(image, mask_fit, vmin=mu-1.5, vmax=mu+100,
                           save=save, dir_name=dir_name, suffix='_'+method)
     
     if leg2d:
-        im=plt.imshow(ds.bkg_fit, vmin=psf_fit.bkg-1-0.05, vmax=psf_fit.bkg-1+0.05)
-        colorbar(im)
-        if save:
-            plt.savefig(os.path.join(dir_name,'%s-Legendre2D_X%dY%d_%s.png'\
-                                     %(band, patch_Xmin0, patch_Ymin0, method)), dpi=80)
-        else:
-            plt.show()
+        ds.draw_background(self, save=save, dir_name=dir_name, suffix='_'+method)
 
     return ds
     
