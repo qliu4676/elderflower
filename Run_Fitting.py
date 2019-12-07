@@ -96,7 +96,7 @@ def main(argv):
     if ("--NO_PRINT" in opts): print_progress = False
     if ("--NO_SAVE" in opts): save = False
     
-    dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d_flux"\
+    dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d"\
                             %(band, r_scale, r_core[0], image_bounds0[0], image_bounds0[1]))
     if save:
         check_save_path(dir_name, make_new=False)
