@@ -37,14 +37,22 @@ def make_rand_color(n_color, seed=1234,
     return rand_colours
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
-                  r_core=24, r_out=None, vmin=884, vmax=1e3,
+                  r_core=None, r_out=None, vmin=None, vmax=None,
                   pad=0, save=False, dir_name='./'):
     """ Visualize mask map """
+    
     from matplotlib import patches
+    
+    mu = np.nanmedian(image)
+    std = mad_std(image)
+    if vmin is None:
+        vmin = mu - std
+    if vmax is None:
+        vmax = mu + 10*std
+    
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
     im1 = ax1.imshow(image, cmap='gray', norm=norm1, vmin=vmin, vmax=1e4, aspect='auto')
     ax1.set_title("Image")
-    colorbar(im1)
     
     n_label = seg_map.max()
     ax2.imshow(seg_map, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
@@ -56,22 +64,23 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     ax3.set_title("'Sky'")
     colorbar(im3)
     
-    if np.ndim(r_core) == 0:
-        r_core = [r_core, r_core]
+    if r_core is not None:
+        if np.ndim(r_core) == 0:
+            r_core = [r_core, r_core]
     
-    star_pos_A = stars.star_pos_verybright + pad
-    star_pos_B = stars.star_pos_medbright + pad
+        star_pos_A = stars.star_pos_verybright + pad
+        star_pos_B = stars.star_pos_medbright + pad
+
+        aper = CircularAperture(star_pos_A, r=r_core[0])
+        aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
+        aper = CircularAperture(star_pos_B, r=r_core[1])
+        aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
     
-    aper = CircularAperture(star_pos_A, r=r_core[0])
-    aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
-    aper = CircularAperture(star_pos_B, r=r_core[1])
-    aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
-    
-    if r_out is not None:
-        aper = CircularAperture(star_pos_A, r=r_out[0])
-        aper.plot(color='lime',lw=1.5,label="",alpha=0.9, axes=ax3)
-        aper = CircularAperture(star_pos_B, r=r_out[1])
-        aper.plot(color='c',lw=1.5,label="",alpha=0.7, axes=ax3)
+        if r_out is not None:
+            aper = CircularAperture(star_pos_A, r=r_out[0])
+            aper.plot(color='lime',lw=1.5,label="",alpha=0.9, axes=ax3)
+            aper = CircularAperture(star_pos_B, r=r_out[1])
+            aper.plot(color='c',lw=1.5,label="",alpha=0.7, axes=ax3)
     
     patch_size = image.shape[0] - pad * 2
     rec = patches.Rectangle((pad, pad), patch_size, patch_size, facecolor='none',
@@ -87,8 +96,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
-                        ma_example=None,
-                        r_core=24, vmin=884, vmax=1e3,
+                        ma_example=None, r_core=None, vmin=None, vmax=None,
                         pad=0, save=False, dir_name='./'):
     """ Visualize mask map w/ strips """
     
@@ -100,9 +108,16 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     if ma_example is not None:
         mask_strip, mask_cross = ma_example
     
+    mu = np.nanmedian(image)
+    std = mad_std(image)
+    if vmin is None:
+        vmin = mu - std
+    if vmax is None:
+        vmax = mu + 10*std
+        
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
     mask_strip[mask_cross.astype(bool)]=0.5
-    ax1.imshow(mask_strip, cmap="gray_r")
+    ax1.imshow(mask_strip, cmap="gray_r", aspect='auto')
     ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
     ax1.set_title("Strip/Cross")
     
@@ -117,11 +132,14 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_title("'Sky'")
     colorbar(im3)
-
-    aper = CircularAperture(star_pos_A, r=r_core[0])
-    aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
-    aper = CircularAperture(star_pos_B, r=r_core[1])
-    aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
+    
+    if r_core is not None:
+        if np.ndim(r_core) == 0:
+            r_core = [r_core, r_core]
+        aper = CircularAperture(star_pos_A, r=r_core[0])
+        aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
+        aper = CircularAperture(star_pos_B, r=r_core[1])
+        aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
 
     size = image.shape[0] - pad * 2
     rec = patches.Rectangle((pad, pad), size, size, facecolor='none',
@@ -206,11 +224,11 @@ def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_nam
     psf_core = psf.psf_core
     psf_aureole = psf.psf_aureole
     
-    star_psf = (1-frac) * psf_core + frac * psf_aureole
+    psf_star = psf.psf_star
     
     img_core = psf_core.drawImage(scale=pixel_scale, method="no_pixel")
     img_aureole = psf_aureole.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel")
-    img_star = star_psf.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel")
+    img_star = psf_star.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel")
     
     if figsize is not None:
         fig, ax = plt.subplots(1,1, figsize=figsize)
@@ -249,12 +267,15 @@ def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_nam
         plt.axhline(np.log10(comp1.max()/contrast),color="k",ls="--")
         
     plt.title("Model PSF",fontsize=14)
-    plt.ylim(-9, -0.5)
+    plt.ylim(-8.5, -0.5)
+    plt.xlim(r_rbin.min()*0.8, r_rbin.max()*1.2)
     
     plt.tight_layout()
     if save:
         plt.savefig(os.path.join(dir_name, "Model_PSF.png"), dpi=120)
         plt.close()
+        
+    return img_star
     
 def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
                    save=False, dir_name='.', figsize=None, **kwargs):
@@ -376,10 +397,12 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
-def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
+def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
                        r_core=None, vmin=None, vmax=None, cmap='gnuplot2',
                        save=False, dir_name=".", suffix=""):
     """ Compare data and fit in 2D """
+    
+    mask_fit = getattr(mask, 'mask_comb', mask.mask_deep)
     
     if vmin is None:
         vmin = np.median(image_fit[~mask_fit]) - 1
@@ -398,6 +421,7 @@ def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
+#     frac_diff[mask_fit] = 0
     im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="seismic")
     ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
     
@@ -410,10 +434,10 @@ def draw_comparison_2D(image_fit, data, mask_fit, image_star, noise_fit=0,
     ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
     
     if r_core is not None:
-        aper1 = CircularAperture([100,100], r=r_core[0])
-        aper1.plot(color='lime',lw=3,alpha=0.9, axes=ax6)
-        aper2 = CircularAperture([100,100], r=r_core[1])
-        aper2.plot(color='skyblue',lw=3,label="",alpha=0.7, axes=ax6)
+        aper1 = CircularAperture(mask.stars.star_pos_verybright, r=r_core[0])
+        aper1.plot(color='lime',lw=2,alpha=0.9, axes=ax6)
+        aper2 = CircularAperture(mask.stars.star_pos_medbright, r=r_core[1])
+        aper2.plot(color='skyblue',lw=2,label="",alpha=0.7, axes=ax6)
         
     plt.tight_layout()
     if save:
@@ -456,9 +480,6 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
     else:
         N_n = (len(pmed)-2+1)//2
         N_theta = len(pmed)-2-N_n
-        
-#     N_n = len([lab for lab in labels if "n" in lab])
-#     N_theta = len([lab for lab in labels if "theta" in lab])
 
     psf_fit = psf.copy()
     
@@ -546,3 +567,50 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
         plt.show()
         plt.close()
     
+def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
+                             bkg_sky=460, std_sky=2, pixel_scale=2.5, ZP=27.1,
+                             mag_name='MAG_AUTO_corr', figsize=(8,6)):
+    
+    r = np.logspace(0.03,3,100)
+    
+    z_mean_s, z_med_s = table_res_Rnorm['Imean'], table_res_Rnorm['Imed'] 
+    z_std_s, sky_mean_s = table_res_Rnorm['Istd'], table_res_Rnorm['Isky']
+    
+    plt.figure(figsize=figsize)
+    ax = plt.subplot(111)
+    
+    # adaptive colormap
+    cmap = plt.cm.plasma(np.linspace(0.01, 0.99, len(res_thumb)+np.sum(tab_target[mag_name]<10)+1))
+    ax.set_prop_cycle(plt.cycler('color', cmap))
+    
+    for i, (num, sky_m, mag) in enumerate(zip(list(res_thumb.keys())[::-1],
+                                         sky_mean_s[::-1],tab_target[mag_name][::-1])):
+        
+        if num in tab_target["NUMBER"]:
+            alpha = min(0.05*(18-mag), 0.8) 
+            errorbar = True if mag<10 else False
+            ms = max((15-mag), 0)
+            lw = max((12-mag), 1.5)
+        else:
+            alpha = 0.5; errorbar=False
+            ms, lw = 3, 3
+            
+        img, ma, cen = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
+        
+        r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma, dr=1.25,
+                                           ZP=ZP, sky_mean=bkg_sky, sky_std=std_sky,
+                                           xunit="pix", yunit="SB", errorbar=errorbar,
+                                           core_undersample=False, 
+                                           color=None, lw=lw, markersize=ms, alpha=alpha)
+        if i==0:
+            plt.text(3, I_rbin[np.argmin(abs(r_rbin-10))], '%s mag'%np.around(mag, 1))
+    else:
+        plt.text(14, I_rbin[np.argmin(abs(r_rbin-10))], '%s mag'%np.around(mag, 1))
+
+    I_sky = Intensity2SB(std_sky, 0, ZP=ZP, pixel_scale=pixel_scale)
+    plt.axhline(I_sky, color="k", ls="-.", alpha=0.5)
+    plt.text(1.1, I_sky+0.5, '1 $\sigma$', fontsize=10)
+    plt.ylim(30.5,16.5)
+    plt.xlim(1.,3e2)
+    plt.xscale('log')
+    plt.show()

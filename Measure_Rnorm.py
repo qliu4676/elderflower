@@ -8,26 +8,28 @@ def main(argv):
     # Default Parameters
     band = "G"
     save, draw = True, True
+    use_PS1_DR2 = False
     mag_thre, r_scale = 15, 12
     
     image_bounds = [[800, 1600, 1800, 2600],
                     [3100, 1400, 4100, 2400]]  # in image coords
     
     try:
-        opts, args = getopt.getopt(argv, "f:b:m:r:I:C:S:W:",
-                                   ["FILTER=", "IMAGE_BOUNDS=", "MAG_THRESHOLD=", "R_SCALE=", 
-                                    "IMAGE=", "SE_CATALOG=", "SEGMENT=", "WEIGHT=", "DIR_NAME="])
+        optlists, args = getopt.getopt(argv, "f:b:m:r:I:C:S:W:",
+                                       ["FILTER=", "IMAGE_BOUNDS=", "IMAGE=", 
+                                        "MAG_THRESHOLD=", "R_SCALE=", "PS",
+                                        "SE_CATALOG=", "SEGMENT=", "WEIGHT=", "DIR_NAME="])
+        opts = [opt for opt, arg in optlists]        
+        
     except getopt.GetoptError:
-        print('Wrong Option.')
-        sys.exit(2)
+        sys.exit('Wrong Option.')
     
-    for opt, arg in opts:
+    for opt, arg in optlists:
         if opt in ("-f", "--FILTER"):
             if arg in ["G", "R", "r", "g"]:
                 band = arg.upper()
             else:
-                print("Filter Not Available.")
-                sys.exit(1)
+                sys.exit("Filter Not Available.")
                 
     # Default Path
     hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
@@ -36,7 +38,7 @@ def main(argv):
     weight_map = "./SE_APASS/weight_NGC5907.fits"
     dir_name = './Measure'
         
-    for opt, arg in opts:
+    for opt, arg in optlists:
         if opt in ("-I", "--IMAGE"):
             hdu_path = arg
         elif opt in ("-b", "--IMAGE_BOUNDS"):    
@@ -53,13 +55,17 @@ def main(argv):
             weight_map = arg
         elif opt in ("--DIR_NAME"):
             dir_name = arg
-            check_save_path(dir_name, make_new=False)
+            
+    if ("--PS" in opts): use_PS1_DR2 = True 
+        
+    check_save_path(dir_name, make_new=False)
 
     # Run Measurement
     Match_Mask_Measure(hdu_path, seg_map, SE_catalog, image_bounds,
                        weight_map=weight_map, band=band,
                        r_scale=r_scale, mag_thre=mag_thre,
-                       draw=draw, save=save, dir_name=dir_name)
+                       draw=draw, use_PS1_DR2=use_PS1_DR2,
+                       save=save, dir_name=dir_name)
     return opts
     
     
@@ -73,11 +79,12 @@ def Match_Mask_Measure(hdu_path,
                        mag_thre=15,
                        draw=True,
                        save=True,
+                       use_PS1_DR2 = True,
                        dir_name='./Measure'):
     
     print("Measure the intensity at R = %d for stars < %.1f as normalization of fitting\n"%(r_scale, mag_thre))
-    
-    mag_name = band.lower() + 'mag'
+    b_name = band.lower()
+    mag_name = b_name + 'mag'
     obj_name = 'NGC5907-' + band
     image_bounds = np.atleast_2d(image_bounds)
     
@@ -105,6 +112,7 @@ def Match_Mask_Measure(hdu_path,
     try:
         BKG, ZP, pix_scale = np.array([header["BACKVAL"], header["REFZP"],
                                        header["PIXSCALE"]]).astype(float)
+        
         std = mad_std(data[seg_map==0&(weight_edge>0.5)]) 
         print("BACKVAL: %.2f , stddev: %.2f , ZP: %.2f , PIXSCALE: %.2f\n" %(BKG, std, ZP, pix_scale))
 
@@ -112,6 +120,7 @@ def Match_Mask_Measure(hdu_path,
         print("BKG / ZP / PIXSCALE missing in header --->")
         ZP = np.float(input("Input a value of ZP :"))
         BKG = np.float(input("Manually set a value of background :"))
+        std = np.float(input("Manually set a value of background RMS :"))
         data += BKG
         
     # Convert SE measured flux into mag
@@ -121,11 +130,13 @@ def Match_Mask_Measure(hdu_path,
     SE_cat_full["MAG_AUTO"] = np.around(mag, 5)
     
     field_bounds = [700, 700, data.shape[1]-700, data.shape[0]-700]
-    print("Match field %r with catalog\n"%field_bounds)
+    if not use_PS1_DR2:
+        print("Match field %r with catalog\n"%field_bounds)
     
     print("Measure Sky Patch (X min, Y min, X max, Y max) :")
     [print("%r"%b) for b in image_bounds.tolist()]
     
+    # Display field_bounds and sub-regions to be matched
     _, _ = crop_image(data, field_bounds, seg_map,
                       weight_map=weight_edge, sub_bounds=image_bounds, draw=draw)
 
@@ -133,21 +144,34 @@ def Match_Mask_Measure(hdu_path,
     # Crossmatch with Star Catalog (across the field)
     ############################################
 
-    # Crossmatch with PANSTRRS at a threshold of mag_thre mag
-    tab_target, tab_target_full, catalog_star = cross_match(header, SE_cat_full, field_bounds,
-                                                            mag_thre=mag_thre, mag_name=mag_name)
+    # Crossmatch with PANSTRRS at threshold of mag_thre mag
+    if use_PS1_DR2:
+        tab_target, tab_target_full, catalog_star = \
+                                cross_match_PS1_DR2(wcs_data, SE_cat_full, image_bounds,
+                                                    mag_thre=mag_thre, band='g')        
+    else:
+        tab_target, tab_target_full, catalog_star = \
+                                cross_match(wcs_data, SE_cat_full, image_bounds,
+                                            mag_thre=mag_thre, mag_name=mag_name)
 
-    # Calculate color correction of PANSTAR and DF
-    CT = calculate_color_term(tab_target_full, mag_name=mag_name+'_PS', draw=draw)
+    # Calculate color correction between PANSTARRS and DF filter
+    if use_PS1_DR2:
+        mag_name = mag_name_cat = b_name+'MeanPSFMag'
+    else:
+        mag_name_cat = mag_name+'_PS'
+        
+    CT = calculate_color_term(tab_target_full, mag_name=mag_name_cat, draw=draw)
     catalog_star["MAG_AUTO"] = catalog_star[mag_name] + CT
     
     # Save matched table and catalog
     if save:
-        tab_target_name = './%s/%s-catalog_match_%s%dmag.txt'%(dir_name, obj_name, mag_name[0], mag_thre)
-        tab_target["MAG_AUTO_corr"] = tab_target[mag_name+'_PS'] + CT
+        tab_target_name = os.path.join(dir_name,
+                                       '%s-catalog_match_%s%dmag.txt'%(obj_name, b_name, mag_thre))
+        tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
         tab_target.write(tab_target_name, overwrite=True, format='ascii')
 
-        catalog_star_name = './%s/%s-catalog_PS_%s_all.txt'%(dir_name, obj_name, mag_name[0])
+        catalog_star_name = os.path.join(dir_name,
+                                         '%s-catalog_PS_%s_all.txt'%(obj_name, b_name))
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
         print('Save the PANSTARRS catalog and matched sources in %s'%dir_name)
         
@@ -156,19 +180,20 @@ def Match_Mask_Measure(hdu_path,
     ############################################
     
     # Empirical enlarged aperture size from magnitude based on matched SE detection
-    estimate_radius = fit_empirical_aperture(tab_target_full, seg_map, mag_name=mag_name+'_PS',
-                                             mag_range=[10,20], K=2, degree=3, draw=draw)
+    estimate_radius = fit_empirical_aperture(tab_target_full, seg_map, mag_name=mag_name_cat,
+                                             mag_range=[13,20], K=2.5, degree=3, draw=draw)
     
     for image_bound in image_bounds:
         
         # Crop the star catalog and matched SE catalog
         patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = image_bound
+                                         
+        # Catalog bound slightly wider than the region
+        cat_bound = (patch_Xmin-50, patch_Ymin-50, patch_Xmax+50, patch_Ymax+50)
 
-        catalog_bound = (patch_Xmin-100, patch_Ymin-100, patch_Xmax+100, patch_Ymax+100)
-
-        catalog_star_patch = crop_catalog(catalog_star, catalog_bound, sortby=mag_name,
+        catalog_star_patch = crop_catalog(catalog_star, cat_bound, sortby=mag_name,
                                           keys=("X_IMAGE"+'_PS', "Y_IMAGE"+'_PS'))
-        tab_target_patch = crop_catalog(tab_target, catalog_bound, sortby='MAG_AUTO',
+        tab_target_patch = crop_catalog(tab_target, cat_bound, sortby=mag_name_cat,
                                         keys=("X_IMAGE", "Y_IMAGE"))
 
         # Make segmentation map from catalog based on SE seg map of one band
@@ -182,8 +207,10 @@ def Match_Mask_Measure(hdu_path,
         tab_res_Rnorm, res_thumb = measure_Rnorm_all(tab_target_patch, image_bound,
                                                      wcs_data, data, seg_map, 
                                                      r_scale=r_scale, mag_thre=mag_thre, 
-                                                     obj_name=obj_name, mag_name=mag_name+'_PS', 
+                                                     obj_name=obj_name, mag_name=mag_name_cat, 
                                                      read=False, save=save, dir_name=dir_name)
+        plot_bright_star_profile(tab_target_patch, tab_res_Rnorm, res_thumb, bkg_sky=BKG, std_sky=std)
+        
 
 if __name__ == "__main__":
     main(sys.argv[1:])

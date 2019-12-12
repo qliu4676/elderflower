@@ -28,26 +28,28 @@ def main(argv):
 
     # Measure Parameter
     r_scale = 12
-    Mag_threshold = [14,11]
+    mag_threshold = [14,10.5]
     
     # Mask Setup
-    r_core = [36, 24]
+    mask_type = 'radius'
+    r_core = [24, 24]
     r_out = None
+    SB_fit_thre = 26
     wid_strip, n_strip = 24, 48
     
     # Get Script Options
     try:
         optlists, args = getopt.getopt(argv, "f:b:n:r:c:m:I:BLFCP",
                                        ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=",
-                                        "N_COMP=", "R_SCALE=", "R_CORE=", "MAG_THRESHOLD=",
-                                        "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", "CONV",
-                                        "NO_PRINT", "NO_SAVE", "W_STRIP=", "N_STRIP=",
-                                        "DIR_NAME=", "DIR_MEASURE="])
+                                        "N_COMP=", "R_SCALE=", "MAG_THRE=",
+                                        "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=" 
+                                        "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", 
+                                        "NO_PRINT", "W_STRIP=", "N_STRIP=", "CONV",
+                                        "NO_SAVE", "DIR_NAME=", "DIR_MEASURE="])
         opts = [opt for opt, arg in optlists]        
         
     except getopt.GetoptError:
-        print('Wrong Option.')
-        sys.exit(2)
+        sys.exit('Wrong Option.')
     
     for opt, arg in optlists:
         if opt in ("-f", "--FILTER"):
@@ -73,10 +75,14 @@ def main(argv):
                 sys.exit("Model Not Available.")
         elif opt in ("-r", "--r_SCALE"):
             R_norm = np.float(arg)
+        elif opt in ("-m", "--MAG_THRE"):    
+            mag_threshold = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
+        elif opt in ("--MASK_TYPE"):    
+            mask_type = arg
         elif opt in ("-c", "--R_CORE"):    
             r_core = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
-        elif opt in ("-m", "--MAG_THRESHOLD"):    
-            Mag_threshold = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
+        elif opt in ("--SB_FIT_THRE"):    
+            SB_fit_thre = np.float(arg)
         elif opt in ("--W_STRIP"):
             wid_strip = np.float(arg)
         elif opt in ("--N_STRIP"):
@@ -96,31 +102,36 @@ def main(argv):
     if ("--NO_PRINT" in opts): print_progress = False
     if ("--NO_SAVE" in opts): save = False
     
-    dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d"\
-                            %(band, r_scale, r_core[0], image_bounds0[0], image_bounds0[1]))
+    if mask_type=='radius':
+        dir_name = os.path.join(dir_name, "NGC5907-%s-R%dM%dpix_X%dY%d"\
+                                %(band, r_scale, r_core[0], image_bounds0[0], image_bounds0[1]))
+    elif mask_type=='count':
+        dir_name = os.path.join(dir_name, "NGC5907-%s-R%dB%.1f_X%dY%d"\
+                                %(band, r_scale, SB_fit_thre, image_bounds0[0], image_bounds0[1]))
     if save:
         check_save_path(dir_name, make_new=False)
     
     # Run Fitting!
     ds = Run_Fitting(hdu_path, image_bounds0, n_spline, band,
-                     Mag_threshold=Mag_threshold, r_scale=r_scale,
-                     r_core=r_core, r_out=r_out,
-                     fit_frac=fit_frac, leg2d=leg2d,
+                     r_scale=r_scale, mag_threshold=mag_threshold, 
+                     mask_type=mask_type, SB_fit_thre=SB_fit_thre,
+                     r_core=r_core, r_out=r_out, leg2d=leg2d,
                      pixel_scale=pixel_scale, n_cpu=n_cpu,
                      wid_strip=wid_strip, n_strip=n_strip,
-                     parallel=parallel, draw_real=draw_real,
-                     brightest_only=brightest_only,
-                     print_progress=print_progress, draw=draw,
-                     save=save, dir_name=dir_name, dir_measure=dir_measure)
+                     brightest_only=brightest_only, draw_real=draw_real,
+                     parallel=parallel, print_progress=print_progress, 
+                     draw=draw, dir_measure=dir_measure,
+                     save=save, dir_name=dir_name)
 
     return opts
 
     
 def Run_Fitting(hdu_path, image_bounds0,
                 n_spline=2, band="G",
-                Mag_threshold=[14,11], r_scale=12,
+                r_scale=12, mag_threshold=[14,11], 
+                mask_type='radius', SB_fit_thre=24.5,
+                r_core=[24,24], r_out=None,
                 fit_frac=False, leg2d=False,
-                r_core=[36,24], r_out=None,
                 pad=100, pixel_scale=2.5, 
                 wid_strip=24, n_strip=48, 
                 n_cpu=None, parallel=False, 
@@ -179,7 +190,7 @@ def Run_Fitting(hdu_path, image_bounds0,
         header = hdul[0].header
         wcs_data = wcs.WCS(header)
     
-    # Backgroundlevel and estimated std
+    # Background level and Zero Point
     try:
         mu, ZP = np.array([header["BACKVAL"], header["REFZP"]]).astype(float)
         print("BACKVAL: %.2f , ZP: %.2f , PIXSCALE: %.2f\n" %(mu, ZP, pixel_scale))
@@ -196,15 +207,21 @@ def Run_Fitting(hdu_path, image_bounds0,
 
     patch0, seg_patch0 = crop_image(data, image_bounds0, draw=False)
 
-    # Read measurement for faint stars from catalog
+    # Magnitude name
     b_name = band.lower()
+    if 'PS' in dir_measure:
+        mag_name = b_name+'MeanPSFMag'
+    else:
+        mag_name = b_name+'mag'
+    
+    # Read measurement for faint stars from catalog
     fname_catalog = os.path.join(dir_measure, "NGC5907-%s-catalog_PS_%s_all.txt"%(band, b_name))
     if os.path.isfile(fname_catalog):
         tab_catalog = Table.read(fname_catalog, format="ascii")
     else:
         sys.exit("Table %s does not exist. Exit."%fname_catalog)
     
-    tab_faint = tab_catalog[(tab_catalog[b_name+"mag"]>=15) & (tab_catalog[b_name+"mag"]<23)]
+    tab_faint = tab_catalog[(tab_catalog[mag_name]>=15) & (tab_catalog[mag_name]<23)]
     tab_faint = crop_catalog(tab_faint, keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
                              bounds=image_bounds)
     tab_faint["FLUX_AUTO"] = 10**((tab_faint["MAG_AUTO"]-ZP)/(-2.5))
@@ -223,30 +240,29 @@ def Run_Fitting(hdu_path, image_bounds0,
     # Setup Stars
     ############################################
     # Positions & Flux of faint stars from SE
-    ma = tab_faint['FLUX_AUTO'].data.mask
+    try:
+        ma = tab_faint['FLUX_AUTO'].data.mask
+    except AttributeError:
+        ma = np.isnan(tab_faint['FLUX_AUTO'])
     star_pos1 = np.vstack([tab_faint['X_IMAGE_PS'].data[~ma],
                            tab_faint['Y_IMAGE_PS'].data[~ma]]).T - [patch_Xmin, patch_Ymin]
     Flux1 = np.array(tab_faint['FLUX_AUTO'].data[~ma])
+        
 
     # Positions & Flux (estimate) of faint stars from measured norm
-    star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE'],
-                           table_res_Rnorm['Y_IMAGE']]).T - [patch_Xmin, patch_Ymin]
+    star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE_PS'],
+                           table_res_Rnorm['Y_IMAGE_PS']]).T - [patch_Xmin, patch_Ymin]
 
     Flux2 = 10**((table_res_Rnorm["MAG_AUTO_corr"]-ZP)/(-2.5))
     
     # Estimate of brightness I at r_scale (I = Intensity - BKG) (and flux)
     # Background is slightly lowered (1 ADU). Note this is not affecting fitting.
     z_norm = table_res_Rnorm['Imean'].data - (mu-1)
-#     Flux2 = psf.I2Flux(z_norm, r=r_scale)
-
-    # Thresholds
-#     SB_threshold = np.array([27., 24])
-#     Flux_threshold = psf.SB2Flux(SB_threshold, BKG=mu, ZP=ZP, r=r_scale)
-#     print("\nSurface Brightness Thresholds: %r mag/arcsec^2 at %d pix"%(SB_threshold, r_scale))
     
-    Flux_threshold = 10**((Mag_threshold - ZP) / (-2.5))
+    Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
     SB_threshold = psf.Flux2SB(Flux_threshold, BKG=mu, ZP=ZP, r=r_scale)
-    print('Magnitude Thresholds:  {0}, {1} mag'.format(*Mag_threshold))
+    
+    print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
     print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
     print("(<=> Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 at {2} pix)\n"\
           .format(*np.around(SB_threshold,1),r_scale))
@@ -283,19 +299,22 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     mask = Mask(image0, stars0, image_size, pad=pad, mu=mu)
 
-    mask_base = "./Measure/Seg_PS_X%dY%d.fits" %(patch_Xmin0, patch_Ymin0)
-    if os.path.isfile(mask_base) is False:
-        print("%s doe not exist. Use source detection only."%mask_base)
-        mask_base = None
-        
-    mask.make_mask_map_dual(r_core=r_core, r_out=r_out, mask_base=mask_base,
-                            sn_thre=2.5, n_dilation=5, draw=True, save=save, dir_name=dir_name)
+    seg_base = "./Measure/Seg_PS_X%dY%d.fits" %(patch_Xmin0, patch_Ymin0)
+    
+    if mask_type=='count':
+        count = SB2Intensity(SB_fit_thre, mu, ZP, pixel_scale)[0]
+    
+    mask.make_mask_map_deep(by=mask_type, seg_base=seg_base,
+                            r_core=r_core, r_out=r_out, count=count,
+                            sn_thre=2.5, n_dilation=5, draw=True, 
+                            save=save, dir_name=dir_name)
     
     if stars0.n_verybright > 0:
         # S/N + Strip + Cross mask
-        mask.make_mask_strip(wid_strip, n_strip,
-                             dist_strip=image_size+pad*2, dist_cross=64,
-                             clean=True, draw=draw_real, save=save, dir_name=dir_name)
+        mask.make_mask_strip(wid_strip=wid_strip, n_strip=n_strip,
+                             dist_strip=image_size, dist_cross=72,
+                             clean=True, draw=draw_real,
+                             save=save, dir_name=dir_name)
         stars_b = mask.stars_new
         mask_fit = mask.mask_comb
         
@@ -313,7 +332,7 @@ def Run_Fitting(hdu_path, image_bounds0,
                          Flux_threshold=stars_b.Flux_threshold,
                          z_norm=stars_b.z_norm_verybright,
                          BKG=stars_b.BKG, r_scale=r_scale)
-        stars = stars_vb # for fit
+        stars = stars_vb # stars for fit
         print("\nOnly model brightest stars in the field.\n")
     else:
         stars = stars_b # for fit
@@ -327,26 +346,22 @@ def Run_Fitting(hdu_path, image_bounds0,
     X = np.array([psf.xx,psf.yy])
     Y = image[~mask_fit].copy().ravel()
     
-    # Sky Poisson Noise
-    try:
-        n_frame = np.int(header['NFRAMES'])
-    except KeyError:
-        n_frame = 1
-    std_poi = np.nanmedian(np.sqrt(Y/0.37/n_frame))
-    print("Sky Poisson Noise: %.3f"%std_poi)
+    # Compute Sky Poisson Noise
+    std_poi = compute_poisson_noise(Y, header=header)
     
     # Estimated mu and sigma used as prior
-    Y_clip = sigma_clip(image[~mask.mask_deep], sigma=3)
-    mu_patch, std_patch = np.mean(Y_clip), np.std(Y_clip)
-    print("Estimate of Background: %.3f +/- %.3f"%(mu_patch, std_patch))
+    Y_sky = sigma_clip(image[~mask.mask_base], sigma=3, maxiters=10)
+    mu_patch, std_patch = np.mean(Y_sky), np.std(Y_sky)
+    print("Estimate of Background: (%.3f, %.3f)"%(mu_patch, std_patch))
 
     ############################################
     # Priors and Likelihood Models for Fitting
     ############################################
 
     # Make Priors
-    prior_tf = set_prior(n_est=n0, mu_est=mu_patch, std_est=std_patch, leg2d=leg2d,
-                         n_min=1, theta_in=50, theta_out=300, n_spline=n_spline)
+    prior_tf = set_prior(n_est=n0, mu_est=mu, std_est=std_patch,
+                         n_spline=n_spline, leg2d=leg2d,
+                         n_min=1, theta_in=50, theta_out=300)
                          
     if n_spline==1:
         labels = [r'$n0$', r'$\mu$', r'$\log\,\sigma$']
@@ -366,14 +381,14 @@ def Run_Fitting(hdu_path, image_bounds0,
     if leg2d:
         labels = np.insert(labels, -2, [r'$\log\,A_{01}$', r'$\log\,A_{10}$'])
         
-    if fit_frac:
-        labels = np.insert(labels, -2, [r'$f_{pow}$'])
+#     if fit_frac:
+#         labels = np.insert(labels, -2, [r'$f_{pow}$'])
 
     ndim = len(labels)
     method = str(n_spline)+'p'
     
     loglike = set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
-                             n_spline=n_spline, psf_range=[360,720], norm='flux',
+                             n_spline=n_spline, psf_range=[360,720], norm='brightness',
                              z_norm=z_norm_stars, image_base=image_base,
                              brightest_only=brightest_only, leg2d=leg2d,
                              parallel=parallel, draw_real=draw_real)
@@ -381,8 +396,10 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Run & Plot
     ############################################
-    ds = DynamicNestedSampler(loglike, prior_tf, ndim, n_cpu=n_cpu)
-    ds.run_fitting(nlive_init=50, nlive_batch=15, maxbatch=2, print_progress=print_progress)
+    ds = DynamicNestedSampler(loglike, prior_tf, ndim,
+                              sample='auto', n_cpu=n_cpu)
+    ds.run_fitting(nlive_init=7*ndim, nlive_batch=2*ndim+2, 
+                   maxbatch=2, print_progress=print_progress)
     
     if save:
         fit_info = {'n_spline':n_spline, 'image_size':image_size,
@@ -400,15 +417,17 @@ def Run_Fitting(hdu_path, image_bounds0,
     # Plot recovered PSF
     ds.plot_fit_PSF1D(psf, n_bootstrap=800, Amp_max=Amp_m, r_core=r_core, leg2d=leg2d,
                       save=save, dir_name=dir_name, suffix='_'+method)
-
+    
     # Recovered PSF
-    psf_fit, params = ds.generate_fit(psf, stars0, image_base, leg2d=leg2d, n_out=4, theta_out=1200)
+    psf_fit, params = ds.generate_fit(psf, stars, image_base,
+                                      brightest_only=brightest_only,
+                                      leg2d=leg2d, n_out=4, theta_out=1200)
     
     # Calculate Chi^2
     cal_reduced_chi2((ds.image_fit[~mask_fit]).ravel(), Y, params)
     
     # Draw compaison
-    ds.draw_comparison_2D(image, mask_fit, vmin=mu-1.5, vmax=mu+100,
+    ds.draw_comparison_2D(image, mask, vmin=mu-psf_fit.bkg_std, vmax=mu+25*psf_fit.bkg_std,
                           save=save, dir_name=dir_name, suffix='_'+method)
     
     if leg2d:
