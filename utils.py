@@ -22,12 +22,6 @@ from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 
-from astropy.visualization.mpl_normalize import ImageNormalize
-from astropy.visualization import LogStretch, SqrtStretch, AsinhStretch
-norm0 = ImageNormalize(stretch=AsinhStretch())
-norm1 = ImageNormalize(stretch=LogStretch())
-norm2 = ImageNormalize(stretch=LogStretch())
-
 from photutils.segmentation import SegmentationImage
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
@@ -37,6 +31,10 @@ from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 import multiprocess as mp
 
+from plotting import AsinhNorm, LogNorm 
+norm0 = AsinhNorm()
+norm1 = LogNorm()
+norm2 = LogNorm()
 
 ### Baisc Funcs ###
 
@@ -1038,7 +1036,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds, radius=None, 
                         band='g', pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec):
     """ Use PANSTARRS DR2 API to do cross-match. Note this would be slower/"""
-    from PS1_DR2 import ps1cone
+    from API_PS1_DR2 import ps1cone
     band = band.lower()
     mag_name = band + 'MeanPSFMag'
     c_name = 'PS'
