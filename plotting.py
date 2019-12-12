@@ -1,9 +1,8 @@
-from modeling import *
+from utils import *
 
 from matplotlib import rcParams
 plt.rcParams['image.origin'] = 'lower'
 plt.rcParams['image.cmap'] = 'gnuplot2'
-# plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.serif"] = "Times New Roman"
 rcParams.update({'xtick.major.pad': '5.0'})
 rcParams.update({'xtick.major.size': '4'})
@@ -20,6 +19,15 @@ rcParams.update({'ytick.minor.width': '0.8'})
 rcParams.update({'axes.labelsize': 14})
 rcParams.update({'font.size': 14})
 
+def LogNorm():
+    from astropy.visualization import LogStretch
+    from astropy.visualization.mpl_normalize import ImageNormalize
+    return ImageNormalize(stretch=LogStretch())
+
+def AsinhNorm():
+    from astropy.visualization import AsinhStretch
+    from astropy.visualization.mpl_normalize import ImageNormalize
+    return ImageNormalize(stretch=AsinhStretch())
 
 def make_rand_cmap(n_label, rand_state = 12345):
     from photutils.utils import make_random_cmap
@@ -51,7 +59,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
         vmax = mu + 10*std
     
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
-    im1 = ax1.imshow(image, cmap='gray', norm=norm1, vmin=vmin, vmax=1e4, aspect='auto')
+    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(), vmin=vmin, vmax=1e4, aspect='auto')
     ax1.set_title("Image")
     
     n_label = seg_map.max()
@@ -60,7 +68,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
     image2 = image.copy()
     image2[mask_deep] = 0
-    im3 = ax3.imshow(image2, norm=norm2, vmin=vmin, vmax=vmax, aspect='auto') 
+    im3 = ax3.imshow(image2, norm=LogNorm(), vmin=vmin, vmax=vmax, aspect='auto') 
     ax3.set_title("'Sky'")
     colorbar(im3)
     
@@ -128,7 +136,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
 
     image3 = image.copy()
     image3[mask_comb] = 0
-    im3 = ax3.imshow(image3, norm=norm1, aspect='auto', vmin=vmin, vmax=vmax) 
+    im3 = ax3.imshow(image3, norm=LogNorm(), aspect='auto', vmin=vmin, vmax=vmax) 
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_title("'Sky'")
     colorbar(im3)
@@ -383,8 +391,8 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
         vmax = vmin + 11
         
     fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
-    im = ax1.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm1); colorbar(im)
-    im = ax2.imshow(image, vmin=vmin, vmax=vmax, norm=norm1); colorbar(im)
+    im = ax1.imshow(image_fit, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
+    im = ax2.imshow(image, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
     Diff = (image_fit-image)/image
     im = ax3.imshow(Diff, vmin=-0.1, vmax=0.1, cmap='seismic'); colorbar(im)
     ax1.set_title("Fit: I$_f$")
@@ -411,13 +419,13 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
     
-    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)    
+    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)    
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=norm0, cmap=cmap)    
+    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm, cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
@@ -426,11 +434,11 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
     
     residual = (data-image_star)
-    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     
     residual[mask_fit] = 0
-    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
     ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
     
     if r_core is not None:

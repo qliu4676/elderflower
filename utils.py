@@ -21,6 +21,7 @@ from astropy.modeling import models
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
+from astropy.visualization.mpl_normalize import ImageNormalize
 
 from photutils.segmentation import SegmentationImage
 from photutils import detect_sources, deblend_sources
@@ -30,11 +31,6 @@ import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 import multiprocess as mp
-
-from plotting import AsinhNorm, LogNorm 
-norm0 = AsinhNorm()
-norm1 = LogNorm()
-norm2 = LogNorm()
 
 ### Baisc Funcs ###
 
@@ -108,6 +104,14 @@ def compute_poisson_noise(data, n_frame=1, header=None, Gain=0.37):
     
 ### Plotting Helpers ###
 
+def LogNorm():
+    from astropy.visualization import LogStretch
+    return ImageNormalize(stretch=LogStretch())
+
+def AsinhNorm():
+    from astropy.visualization import AsinhStretch
+    return ImageNormalize(stretch=AsinhStretch())
+
 def vmin_3mad(img):
     """ lower limit of visual imshow defined by 3 mad above median """ 
     return np.median(img)-3*mad_std(img)
@@ -165,10 +169,10 @@ def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
 def display_background_sub(field, back):
     # Display and save background subtraction result with comparison 
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-    ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=norm1)
+    ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=LogNorm())
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
     colorbar(im2)
-    ax3.imshow(field - back, aspect="auto", cmap='gray', vmin=0., vmax=vmax_2sig(field - back),norm=norm2)
+    ax3.imshow(field - back, aspect="auto", cmap='gray', vmin=0., vmax=vmax_2sig(field - back),norm=LogNorm())
     plt.tight_layout()
 
 def source_detection(data, sn=2, b_size=120,
@@ -646,7 +650,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     if display:
         med_back = np.median(back)
         fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-        ax1.imshow(img_thumb, vmin=med_back-1, vmax=10000, norm=norm1, cmap="viridis")
+        ax1.imshow(img_thumb, vmin=med_back-1, vmax=10000, norm=LogNorm(), cmap="viridis")
         ax1.set_title("star", fontsize=16)
 
         ax2.imshow(segm_deblend, cmap=segm_deblend.make_cmap(random_state=12345))
@@ -654,7 +658,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
 
         img_thumb_ma = img_thumb.copy()
         img_thumb_ma[star_ma] = -1
-        ax3.imshow(img_thumb_ma, cmap="viridis", norm=norm2,
+        ax3.imshow(img_thumb_ma, cmap="viridis", norm=LogNorm(),
                    vmin=med_back-1, vmax=med_back+10*np.median(back_rms))
         ax3.set_title("extracted star", fontsize=16)
         plt.tight_layout()
@@ -685,7 +689,7 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
     
     if display:
         fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask_clean * image, cmap="gray", norm=norm1, vmin=I_med-5*I_std, vmax=I_med+5*I_std)
+        ax1.imshow(mask_clean * image, cmap="gray", norm=LogNorm(), vmin=I_med-5*I_std, vmax=I_med+5*I_std)
         ax2 = plt.hist(sigma_clip(z))
         plt.axvline(I_mean, color='k')
     
@@ -819,10 +823,10 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         sky_std = max(mad_std(sky[sky>sky_mean]),5)
 
         fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, norm=norm1, cmap="viridis",
+        plt.imshow(data, norm=LogNorm(), cmap="viridis",
                    vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
         if weight_map is not None:
-            plt.imshow(data*weight_map, norm=norm1, cmap="viridis",
+            plt.imshow(data*weight_map, norm=LogNorm(), cmap="viridis",
                        vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
         
         width = Xmax-Xmin, Ymax-Ymin
