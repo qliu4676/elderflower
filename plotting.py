@@ -425,7 +425,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)    
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm, cmap=cmap)    
+    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm(), cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
@@ -590,9 +590,9 @@ def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
     # adaptive colormap
     cmap = plt.cm.plasma(np.linspace(0.01, 0.99, len(res_thumb)+np.sum(tab_target[mag_name]<10)+1))
     ax.set_prop_cycle(plt.cycler('color', cmap))
-    
+
     for i, (num, sky_m, mag) in enumerate(zip(list(res_thumb.keys())[::-1],
-                                         sky_mean_s[::-1],tab_target[mag_name][::-1])):
+                                              sky_mean_s[::-1],tab_target[mag_name][::-1])):
         
         if num in tab_target["NUMBER"]:
             alpha = min(0.05*(18-mag), 0.8) 
@@ -612,8 +612,8 @@ def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
                                            color=None, lw=lw, markersize=ms, alpha=alpha)
         if i==0:
             plt.text(3, I_rbin[np.argmin(abs(r_rbin-10))], '%s mag'%np.around(mag, 1))
-    else:
-        plt.text(14, I_rbin[np.argmin(abs(r_rbin-10))], '%s mag'%np.around(mag, 1))
+    
+    plt.text(14, I_rbin[np.argmin(abs(r_rbin-10))], '%s mag'%np.around(mag, 1))
 
     I_sky = Intensity2SB(std_sky, 0, ZP=ZP, pixel_scale=pixel_scale)
     plt.axhline(I_sky, color="k", ls="-.", alpha=0.5)

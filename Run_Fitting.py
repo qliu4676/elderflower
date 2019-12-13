@@ -209,10 +209,7 @@ def Run_Fitting(hdu_path, image_bounds0,
 
     # Magnitude name
     b_name = band.lower()
-    if 'PS' in dir_measure:
-        mag_name = b_name+'MeanPSFMag'
-    else:
-        mag_name = b_name+'mag'
+    mag_name = b_name+'mag' if 'PS' in dir_measure else b_name+'MeanPSFMag'
     
     # Read measurement for faint stars from catalog
     fname_catalog = os.path.join(dir_measure, "NGC5907-%s-catalog_PS_%s_all.txt"%(band, b_name))
@@ -224,7 +221,6 @@ def Run_Fitting(hdu_path, image_bounds0,
     tab_faint = tab_catalog[(tab_catalog[mag_name]>=15) & (tab_catalog[mag_name]<23)]
     tab_faint = crop_catalog(tab_faint, keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
                              bounds=image_bounds)
-    tab_faint["FLUX_AUTO"] = 10**((tab_faint["MAG_AUTO"]-ZP)/(-2.5))
 
     # Read measurement for bright stars
     fname_res_Rnorm = os.path.join(dir_measure, "NGC5907-%s-norm_%dpix_%s15mag_X%dY%d.txt"\
@@ -235,6 +231,8 @@ def Run_Fitting(hdu_path, image_bounds0,
         sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
     
     table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=image_bounds0)
+    Iflag = table_res_Rnorm["Iflag"]
+    table_res_Rnorm = table_res_Rnorm[Iflag==0]    
 
     ############################################
     # Setup Stars

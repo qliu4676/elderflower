@@ -473,10 +473,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.figure(figsize=figsize)
         if yunit == "Intensity":  
             # plot radius in Intensity
-            plt.plot(r_rbin, np.log10(z_rbin), "-o", mec="k", lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label) 
+            plt.plot(r_rbin, np.log10(z_rbin), "-o", color=color,
+                     mec="k", lw=lw, ms=markersize, alpha=alpha, zorder=3, label=label) 
             if scatter:
-                plt.scatter(r[r<3*r_core], np.log10(z[r<3*r_core]), color=color, s=6, alpha=0.2, zorder=1)
-                plt.scatter(r[r>3*r_core], np.log10(z[r>3*r_core]), color=color, s=3, alpha=0.1, zorder=1)
+                I = np.log10(z)
+                
             if fill:
                 plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
                                  color=color, alpha=0.2, zorder=1)
@@ -492,14 +493,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
             plt.plot(r_rbin, I_rbin, "-o", mec="k",
                      lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label)   
-            
             if scatter:
                 I = Intensity2SB(I=z, BKG=np.median(back),
                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
-                plt.scatter(r[r<3*r_core], I[r<3*r_core],
-                            color=color, s=6, alpha=0.2, zorder=1)
-                plt.scatter(r[r>3*r_core], I[r>3*r_core],
-                            color=color, s=3, alpha=0.1, zorder=1)
                 
             if errorbar:
                 Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin,
@@ -520,6 +516,12 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.xscale("log")
             plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
             plt.ylim(30,17)
+        
+        if scatter:
+            plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, 
+                        s=markersize/2, alpha=0.2, zorder=1)
+            plt.scatter(r[r>=3*r_core], I[r>=3*r_core], color=color,
+                        s=markersize/4, alpha=0.1, zorder=1)
             
         plt.xlabel("r [acrsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
 
@@ -532,10 +534,6 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.axvline(r_satr,color="k",ls="--",alpha=0.9)
             plt.axvline(r_core,color="k",ls=":",alpha=0.9)
             plt.axhline(I_sky,color="gray",ls="-.",alpha=0.7)
-
-#             use_range = (r_rbin>r_satr) & (r_rbin<r_core)
-#         else:
-#             use_range = True
         
     if yunit == "Intensity":
         return r_rbin, z_rbin, logzerr_rbin
@@ -760,9 +758,6 @@ def measure_Rnorm_all(table, image_bound,
         for j, name in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
             table_res_Rnorm[name] = res_Rnorm[:,j]
         
-        # Remove dubious measurement in the model list
-        table_res_Rnorm = table_res_Rnorm[table_res_Rnorm["Iflag"]==0]
-        
         if save:
             check_save_path(dir_name, make_new=False, verbose=False)
             save_thumbs(res_thumb, res_thumb_name)
@@ -960,13 +955,12 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
         Cat_crop = crop_catalog(Cat_full, bounds, sortby=m_name,
                                 keys=("X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name))
         
-        # catalog magnitude (nan value masked with 99)
+        # catalog magnitude
         mag_cat = Cat_crop[m_name]
-        mag_cat[np.isnan(mag_cat)] = 99
         
         # Screen out bright stars (mainly for cleaning duplicate source in catalog)
-        Cat_bright = Cat_crop[mag_cat<mag_thre]
-        mag_cat.mask[mag_cat==99] = True
+        Cat_bright = Cat_crop[(mag_cat<mag_thre) & ~np.isnan(mag_cat)]
+        mag_cat.mask[np.isnan(mag_cat)] = True
         
         if clean_catalog:
             # Clean duplicate items in the catalog
@@ -995,6 +989,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                     row_duplicate = np.append(row_duplicate, k)
             
             Cat_crop.remove_rows(np.unique(row_duplicate))
+            #Cat_bright = Cat_crop[mag_cat<mag_thre]
             
         for m_name in magnitude_name[cat_name]:
             mag = Cat_crop[m_name]
@@ -1037,8 +1032,9 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     
     return tab_target, tab_target_all, Cat_crop
 
-def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds, radius=None, 
-                        band='g', pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec):
+def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
+                        band='g', radius=None, clean_catalog=True,
+                        pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec):
     """ Use PANSTARRS DR2 API to do cross-match. Note this would be slower/"""
     from API_PS1_DR2 import ps1cone
     band = band.lower()
@@ -1061,7 +1057,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds, radius=None,
         constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':23}
 
         # strip blanks and weed out blank and commented-out values
-        columns = """objID,raMean,decMean,nDetections,ng,nr,gMeanPSFMag,rMeanPSFMag""".split(',')
+        columns = """objID,raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,gMeanPSFMag,rMeanPSFMag""".split(',')
         columns = [x.strip() for x in columns]
         columns = [x for x in columns if x and not x.startswith('#')]
         results = ps1cone(ra, dec, radius.value, release='dr2', columns=columns, **constraints)
@@ -1071,6 +1067,8 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds, radius=None,
             col = filter+'MeanPSFMag'
             Cat_full[col].format = ".4f"
             Cat_full[col][Cat_full[col] == -999.0] = np.nan
+        for coord in ['ra','dec']:
+            Cat_full[coord+'MeanErr'].format = ".5f"
             
         #### Query PANSTARRS end ####
 
@@ -1084,11 +1082,56 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds, radius=None,
         Cat_crop = crop_catalog(Cat_full, bounds, sortby=mag_name,
                                 keys=("X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name))
         
-        # catalog magnitude (nan value masked with 99)
-        mag_cat = Cat_crop[mag_name]
+        # Remove detection without magnitude
+        has_mag = ~np.isnan(Cat_crop[mag_name])
+        Cat_crop = Cat_crop[has_mag]
         
-        # Screen out bright stars (mainly for cleaning duplicate source in catalog)
+        # Pick out bright stars
+        mag_cat = Cat_crop[mag_name]
         Cat_bright = Cat_crop[mag_cat<mag_thre]
+        
+        if clean_catalog:
+            # A first crossmatch with bright stars in catalog for cleaning
+            tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
+                                             RA_key="raMean", DE_key="decMean")
+            tab_match_bright.sort(mag_name)
+            
+            # Clean duplicate items in the catalog
+            c_bright = SkyCoord(tab_match_bright['X_WORLD'],
+                                tab_match_bright['Y_WORLD'], unit=u.deg)
+            c_catalog = SkyCoord(Cat_crop['raMean'], Cat_crop['decMean'], unit=u.deg)
+            idxc, idxcatalog, d2d, d3d = c_catalog.search_around_sky(c_bright, sep)
+            inds_c, counts = np.unique(idxc, return_counts=True)
+            
+            row_duplicate = np.array([], dtype=int)
+            
+            # Use the measurement with most detections in that band
+            for i in inds_c[counts>1]:
+                obj_dup = Cat_crop[idxcatalog][idxc==i]
+                #obj_dup.pprint(max_lines=-1, max_width=-1)
+                
+                # Use the detection with coordinate err <= 0.1
+                err_coord = np.sqrt(obj_dup["raMeanErr"]**2 + obj_dup["decMeanErr"]**2)
+                
+                for ID in obj_dup[(err_coord>0.25)]['ID'+'_'+c_name]:
+                    k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
+                    row_duplicate = np.append(row_duplicate, k)
+                
+                obj_dup = obj_dup[err_coord<=0.25]
+                if len(obj_dup)<=1:
+                    continue
+                    
+                # Use the detection with highest ng / nr
+                n_det = obj_dup['n'+band]
+                
+                for ID in obj_dup[n_det<np.max(n_det)]['ID'+'_'+c_name]:
+                    k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
+                    row_duplicate = np.append(row_duplicate, k)
+            
+            Cat_crop.remove_rows(np.unique(row_duplicate))
+            Cat_crop = Cat_crop[Cat_crop['n'+band]>0]
+            
+            Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_thre]
         
         # Merge Catalog
         SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
@@ -1150,7 +1193,7 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
         based on SE segmentation. Radius is enlarged K times."""
     
-    print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)."%(degree, K))
+    print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)"%(degree, K))
 
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)

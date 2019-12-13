@@ -16,7 +16,7 @@ dir_name = os.path.join('tmp', id_generator())
 check_save_path(dir_name)
 # dir_name = 'mp_mock'
 print_progress = True
-method = '3p'
+n_spline = 3
 n_thread = None
 n_cpu = 4
 
@@ -108,8 +108,8 @@ image = image + image_base + mu + noise_image
 mask = Mask(image, stars, image_size, mu=mu)
 
 # Core mask
-r_core_s = [48, 36]
-mask.make_mask_map_dual(r_core_s, sn_thre=2.5, n_dilation=3,
+r_core_s = [36, 36]
+mask.make_mask_map_dual(r_core_s, sn_thre=2.5, n_dilation=5,
                         draw=True, save=True, dir_name=dir_name)
 
 # Strip + Cross mask
@@ -133,23 +133,25 @@ print("\nEstimate of Background: (%.3f, %.3f)"%(mu_patch, std_patch))
 
 # Choose fitting parameterization
 prior_tf = set_prior(3.3, mu_patch, std_patch,
-                     theta_in=90, theta_out=500, method=method)
+                     theta_in=90, theta_out=500, n_spline=n_spline)
 
 loglike = set_likelihood(Y, mask_fit, psf, stars, image_base,
-                         psf_range=[320, 640], method=method, mock=True,
+                         psf_range=[320, 640], n_spline=n_spline, norm='flux',
                          brightest_only=True, parallel=False, draw_real=False)
 
-if method == '2p':
+if n_spline==2:
     labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
-    
-elif method == '3p':
-    labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$', r'$\mu$', r'$\log\,\sigma$']
-    
-elif method == 'sp':
-    nspline = 5
-    labels = [r'$n_%d$'%d for d in range(nspline)] \
-           + [r'$\theta_%d$'%(d+1) for d in range(nspline-1)] \
-           + [r'$\mu$', r'$\log\,\sigma$']
+
+elif n_spline==3:
+    labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$',
+              r'$\mu$', r'$\log\,\sigma$']
+
+if leg2d:
+    labels = np.insert(labels, -2, [r'$\log\,A_{01}$', r'$\log\,A_{10}$'])
+
+if fit_frac:
+    labels = np.insert(labels, -2, [r'$f_{pow}$'])
+
     
 ndim = len(labels)
 print("Labels: ", labels)
@@ -164,7 +166,7 @@ ds = DynamicNestedSampler(loglike, prior_tf, ndim,
 ds.run_fitting(nlive_init=min(20*(ndim-1),100), nlive_batch=25, maxbatch=2,
                print_progress=print_progress)
 
-ds.save_result(filename='Mock-fit_best_%s.res'%method,
+ds.save_result(filename='Mock-fit_best_%s.res'%(n_spline+'p'),
                dir_name=dir_name)
 
 ds.cornerplot(labels=labels, save=save, dir_name=dir_name, figsize=(22, 20))

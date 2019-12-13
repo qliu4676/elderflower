@@ -172,7 +172,9 @@ def Match_Mask_Measure(hdu_path,
 
         catalog_star_name = os.path.join(dir_name,
                                          '%s-catalog_PS_%s_all.txt'%(obj_name, b_name))
+        catalog_star["FLUX_AUTO"] = 10**((catalog_star["MAG_AUTO"]-ZP)/(-2.5))
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
+        
         print('Save the PANSTARRS catalog and matched sources in %s'%dir_name)
         
     ############################################
