@@ -73,8 +73,8 @@ def main(argv):
                 n_spline = np.int(arg)
             except ValueError:
                 sys.exit("Model Not Available.")
-        elif opt in ("-r", "--r_SCALE"):
-            R_norm = np.float(arg)
+        elif opt in ("-r", "--R_SCALE"):
+            r_scale = np.float(arg)
         elif opt in ("-m", "--MAG_THRE"):    
             mag_threshold = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
         elif opt in ("--MASK_TYPE"):    
@@ -209,7 +209,7 @@ def Run_Fitting(hdu_path, image_bounds0,
 
     # Magnitude name
     b_name = band.lower()
-    mag_name = b_name+'mag' if 'PS' in dir_measure else b_name+'MeanPSFMag'
+    mag_name = b_name+'MeanPSFMag' if 'PS' in dir_measure else b_name+'mag'
     
     # Read measurement for faint stars from catalog
     fname_catalog = os.path.join(dir_measure, "NGC5907-%s-catalog_PS_%s_all.txt"%(band, b_name))
@@ -301,7 +301,8 @@ def Run_Fitting(hdu_path, image_bounds0,
     
     if mask_type=='count':
         count = SB2Intensity(SB_fit_thre, mu, ZP, pixel_scale)[0]
-    
+    else:
+	count = None
     mask.make_mask_map_deep(by=mask_type, seg_base=seg_base,
                             r_core=r_core, r_out=r_out, count=count,
                             sn_thre=2.5, n_dilation=5, draw=True, 
