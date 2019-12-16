@@ -729,12 +729,37 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
                       r_scale=10, width=0.5, mag_thre=15,
-                      read=False, save=True,
-                      mag_name='rmag_PS', obj_name="",
+					  mag_name='rmag_PS', read=False,
+					  save=True, obj_name="",
                       dir_name='.', verbose=True):
-    """ Measure normalization at r_scale for bright stars in table.
-        If seg_map is not given, source detection will be run."""
-    
+    """
+    Measure normalization at r_scale for bright stars in table.
+    If seg_map is not given, source detection will be run.
+
+    Parameters
+    ----------
+    table : table containing list of sources
+	image_bound : 1X4 1d array defining the bound of region
+	wcs_data : wcs
+	image : image data
+	
+	seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
+	r_scale : radius at which the flux scaling is measured (default: 10)
+	width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
+	mag_name : magnitude column name
+	mag_thre : magnitude threshold below which are measured
+	read : whether to read existed outputs
+	save : whether to save output table and thumbnails
+	obj_name : object name used as prefix of saved output
+	dir_name : path of saving 
+	
+    Returns
+    ----------
+    table_res_Rnorm : table containing measurement results
+    res_thumb : thumbnails of image, mask, background and center of object, stored as dictionary
+        
+    """
+
     Xmin, Ymin = image_bound[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%s%dmag_X%sY%s.txt'\
@@ -798,6 +823,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
 
 def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
                sub_bounds=None, origin=1, color="w", draw=False):
+    """ Crop the data (and segm map if given) with the given bouds. """
     from matplotlib import patches  
     Xmin, Ymin, Xmax, Ymax = bounds
     xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
@@ -1035,7 +1061,27 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
                         band='g', radius=None, clean_catalog=True,
                         pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec):
-    """ Use PANSTARRS DR2 API to do cross-match. Note this would be slower/"""
+    """
+    Use PANSTARRS DR2 API to do cross-match with the SE source catalog. Note this could be slower compared to cross-match using Vizier because the API use web scratching..
+    
+    Parameters
+    ----------
+    wcs_data : wcs of data
+	SE_catalog : SE source catalog
+	image_bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
+	
+	radius : radius (in astropy unit) of search to PS-1 catalog. If not given, use the half diagonal length of the region.
+	clean_catalog : whether to clean the matched catalog. The PS-1 catalog contains duplicate items on a single source with different measurements. If True, duplicate items of bright sources will be cleaned by removing those with large coordinate errors and pick the items with most detections in that band (default True).
+	mag_thre : magnitude threshould defining bright stars.
+	sep : maximum separation (in astropy unit) for crossmatch with SE.
+    
+	Returns
+    ----------
+    tab_target : table containing matched bright sources with SE source catalog
+    tab_target_all : table containing matched all sources with SE source catalog
+	Cat_crop : PS-1 catalog of all sources in the region(s)
+        
+    """
     from API_PS1_DR2 import ps1cone
     band = band.lower()
     mag_name = band + 'MeanPSFMag'
@@ -1165,7 +1211,22 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
         
 
 def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
-    """ Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and matched mag. """
+    """
+	Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
+	
+	Parameters
+    ----------
+	tab_target : full matched source catlog
+	
+	mag_range : range of magnitude for stars to be used
+	mag_name : column name of magnitude in tab_target 
+	draw : whethert to draw a plot showing MAG_AUTO vs diff.
+	
+	Returns
+    ----------
+	CT : color correction term (SE - catlog)
+	"""
+	
     mag = tab_target["MAG_AUTO"]
     mag_cat = tab_target[mag_name]
     d_mag = tab_target["MAG_AUTO"] - mag_cat
@@ -1188,21 +1249,38 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
         
     return np.around(CT,5)
 
-def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
+def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
                            mag_range=[13, 20], K=2, degree=3, draw=True):
-    """ Fit an empirical curve for log radius of aperture on magnitude of stars in mag_range
-        based on SE segmentation. Radius is enlarged K times."""
+    """
+	Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
+	
+	Parameters
+    ----------
+	tab_target : full matched source catlog
+	seg_map : training segm map
+	
+	mag_name : column name of magnitude in tab_target 
+	mag_range : range of magnitude for stars to be used
+	K : enlargement factor on the original segm map
+	degree : degree of polynomial (default 3)
+	draw : whether to draw log R vs mag
+	
+	Returns
+    ----------
+	estimate_radius : a function turns magnitude into log R
+	
+	"""
     
     print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)"%(degree, K))
 
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)
-    R_aper = (segm_deb.get_areas(tab_SE["NUMBER"])/np.pi)**0.5
-    tab_SE['logR'] = np.log10(K * R_aper)
+    R_aper = (segm_deb.get_areas(tab_target["NUMBER"])/np.pi)**0.5
+    tab_target['logR'] = np.log10(K * R_aper)
     
-    mag_match = tab_SE[mag_name]
+    mag_match = tab_target[mag_name]
     mag_match[np.isnan(mag_match)] = -1
-    tab = tab_SE[(mag_match>mag_range[0])&(mag_match<mag_range[1])]
+    tab = tab_target[(mag_match>mag_range[0])&(mag_match<mag_range[1])]
 
     mag_all = tab[mag_name]
     logR = tab['logR']
@@ -1210,7 +1288,7 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
     f_poly = np.poly1d(p_poly)
 
     if draw:
-        plt.scatter(tab_SE[mag_name], tab_SE['logR'], s=8, alpha=0.2, color='gray')
+        plt.scatter(tab_target[mag_name], tab_target['logR'], s=8, alpha=0.2, color='gray')
         plt.scatter(mag_all, logR, s=8, alpha=0.2, color='k')
         
     mag_ls = np.linspace(6,23)
@@ -1245,7 +1323,26 @@ def fit_empirical_aperture(tab_SE, seg_map, mag_name='rmag_PS',
 def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
                            mag_name='rmag', cat_name='PS',
                            draw=True, save=False, dir_name='./Measure'):
-    """ Make segmentation , aperture size from SE is fit based on SE"""
+    """
+	Make segmentation map from star catalog. Aperture size used is based on SE semg map.
+	
+	Parameters
+    ----------
+	catalog_star : star catalog
+	image_bound : 1X4 1d array defining bounds of region
+	estimate_radius : function of turning magnitude into log R
+	
+	mag_name : magnitude column name in catalog_star
+	cat_name : suffix of star catalog used 
+	draw : whether to draw the output segm map
+	save : whether to save the segm map as fits
+	dir_name : path of saving
+	
+    Returns
+	----------
+	seg_map_catalog : output segm map generated from catalog
+	
+	"""
     try:
         catalog = catalog_star[~catalog_star[mag_name].mask]
     except AttributeError:
