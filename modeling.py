@@ -17,10 +17,19 @@ from copy import deepcopy
 from types import SimpleNamespace    
 
 class PSF_Model:
+	""" A PSF Model object """
+	
     def __init__(self, params=None,
-                 core_model='Moffat',
+                 core_model='moffat',
                  aureole_model='power'):
-        
+        """
+		Parameters
+		----------
+		params : a dictionary containing keywords of PSF parameter
+		core_model : model of PSF core (moffat)
+		aureole_model : model of aureole ("power" or "multi-power")	
+		
+		"""
         self.core_model = core_model
         self.aureole_model = aureole_model
         
@@ -39,6 +48,7 @@ class PSF_Model:
             self.params['fwhm'] = self.fwhm
                 
     def make_grid(self, image_size, pixel_scale=2.5):
+		""" Build grid for drawing """
         self.image_size = image_size
         self.yy, self.xx = np.mgrid[:image_size, :image_size]
         self.cen = ((image_size-1)/2., (image_size-1)/2.)
@@ -50,7 +60,7 @@ class PSF_Model:
                 exec('self.' + key + '_pix' + ' = val')
                 
     def update(self, params):
-        # Update PSF parameters from dictionary keys 
+        """ Update PSF parameters from dictionary keys """
         for key, val in params.items():
             if np.ndim(val) > 0:
                 val = np.array(val)
@@ -63,6 +73,7 @@ class PSF_Model:
                 exec('self.' + key + '_pix' + ' = val')
                 
     def copy(self):
+		""" A deep copy of the object """
         return deepcopy(self)            
 
     @property
@@ -88,7 +99,7 @@ class PSF_Model:
 
 
     def plot1D(self, **kwargs):
-        """ Plot analytical 1D profile """
+        """ Plot 1D profile """
         from plotting import plot_PSF_model_1D
         
         plot_PSF_model_1D(self.frac, self.f_core1D, self.f_aureole1D, **kwargs)
@@ -98,9 +109,7 @@ class PSF_Model:
                 plt.axvline(t, ls="--", color="k", alpha=0.3, zorder=1)
                 
     def generate_core(self, folding_threshold=1.e-10):
-        """
-        Generate Galsim PSF of core.
-        """
+        """ Generate Galsim PSF of core. """
         self.fwhm = self.gamma * 2. * math.sqrt(2**(1./self.beta)-1)
         gsparams = galsim.GSParams(folding_threshold=folding_threshold)
         psf_core = galsim.Moffat(beta=self.beta, fwhm=self.fwhm,
@@ -131,6 +140,7 @@ class PSF_Model:
         ----------
         psf_aureole: power law Galsim PSF, flux normalized to be 1.
         psf_size: Size of PSF used. In pixel.
+		
         """
 
         
@@ -182,14 +192,14 @@ class PSF_Model:
         
     def Flux2Amp(self, Flux):
         """ Convert Flux to Astropy Moffat Amplitude (pixel unit) """
+		
         Amps = [moffat2d_Flux2Amp(self.gamma_pix, self.beta, Flux=(1-self.frac)*F)
                 for F in Flux]
         return np.array(Amps)
     
     
     def I2I0(self, I, r=10):
-        """ Convert I(r) at r to I0 with power law.
-        r in pixel """
+        """ Convert aureole I(r) at r to I0. r in pixel """
         
         if self.aureole_model == "power":
             return I2I0_pow(self.n, self.theta_0_pix, r, I=I)
@@ -198,8 +208,7 @@ class PSF_Model:
             return I2I0_mpow(self.n_s, self.theta_s_pix, r, I=I)
         
     def I02I(self, I0, r=10):
-        """ Convert I(r) at r to I0 with power law.
-        r in pixel """
+        """ Convert aureole I(r) at r to I0. r in pixel """
         
         if self.aureole_model == "power":
             return I02I_pow(self.n, self.theta_0_pix, r, I0=I0)
@@ -208,7 +217,14 @@ class PSF_Model:
             return I02I_mpow(self.n_s, self.theta_s_pix, r, I0=I0)
     
     def calculate_external_light(self, stars, n_iter=2):
-        """ Calculate external scatter light that affects I at norm """
+        """ Calculate the integrated external scatter light that affects the flux scaling from very bright stars on the other stars.
+		
+		Parameters
+        ----------
+		stars : Star object
+		n_iter : iteration time to do the calculation
+		
+		"""
         I_ext = np.zeros(stars.n_bright)
         z_norm_verybright0 = stars.z_norm_verybright
         pos_source, pos_eval = stars.star_pos_verybright, stars.star_pos_bright
@@ -230,8 +246,7 @@ class PSF_Model:
         return I_ext
     
     def I2Flux(self, I, r=10):
-        """ Convert I(r) at r to total flux with power law.
-        r in pixel """
+        """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "power":
             return I2Flux_pow(self.frac, self.n, self.theta_0_pix, r, I=I)
@@ -240,8 +255,7 @@ class PSF_Model:
             return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I=I)
         
     def Flux2I(self, Flux, r=10):
-        """ Convert I(r) at r to total flux with power law.
-        r in pixel """
+        """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "power":
             return Flux2I_pow(self.frac, self.n, self.theta_0_pix, r, Flux=Flux)
@@ -250,33 +264,40 @@ class PSF_Model:
             return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
         
     def SB2Flux(self, SB, BKG, ZP, r=10):
-        # Intensity = I + BKG
+         """ Convert suface brightness SB at r to total flux, given background value and ZP. """
+		# Intensity = I + BKG
         I = SB2Intensity(SB, BKG, ZP, self.pixel_scale) - BKG
         return self.I2Flux(I, r=r)
     
     def Flux2SB(self, Flux, BKG, ZP, r=10):
+		""" Convert total flux to suface brightness SB at r, given background value and ZP. """
         I = self.Flux2I(Flux, r=r)
         return Intensity2SB(I+ BKG, BKG, ZP, self.pixel_scale)
     
     @property
     def psf_star(self):
+		""" Galsim object of star psf (core+aureole) """
         frac = self.frac
         psf_core, psf_aureole = self.psf_core, self.psf_aureole
         return (1-frac) * psf_core + frac * psf_aureole
     
 
     def plot_PSF_model_galsim(self, contrast=None, save=False, dir_name='.'):
-        """ Plot Galsim 2D model averaged in 1D """
+        """ Build and plot Galsim 2D model averaged in 1D """
         from plotting import plot_PSF_model_galsim
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
                                           save=save, dir_name=dir_name)
         self.image_psf = image_psf
     
-    def write_psf_image(self, image_psf, filename='PSF_model.fits'):
+	@staticmethod
+    def write_psf_image(image_psf, filename='PSF_model.fits'):
+		""" Write the 2D psf image to fits """
         hdu = fits.ImageHDU(image_psf)
         hdu.writeto(filename, overwrite=True)
     
-    def draw_core2D_in_real(self, star_pos, Flux=None):
+    def draw_core2D_in_real(self, star_pos, Flux):
+		""" 2D drawing function of the core in real space given positions and flux (of core) of target stars """
+		
         gamma, alpha = self.gamma_pix, self.beta
         Amps = np.array([moffat2d_Flux2Amp(gamma, alpha, Flux=flux)
                        for flux in Flux])
@@ -287,7 +308,8 @@ class PSF_Model:
         return f_core_2d_s
         
     def draw_aureole2D_in_real(self, star_pos, Flux=None, I0=None):
-        
+        """ 2D drawing function of the aureole in real space given positions and flux / amplitude (of aureole) of target stars """
+		
         if self.aureole_model == "power":
             n = self.n
             theta_0_pix = self.theta_0_pix
@@ -326,16 +348,26 @@ class PSF_Model:
 
     
 class Stars:
-    """ Class storing positions & flux of faint/medium-bright/bright stars"""
+    """
+	Class storing positions & flux of faint/medium-bright/bright stars
+	
+	"""
     def __init__(self, star_pos, Flux, 
                  Flux_threshold=[7e4, 2.7e6],
                  z_norm=None, r_scale=12, BKG=0,
                  verbose=False):
         """
-        star_pos: positions of stars
-        Flux: flux of stars
+		Parameters
+        ----------
+        star_pos: positions of stars (in the region)
+        Flux: flux of stars (in ADU)
+		
         Flux_threshold : thereshold of flux
                 (default: corresponding to [15, 11] mag for DF)
+		z_norm : flux scaling measured at r_scale
+		r_scale : radius at which to measure the flux scaling
+		BKG : sky background value
+				
         """
         self.star_pos = np.atleast_2d(star_pos)
         self.Flux = np.atleast_1d(Flux)
@@ -379,7 +411,7 @@ class Stars:
     def from_znorm(cls, psf, star_pos, z_norm,
                    z_threshold=[9, 300], r_scale=12, 
                    verbose=False):
-        
+        """ Star object built from intensity at r_scale instead of flux """
         Flux = psf.I2Flux(z_norm, r_scale)
         Flux_threshold = psf.I2Flux(z_threshold, r=r_scale)
         
@@ -453,7 +485,7 @@ class Stars:
         return deepcopy(self) 
     
     def remove_outsider(self, image_size, d=[24,12], verbose=False):
-        """ Remove some stars far out of field. """
+        """ Remove out-of-field stars far from the edge. """
         star_pos = self.star_pos
         Flux = self.Flux
 
@@ -469,8 +501,19 @@ class Stars:
         
 
 class Mask:
-    """ Maksing of stars"""
-    def __init__(self, image, stars, image_size, pad=0, mu=0):
+    """ Maksing of stars """
+    def __init__(self, image, stars, image_size, pad=100, mu=None):
+		"""
+		Parameters
+        ----------
+		image : image data
+		stars : Star object
+		image_size : image size
+		
+		pad : padding size of the image (default: 100)
+		mu : estimate of background value (only for drawing)
+		
+		"""
         self.image = image
         self.stars = stars
         self.image_size = image_size
@@ -502,6 +545,26 @@ class Mask:
     def make_mask_map_deep(self, by='radius', seg_base=None, 
                            r_core=None, r_out=None, count=None,
                            draw=True, save=False, dir_name='.', **kwargs):
+		"""
+		Make deep mask map of bright stars based on either of:
+		(1) aperture (2) brightness
+		The mask map is then combined with a base segm map (if given) (for masking sources below S/N threshold) and a S_N seg map (for masking bright sources/features not contained in the catalog)
+		
+		
+		Parameters
+        ----------
+		by : mask type
+			"radius": aperture-like masking
+			"brightness": brightness-limit masking
+		seg_base : base segm map generated by catalog
+		r_core : core radius of [medium, very bright] stars to be masked
+		count : absolute count (in ADU) above which is masked		
+		draw : whether to draw mask map
+		save : whether to save the image
+		dir_name : path of saving
+		
+		"""
+		
         image = self.image
         stars = self.stars
         pad = self.pad
@@ -537,8 +600,27 @@ class Mask:
     def make_mask_strip(self, n_strip=24,
                         wid_strip=16, dist_strip=500,
                         wid_cross=10, dist_cross=72,
-                        draw=True, clean=True,
+                        clean=True, draw=True, 
                         save=False, dir_name='.'):
+		
+		"""
+		Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
+		Note: make_mask_map_deep() should be run first.
+		
+		Parameters
+        ----------
+		n_strip : number of each strip mask
+		wid_strip : width of each strip mask
+		dist_strip : furthest range of each strip mask
+		wid_cross : half-width of spike mask
+		dist_cross: furthest range of each spike mask
+		clean : whether to remove medium bright stars far from any available pixels for fitting. A new Stars object will be stored in stars_new, otherwise it is simply a copy.
+		draw : whether to draw mask map
+		save : whether to save the image
+		dir_name : path of saving
+		
+		"""
+		
         if hasattr(self, 'mask_deep0') is False:
             return None
         
@@ -1337,14 +1419,36 @@ def generate_image_by_flux(psf, stars,
                            psf_range=[None,None],
                            min_psf_range=120,
                            max_psf_range=1200,
-                           psf_scale=None,
+                           psf_scale=2.5,
                            parallel=False,
                            draw_real=True,
                            n_real=2.5,
                            subtract_external=False,
                            brightest_only=False,
                            interpolant='cubic'):
-
+	"""
+	Generate the image by total flux, given the PSF object and Star object.
+	
+	Parameters
+    ----------
+	psf : PSF model describing the PSF model shape
+	stars : Star model describing positions and scaling of stars 
+	contrast : Ratio of the intensity at max range and at center. Used to calculate the PSF size if not given.
+	psf_range : full range of PSF size (in arcsec) for drawing [medium, very] bright stars in convolution. Use contrast if not given. 
+	min_psf_range : Minimum range of PSF if a contrast is used. In arcsec.
+	max_psf_range : Maximum range of PSF if a contrast is used. In arcsec.
+	psf_scale : pixel scale of PSF. iN arcsec/pixel. Default to DF pixel scale.
+	parallel : whether to run drawing for medium bright stars in parallel.
+	draw_real : whether to draw very bright stars in real.
+	n_real : first power index below which stars will be draw by conv.
+	brightest_only : whether to draw very bright stars only.
+	interpolant : Interpolant method in Galsim.
+	
+	Returns
+    ----------
+	image : drawn image
+	
+	"""
     image_size = psf.image_size
     yy, xx = psf.yy, psf.xx
     
@@ -1450,7 +1554,30 @@ def generate_image_by_znorm(psf, stars,
                             subtract_external=True,
                             draw_core=False,
                             interpolant='lanczos3'):
-
+	"""
+	Generate the image by flux scaling, given the PSF object and Star object.
+	
+	Parameters
+    ----------
+	psf : PSF model describing the PSF model shape
+	stars : Star model describing positions and scaling of stars 
+	contrast : Ratio of the intensity at max range and at center. Used to calculate the PSF size if not given.
+	psf_range : full range of PSF size (in arcsec) for drawing [medium, very] bright stars in convolution. Use contrast if not given. 
+	min_psf_range : Minimum range of PSF if a contrast is used. In arcsec.
+	max_psf_range : Maximum range of PSF if a contrast is used. In arcsec.
+	psf_scale : pixel scale of PSF. iN arcsec/pixel. Default to DF pixel scale.
+	parallel : whether to run drawing for medium bright stars in parallel.
+	draw_real : whether to draw very bright stars in real.
+	brightest_only : whether to draw very bright stars only.
+	draw_core : whether to draw the core for very bright stars in real.
+	subtract_external : whether to subtract external scattter light from very bright stars.
+	interpolant : Interpolant method in Galsim.
+	
+	Returns
+    ----------
+	image : drawn image
+	
+	"""
     image_size = psf.image_size
     yy, xx = psf.yy, psf.xx
     
@@ -1598,15 +1725,32 @@ def generate_image_fit(psf_fit, stars, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, theta_in=90, theta_out=600, 
+              n_min=1, d_n0=0.3, theta_in=60, theta_out=300, 
               nspline=None, std_poi=None, leg2d=False, **kwargs):
     
-    """ Setup priors for models. Estimate of the first power index, background and uncertainty
-    should be given.
-        n_min: minium power index
-        d_n0: half range of prior in n_0 
-        std_poi: poisson noise as minimum noise
-        """
+    """
+	Setup prior transforms for models. 
+	
+	Parameters
+    ----------
+	n_est : estimate of the first power-law index, typically from a simultaneous fitting on the core
+	mu_est : estimate of sky background level, from either the global DF reduction pipeline or a local sigma-clipped mean after aggresive mask
+	std_est : esimtate of sky uncertainty, from a local sigma-clipped stddev after aggresive mask
+	
+	n_spline : number of power-law component fot modeling the aureole
+	n_min : minium power index allowed in fitting
+	d_n0 : stddev of noraml prior of n_0
+	theta_in : inner boundary of the first transition radius
+	theta_out : outer boundary of the first transition radius
+	std_poi : poisson noise as minimum noise
+	leg2d : whether a legendre polynomial background will be fit
+    
+	Returns
+    ----------
+	prior_tf : prior transform function for fitting
+	
+	"""
+	
     log_t_in = np.log10(theta_in)
     log_t_out = np.log10(theta_out)
     dlog_t = log_t_out - log_t_in
@@ -1726,6 +1870,17 @@ def set_likelihood(data, mask_fit, psf, stars,
                    image_base=None, psf_range=[None,None], leg2d=False,
                    brightest_only=False, parallel=False, draw_real=False):
     
+	"""
+	Setup likelihood function.
+	
+	Parameters
+    ----------
+	
+	Returns
+    ----------
+	loglike : log-likelihood function for fitting
+	
+	"""
     theta_0 = psf.theta_0
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
