@@ -1,3 +1,35 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Run 2D Bayesian PSF fitting on a sub-region with dynamic nested sampling. The Model PSF is composed of an inner (fixed) Moffat core and an outer (user-specified) multi-power law aureole. The fitting result containing the joint PDF, samples and weights, etc. and diagnostic plots will be saved.
+
+> Parameter
+[-f][--FILTER]: filter of image to be crossmatched. g/G/r/R for Dragonfly.
+[-b][--IMAGE_BOUNDS]: bounds of the region to be processed in pixel coordinate. [Xmin, Ymin, Xmax, Ymax]
+[-I][--IMAGE]: path of image.
+[-n][--N_COMP]: number of multi-power law component (default: 2).
+[-r][--R_SCALE]: radius at which normalziation is measured, in pixel.
+[-m][--MAG_THRE]: magnitude thresholds used to select [medium, very] bright stars (default: [14,10.5]). 
+[-M][--MASK_TYPE]: mask core by "radius" or "brightness" (default: "radius").
+[-c][--R_CORE]: inner masked radius for [medium, very] bright stars, in pixel (default: 24). A single value can be passed for both.
+[-s][--SB_FIT_THRE]: inner masked surface brightness, in mag/arcsec^2 (default: 26)
+[-B][--BRIGHTEST_ONLY]: whether to fit brightest stars only.
+[-L]: whether to fit a 1st-order Legendre polynomial for the background.
+[--PARALLEL]: whether to draw meidum bright stars in parallel.
+[--N_CPU]: number of CPU used in nested sampling (default: n_cpu-1).
+[--NO_PRINT]: if yes, suppress progress print.
+[--DIR_MEASURE]: directory name where normalization measurements are saved.
+[--DIR_NAME]: directory name for saving fitting outputs.
+
+> Example Usage
+1. In jupyter notebook / lab
+%matplotlib inline
+%run -i Run_Fitting.py -f 'G' -b '[3100, 1400, 4100, 2400]' -n 3 -r 12 -B
+2. In bash
+
+"""
+
 import sys
 import getopt
 from utils import *
@@ -39,7 +71,7 @@ def main(argv):
     
     # Get Script Options
     try:
-        optlists, args = getopt.getopt(argv, "f:b:n:r:c:m:I:BLFCP",
+        optlists, args = getopt.getopt(argv, "f:b:n:r:m:c:s:M:I:BLFCP",
                                        ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=",
                                         "N_COMP=", "R_SCALE=", "MAG_THRE=",
                                         "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=" 
@@ -77,11 +109,11 @@ def main(argv):
             r_scale = np.float(arg)
         elif opt in ("-m", "--MAG_THRE"):    
             mag_threshold = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
-        elif opt in ("--MASK_TYPE"):    
+        elif opt in ("-M", "--MASK_TYPE"):    
             mask_type = arg
         elif opt in ("-c", "--R_CORE"):    
             r_core = np.array(re.findall(r"\d*\.\d+|\d+", arg), dtype=float)
-        elif opt in ("--SB_FIT_THRE"):    
+        elif opt in ("-s","--SB_FIT_THRE"):    
             SB_fit_thre = np.float(arg)
         elif opt in ("--W_STRIP"):
             wid_strip = np.float(arg)
