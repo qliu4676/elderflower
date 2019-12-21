@@ -729,8 +729,8 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
                       r_scale=10, width=0.5, mag_thre=15,
-					  mag_name='rmag_PS', read=False,
-					  save=True, obj_name="",
+                      mag_name='rmag_PS', read=False,
+                      save=True, obj_name="",
                       dir_name='.', verbose=True):
     """
     Measure normalization at r_scale for bright stars in table.
@@ -739,20 +739,20 @@ def measure_Rnorm_all(table, image_bound,
     Parameters
     ----------
     table : table containing list of sources
-	image_bound : 1X4 1d array defining the bound of region
-	wcs_data : wcs
-	image : image data
-	
-	seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
-	r_scale : radius at which the flux scaling is measured (default: 10)
-	width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
-	mag_name : magnitude column name
-	mag_thre : magnitude threshold below which are measured
-	read : whether to read existed outputs
-	save : whether to save output table and thumbnails
-	obj_name : object name used as prefix of saved output
-	dir_name : path of saving 
-	
+    image_bound : 1X4 1d array defining the bound of region
+    wcs_data : wcs
+    image : image data
+    
+    seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
+    r_scale : radius at which the flux scaling is measured (default: 10)
+    width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
+    mag_name : magnitude column name
+    mag_thre : magnitude threshold below which are measured
+    read : whether to read existed outputs
+    save : whether to save output table and thumbnails
+    obj_name : object name used as prefix of saved output
+    dir_name : path of saving 
+    
     Returns
     ----------
     table_res_Rnorm : table containing measurement results
@@ -1067,19 +1067,19 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     Parameters
     ----------
     wcs_data : wcs of data
-	SE_catalog : SE source catalog
-	image_bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
-	
-	radius : radius (in astropy unit) of search to PS-1 catalog. If not given, use the half diagonal length of the region.
-	clean_catalog : whether to clean the matched catalog. The PS-1 catalog contains duplicate items on a single source with different measurements. If True, duplicate items of bright sources will be cleaned by removing those with large coordinate errors and pick the items with most detections in that band (default True).
-	mag_thre : magnitude threshould defining bright stars.
-	sep : maximum separation (in astropy unit) for crossmatch with SE.
+    SE_catalog : SE source catalog
+    image_bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
     
-	Returns
+    radius : radius (in astropy unit) of search to PS-1 catalog. If not given, use the half diagonal length of the region.
+    clean_catalog : whether to clean the matched catalog. The PS-1 catalog contains duplicate items on a single source with different measurements. If True, duplicate items of bright sources will be cleaned by removing those with large coordinate errors and pick the items with most detections in that band (default True).
+    mag_thre : magnitude threshould defining bright stars.
+    sep : maximum separation (in astropy unit) for crossmatch with SE.
+    
+    Returns
     ----------
     tab_target : table containing matched bright sources with SE source catalog
     tab_target_all : table containing matched all sources with SE source catalog
-	Cat_crop : PS-1 catalog of all sources in the region(s)
+    Cat_crop : PS-1 catalog of all sources in the region(s)
         
     """
     from API_PS1_DR2 import ps1cone
@@ -1181,7 +1181,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
         
         # Merge Catalog
         SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
-                      "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "FLAGS"]
+                      "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE"]
         keep_columns = SE_columns + ["ID"+'_'+c_name] + columns + \
                                     ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
         tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,
@@ -1212,21 +1212,21 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
 
 def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
     """
-	Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
-	
-	Parameters
+    Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
+    
+    Parameters
     ----------
-	tab_target : full matched source catlog
-	
-	mag_range : range of magnitude for stars to be used
-	mag_name : column name of magnitude in tab_target 
-	draw : whethert to draw a plot showing MAG_AUTO vs diff.
-	
-	Returns
+    tab_target : full matched source catlog
+    
+    mag_range : range of magnitude for stars to be used
+    mag_name : column name of magnitude in tab_target 
+    draw : whethert to draw a plot showing MAG_AUTO vs diff.
+    
+    Returns
     ----------
-	CT : color correction term (SE - catlog)
-	"""
-	
+    CT : color correction term (SE - catlog)
+    """
+    
     mag = tab_target["MAG_AUTO"]
     mag_cat = tab_target[mag_name]
     d_mag = tab_target["MAG_AUTO"] - mag_cat
@@ -1252,24 +1252,24 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
                            mag_range=[13, 20], K=2, degree=3, draw=True):
     """
-	Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
-	
-	Parameters
+    Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
+    
+    Parameters
     ----------
-	tab_target : full matched source catlog
-	seg_map : training segm map
-	
-	mag_name : column name of magnitude in tab_target 
-	mag_range : range of magnitude for stars to be used
-	K : enlargement factor on the original segm map
-	degree : degree of polynomial (default 3)
-	draw : whether to draw log R vs mag
-	
-	Returns
+    tab_target : full matched source catlog
+    seg_map : training segm map
+    
+    mag_name : column name of magnitude in tab_target 
+    mag_range : range of magnitude for stars to be used
+    K : enlargement factor on the original segm map
+    degree : degree of polynomial (default 3)
+    draw : whether to draw log R vs mag
+    
+    Returns
     ----------
-	estimate_radius : a function turns magnitude into log R
-	
-	"""
+    estimate_radius : a function turns magnitude into log R
+    
+    """
     
     print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)"%(degree, K))
 
@@ -1324,25 +1324,25 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
                            mag_name='rmag', cat_name='PS',
                            draw=True, save=False, dir_name='./Measure'):
     """
-	Make segmentation map from star catalog. Aperture size used is based on SE semg map.
-	
-	Parameters
+    Make segmentation map from star catalog. Aperture size used is based on SE semg map.
+    
+    Parameters
     ----------
-	catalog_star : star catalog
-	image_bound : 1X4 1d array defining bounds of region
-	estimate_radius : function of turning magnitude into log R
-	
-	mag_name : magnitude column name in catalog_star
-	cat_name : suffix of star catalog used 
-	draw : whether to draw the output segm map
-	save : whether to save the segm map as fits
-	dir_name : path of saving
-	
+    catalog_star : star catalog
+    image_bound : 1X4 1d array defining bounds of region
+    estimate_radius : function of turning magnitude into log R
+    
+    mag_name : magnitude column name in catalog_star
+    cat_name : suffix of star catalog used 
+    draw : whether to draw the output segm map
+    save : whether to save the segm map as fits
+    dir_name : path of saving
+    
     Returns
-	----------
-	seg_map_catalog : output segm map generated from catalog
-	
-	"""
+    ----------
+    seg_map_catalog : output segm map generated from catalog
+    
+    """
     try:
         catalog = catalog_star[~catalog_star[mag_name].mask]
     except AttributeError:
@@ -1652,7 +1652,7 @@ class InconvergenceError(MyError):
     def __repr__(self):
         return 'InconvergenceError: %r'%self.message
     
-# # From TurbuStat
+## Snipplet From TurbuStat
 # def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
 #                       return_fft=False, full_fft=True, randomseed=32768324):
 #     '''
