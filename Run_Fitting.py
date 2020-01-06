@@ -85,7 +85,8 @@ def main(argv):
                                         "NO_SAVE", "DIR_NAME=", "DIR_MEASURE="])
         opts = [opt for opt, arg in optlists]        
         
-    except getopt.GetoptError:
+    except getopt.GetoptError as e:
+        print(e)
         sys.exit('Wrong Option.')
     
     for opt, arg in optlists:
