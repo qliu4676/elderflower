@@ -8,7 +8,7 @@ from scipy import stats
 from scipy.integrate import quad
 from scipy.spatial import distance
 from scipy.special import gamma as Gamma
-from skimage import morphology
+# from skimage import morphology
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -23,14 +23,14 @@ from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_s
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from astropy.visualization.mpl_normalize import ImageNormalize
 
-from photutils.segmentation import SegmentationImage
-from photutils import detect_sources, deblend_sources
-from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
+# from photutils.segmentation import SegmentationImage
+# from photutils import detect_sources, deblend_sources
+# from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
-import dynesty
-from dynesty import plotting as dyplot
-from dynesty import utils as dyfunc
-import multiprocess as mp
+# import dynesty
+# from dynesty import plotting as dyplot
+# from dynesty import utils as dyfunc
+# import multiprocess as mp
 
 ### Baisc Funcs ###
 

@@ -3,9 +3,14 @@
 
 """
 Preparatory script doing the following tasks:
-1) Crossmatch a source table (e.g. from SExtractor, SEP, etc.) with star catalog(s), by default using PANSTARRS DR2 catalog. A new table will be saved which contains corrected source magnitude (e.g. MAG_AUTO).
-2) Make enlarged segmentation map(s) for sub-region(s) from the star catalog (by default < 23 mag).
-3) Measure normalization (i.e. flux scaling) at a certain radius for bright stars (by default < 15 mag).
+1) Crossmatch a source table (e.g. from SExtractor, 
+SEP, etc.) with star catalog(s), by default using 
+PANSTARRS DR2 catalog. A new table will be saved which 
+contains corrected source magnitude (e.g. MAG_AUTO).
+2) Make enlarged segmentation map(s) for sub-region(s) 
+from the star catalog (by default < 23 mag).
+3) Measure normalization (i.e. flux scaling) at a 
+certain radius for bright stars (by default < 15 mag).
 
 > Parameter
 [-f][--FILTER]: filter of image to be crossmatched. g/G/r/R for Dragonfly.
