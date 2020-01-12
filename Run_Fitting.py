@@ -2,7 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Run 2D Bayesian PSF fitting on a sub-region with dynamic nested sampling. The Model PSF is composed of an inner (fixed) Moffat core and an outer (user-specified) multi-power law aureole. The fitting result containing the joint PDF, samples and weights, etc. and diagnostic plots will be saved.
+Run 2D Bayesian PSF fitting on a sub-region with
+dynamic nested sampling. The Model PSF is composed
+of an inner (fixed) Moffat core and an outer (user-
+specified) multi-power law aureole. The fitting 
+result containing the joint PDF, samples and 
+weights, etc. and diagnostic plots will be saved.
 
 > Parameter
 [-f][--FILTER]: filter of image to be crossmatched. g/G/r/R for Dragonfly.
@@ -74,13 +79,14 @@ def main(argv):
         optlists, args = getopt.getopt(argv, "f:b:n:r:m:c:s:M:I:BLFCP",
                                        ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=",
                                         "N_COMP=", "R_SCALE=", "MAG_THRE=",
-                                        "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=" 
+                                        "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=", 
                                         "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", 
                                         "NO_PRINT", "W_STRIP=", "N_STRIP=", "CONV",
                                         "NO_SAVE", "DIR_NAME=", "DIR_MEASURE="])
         opts = [opt for opt, arg in optlists]        
         
-    except getopt.GetoptError:
+    except getopt.GetoptError as e:
+        print(e)
         sys.exit('Wrong Option.')
     
     for opt, arg in optlists:
@@ -334,7 +340,7 @@ def Run_Fitting(hdu_path, image_bounds0,
     if mask_type=='count':
         count = SB2Intensity(SB_fit_thre, mu, ZP, pixel_scale)[0]
     else:
-	count = None
+    count = None
     mask.make_mask_map_deep(by=mask_type, seg_base=seg_base,
                             r_core=r_core, r_out=r_out, count=count,
                             sn_thre=2.5, n_dilation=5, draw=True, 

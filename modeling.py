@@ -1,13 +1,14 @@
 import time
 import math
-import galsim
-from galsim import GalSimBoundsError
-from utils import *
+import numpy as np
+# import galsim
+# from galsim import GalSimBoundsError
+# from utils import *
 
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
 from functools import partial
-from usid_processing import parallel_compute
+# from usid_processing import parallel_compute
 from astropy.utils import lazyproperty
 from copy import deepcopy
 
@@ -264,7 +265,7 @@ class PSF_Model:
             return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
         
     def SB2Flux(self, SB, BKG, ZP, r=10):
-         """ Convert suface brightness SB at r to total flux, given background value and ZP. """
+        """ Convert suface brightness SB at r to total flux, given background value and ZP. """
         # Intensity = I + BKG
         I = SB2Intensity(SB, BKG, ZP, self.pixel_scale) - BKG
         return self.I2Flux(I, r=r)
