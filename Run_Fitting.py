@@ -79,7 +79,7 @@ def main(argv):
         optlists, args = getopt.getopt(argv, "f:b:n:r:m:c:s:M:I:BLFCP",
                                        ["FILTER=", "IMAGE=", "IMAGE_BOUNDS=",
                                         "N_COMP=", "R_SCALE=", "MAG_THRE=",
-                                        "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=" 
+                                        "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=", 
                                         "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", 
                                         "NO_PRINT", "W_STRIP=", "N_STRIP=", "CONV",
                                         "NO_SAVE", "DIR_NAME=", "DIR_MEASURE="])
