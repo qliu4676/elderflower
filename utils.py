@@ -5,10 +5,7 @@ import math
 import time
 import numpy as np
 from scipy import stats
-from scipy.integrate import quad
-from scipy.spatial import distance
-from scipy.special import gamma as Gamma
-# from skimage import morphology
+from skimage import morphology
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -16,21 +13,21 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy import wcs
 from astropy import units as u
 from astropy.io import fits, ascii
-from astropy.table import Table, Column, join
-from astropy.modeling import models
+from astropy.table import Table, Column
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from astropy.visualization.mpl_normalize import ImageNormalize
+from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 
-# from photutils.segmentation import SegmentationImage
-# from photutils import detect_sources, deblend_sources
-# from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
+from photutils.segmentation import SegmentationImage
+from photutils import detect_sources, deblend_sources
+from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
-# import dynesty
-# from dynesty import plotting as dyplot
-# from dynesty import utils as dyfunc
-# import multiprocess as mp
+import dynesty
+from dynesty import plotting as dyplot
+from dynesty import utils as dyfunc
+import multiprocess as mp
 
 ### Baisc Funcs ###
 
@@ -100,17 +97,23 @@ def compute_poisson_noise(data, n_frame=1, header=None, Gain=0.37):
         print("Sky Poisson Noise: %.3f"%std_poi)
                                    
     return std_poi
+
+def extract_bool_bitflags(bitflags, ind):
+    from astropy.nddata.bitmask import interpret_bit_flags
+    return np.array(["{0:016b}".format(0xFFFFFFFF & interpret_bit_flags(flag))[-ind]
+                     for flag in np.atleast_1d(bitflags)]).astype(bool)
         
     
 ### Plotting Helpers ###
 
 def LogNorm():
-    from astropy.visualization import LogStretch
     return ImageNormalize(stretch=LogStretch())
 
-def AsinhNorm():
-    from astropy.visualization import AsinhStretch
-    return ImageNormalize(stretch=AsinhStretch())
+def AsinhNorm(a=0.1):
+    return ImageNormalize(stretch=AsinhStretch(a=a))
+
+def HistEqNorm(data):
+    return ImageNormalize(stretch=HistEqStretch(data))
 
 def vmin_3mad(img):
     """ lower limit of visual imshow defined by 3 mad above median """ 
@@ -327,7 +330,7 @@ def make_mask_map_dual(image, stars,
                                              for (pos,r) in zip(star_pos,r_out_s)])
             mask_star = (mask_star) | (outskirt)
     
-    elif by == 'count':
+    elif by == 'brightness':
         # If count is not given, use 5 sigma above background.
         if count is None:
             count = np.mean(back + (5 * back_rms))
@@ -335,10 +338,10 @@ def make_mask_map_dual(image, stars,
         print("Mask core regions: Count > %.2f ADU "%count)
         mask_star = image >= count
         
-    segmap[mask_star] = max_lab+2
+    segmap[mask_star] = max_lab+1
     
     # set dilation border a different label (for visual)
-    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+1
+    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+2
     
     # set mask map
     mask_deep = (segmap!=0)
@@ -376,7 +379,7 @@ def make_mask_strip(stars, xx, yy, pad=0, n_strip=24,
 
     return mask_strip_s, mask_cross_s
 
-def clean_lonely_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
+def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
     
     star_pos = star_pos + pad
     
@@ -427,7 +430,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     
 #     z = z[~np.isnan(z)]
     if mock:
-        clip = lambda z: sigma_clip((z), sigma=3, maxiters=5)
+        clip = lambda z: sigma_clip((z), sigma=5, maxiters=3)
     else:
         clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
         
@@ -437,7 +440,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             # for undersampled core, bin in individual pixels 
             bins_inner = np.unique(r[r<r_core]) + 1e-3
         else: 
-            bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) + 1e-3
+            bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) - 1e-5
 
         n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
         if r_max > (r_core+d_r):
@@ -482,8 +485,6 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                 plt.fill_between(r_rbin, np.log10(z_rbin)-logzerr_rbin, np.log10(z_rbin)+logzerr_rbin,
                                  color=color, alpha=0.2, zorder=1)
             plt.ylabel("log Intensity")
-            plt.xscale("log")
-            plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8, r_rbin[np.isfinite(r_rbin)][-1]*1.2)
 
         elif yunit == "SB":  
             # plot radius in Surface Brightness
@@ -513,17 +514,18 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                 
             plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
             plt.gca().invert_yaxis()
-            plt.xscale("log")
-            plt.xlim(r_rbin[np.isfinite(r_rbin)][0]*0.8,r_rbin[np.isfinite(r_rbin)][-1]*1.2)
             plt.ylim(30,17)
+
+        plt.xscale("log")
+        plt.xlim(max(r_rbin[np.isfinite(r_rbin)][0]*0.8, 1e-1),r_rbin[np.isfinite(r_rbin)][-1]*1.2)
+        plt.xlabel("r [acrsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
         
         if scatter:
             plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, 
-                        s=markersize/2, alpha=0.2, zorder=1)
+                        s=markersize/2, alpha=alpha/2, zorder=1)
             plt.scatter(r[r>=3*r_core], I[r>=3*r_core], color=color,
-                        s=markersize/4, alpha=0.1, zorder=1)
+                        s=markersize/5, alpha=alpha/10, zorder=1)
             
-        plt.xlabel("r [acrsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
 
         # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
         dz_rbin = np.diff(np.log10(z_rbin)) 
@@ -601,7 +603,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=3, n_win=20, n_dilation=1,
+                 seeing=2.5, sn_thre=2.5, n_win=25, n_dilation=3,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
@@ -664,9 +666,9 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     return img_thumb, star_ma, back, cen_star
 
 
-def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, display=False):
+def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=False):
     """ Return 3 sigma-clipped mean, med and std of ring r=R (half-width=wid) for image.
-        Note intensity is not background subtracted. """
+        Note the output norm is not background subtracted. masked region is 1."""
     
     annulus_ma = CircularAnnulus(cen, R-wid, R+wid).to_mask()      
     mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
@@ -682,20 +684,32 @@ def compute_Rnorm(image, mask_field, cen, R=10, wid=0.5, mask_cross=True, displa
     if len(image[mask_clean]) < 5:
         return [np.nan] * 3 + [1]
     
-    z = 10**sigma_clip(np.log10(image[mask_clean]), sigma=3, maxiters=10)
-    I_mean, I_med, I_std = np.mean(z), np.median(z.compressed()), np.std(z)
+#     z = 10**sigma_clip(np.log10(image[mask_clean]), sigma=3, maxiters=10)
+#     I_mean, I_med, I_std = np.mean(z), np.median(z.compressed()), np.std(z)
     
+    z = sigma_clip(np.log10(image[mask_clean]), sigma=2, maxiters=5)
+    I_mean, I_med, I_std = 10**np.mean(z), 10**np.median(z.compressed()), np.std(10**z)
+
     if display:
+        z = 10**z
         fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask_clean * image, cmap="gray", norm=LogNorm(), vmin=I_med-5*I_std, vmax=I_med+5*I_std)
-        ax2 = plt.hist(sigma_clip(z))
+        ax1.imshow(mask_clean * image, cmap="gray", vmin=I_med-5*I_std, vmax=I_med+5*I_std)
+        ax2.hist(sigma_clip(z))
+        
         plt.axvline(I_mean, color='k')
+        plt.text(0.4, 0.9, "%.1f"%I_mean, color='orange', transform=ax2.transAxes)
+        I_20 = np.quantile(z.compressed(), 0.2)
+        I_80 = np.quantile(z.compressed(), 0.8)
+        plt.axvline(I_20, color='k', ls="--")
+        plt.axvline(I_80, color='k', ls="--")
+        plt.text(0.1, 0.9, "%.1f"%I_20, color='orange', transform=ax2.transAxes)
+        plt.text(0.8, 0.9, "%.1f"%I_80, color='orange', transform=ax2.transAxes)
     
     return I_mean, I_med, I_std, 0
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=10, wid=0.5, return_full=False, verbose=True):
+                        R=12, wid=0.5, return_full=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
     
@@ -728,7 +742,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 
 def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
-                      r_scale=10, width=0.5, mag_thre=15,
+                      r_scale=12, width=0.5, mag_thre=15,
                       mag_name='rmag_PS', read=False,
                       save=True, obj_name="",
                       dir_name='.', verbose=True):
@@ -780,8 +794,12 @@ def measure_Rnorm_all(table, image_bound,
                             + [s for s in tab.colnames if 'IMAGE' in s]
         table_res_Rnorm = tab[keep_columns].copy()
     
-        for j, name in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
-            table_res_Rnorm[name] = res_Rnorm[:,j]
+        for j, colname in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
+            if colname=='Iflag':
+                col = res_Rnorm[:,j].astype(int)
+            else:
+                col = np.around(res_Rnorm[:,j], 5)
+            table_res_Rnorm[colname] = col
         
         if save:
             check_save_path(dir_name, make_new=False, verbose=False)
@@ -830,6 +848,7 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
     xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
 
     patch = np.copy(data[xmin:xmax, ymin:ymax])
+    
     if SE_seg_map is None:
         seg_patch = None
     else:
@@ -844,11 +863,11 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         sky_std = max(mad_std(sky[sky>sky_mean]),5)
 
         fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, norm=LogNorm(), cmap="viridis",
-                   vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
+        plt.imshow(data, norm=AsinhNorm(a=0.01), cmap="viridis",
+                   vmin=sky_mean, vmax=sky_mean+5*sky_std, alpha=0.95)
         if weight_map is not None:
-            plt.imshow(data*weight_map, norm=LogNorm(), cmap="viridis",
-                       vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
+            plt.imshow(data*weight_map, norm=AsinhNorm(a=0.01), cmap="viridis",
+                       vmin=sky_mean, vmax=sky_mean+5*sky_std, alpha=0.3)
         
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
@@ -906,7 +925,7 @@ def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ200
 def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
     
-    from astropy.table import Column, join
+    from astropy.table import join
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
 
@@ -924,6 +943,60 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
+def assign_star_props(table_list, sky_mean, ZP, image_size, pos_ref,
+                      r_scale=12, mag_threshold=np.array([14,11]),
+                      psf=None, keys='Imed', verbose=True, 
+                      draw=True, save=True, dir_name='./'):
+    """ Assign position and flux for faint and bright stars from tables. """
+    from modeling import Stars
+    # tables for two star samples
+    table_faint, table_res_Rnorm = table_list
+    
+    try:
+        ma = table_faint['FLUX_AUTO'].data.mask
+    except AttributeError:
+        ma = np.isnan(table_faint['FLUX_AUTO'])
+
+    # Positions & Flux of faint stars from measured norm
+    star_pos1 = np.vstack([table_faint['X_IMAGE_PS'].data[~ma],
+                           table_faint['Y_IMAGE_PS'].data[~ma]]).T - pos_ref
+    Flux1 = np.array(table_faint['FLUX_AUTO'].data[~ma])
+
+    # Positions & Flux (estimate) of bright stars from catalog
+    star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE_PS'],
+                           table_res_Rnorm['Y_IMAGE_PS']]).T - pos_ref
+    Flux2 = 10**((table_res_Rnorm["MAG_AUTO_corr"]-ZP)/(-2.5))
+
+    # Estimate of brightness I at r_scale (I = Intensity - BKG) and flux
+    z_norm = table_res_Rnorm['Imed'].data - sky_mean
+    z_norm[z_norm<=0] = z_norm[z_norm>0].min()
+
+    # Convert/printout thresholds
+    print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
+    if verbose:
+        Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
+        SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
+        print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
+        print("(<=> Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 at {2} pix)\n"\
+              .format(*np.around(SB_threshold,1),r_scale))
+
+    # Combine two samples, make sure they do not overlap
+    star_pos = np.vstack([star_pos1, star_pos2])
+    Flux = np.concatenate([Flux1, Flux2])
+    stars_all = Stars(star_pos, Flux, Flux_threshold=Flux_threshold)
+
+    # Bright stars in model
+    stars_0 = Stars(star_pos2, Flux2, Flux_threshold=Flux_threshold,
+                   z_norm=z_norm, r_scale=r_scale, BKG=sky_mean)
+    stars_0 = stars_0.remove_outsider(image_size, d=[36, 12], verbose=verbose)
+    
+    if draw:
+        stars_all.plot_flux_dist(label='All', color='plum')
+        stars_0.plot_flux_dist(label='Model', color='orange', ZP=ZP,
+                              save=save, dir_name=dir_name)
+        
+    return stars_0, stars_all
+
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
                 pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec,
                 clean_catalog=True, mag_name='rmag',
@@ -931,7 +1004,8 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                 columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
                                         'objID', 'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
                 column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 23)}},
-                magnitude_name={'Pan-STARRS':['rmag','gmag']}):
+                magnitude_name={'Pan-STARRS':['rmag','gmag']},
+                verbose=True):
     """ 
         Cross match SExtractor catalog with Vizier Online catalog.
         
@@ -946,6 +1020,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                 column_filters: {"Rmag":'{0} .. {1}'.format(5, 15)}
                 
     """
+    from astropy.table import join, vstack
     
     cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
     coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
@@ -985,7 +1060,8 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
         mag_cat = Cat_crop[m_name]
         
         # Screen out bright stars (mainly for cleaning duplicate source in catalog)
-        Cat_bright = Cat_crop[(mag_cat<mag_thre) & ~np.isnan(mag_cat)]
+        Cat_bright = Cat_crop[(np.less(mag_cat, mag_thre,
+                                       where=~np.isnan(mag_cat))) & ~np.isnan(mag_cat)]
         mag_cat.mask[np.isnan(mag_cat)] = True
         
         if clean_catalog:
@@ -1003,8 +1079,8 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 #                 obj_duplicate.pprint(max_lines=-1, max_width=-1)
                 
                 # Remove detection without magnitude measurement
-                has_mag = obj_duplicate[m_name]>0
-                obj_duplicate = obj_duplicate[has_mag]
+                mag_obj = obj_duplicate[m_name]
+                obj_duplicate = obj_duplicate[~np.isnan(mag_obj)]
                 
                 # Use the detection with the best astrometry
                 e2_coord = obj_duplicate["e_RAJ2000"]**2 + obj_duplicate["e_DEJ2000"]**2
@@ -1019,7 +1095,8 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
             
         for m_name in magnitude_name[cat_name]:
             mag = Cat_crop[m_name]
-            print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
+            if verbose:
+                print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
 
         # Merge Catalog
         SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
@@ -1050,19 +1127,23 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     tab_target.sort('MAG_AUTO')
     tab_target_all.sort('MAG_AUTO')
 
-    mag = tab_target_all[mag_name+'_'+c_name]
-    print("Matched stars with %s %s:  %.3f ~ %.3f"%(cat_name, mag_name, mag.min(), mag.max()))
+    mag_all = tab_target_all[mag_name+'_'+c_name]
     mag = tab_target[mag_name+'_'+c_name]
-    print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
-          %(cat_name, mag_name, mag.min(), mag.max()))
+    if verbose:
+        print("Matched stars with %s %s:  %.3f ~ %.3f"\
+              %(cat_name, mag_name, mag_all.min(), mag_all.max()))
+        print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
+              %(cat_name, mag_name, mag.min(), mag.max()))
     
     return tab_target, tab_target_all, Cat_crop
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec):
+                        pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec,
+                        verbose=True):
     """
-    Use PANSTARRS DR2 API to do cross-match with the SE source catalog. Note this could be slower compared to cross-match using Vizier because the API use web scratching..
+    Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
+    Note this could be (much) slower compared to cross-match using Vizier.
     
     Parameters
     ----------
@@ -1079,10 +1160,13 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     ----------
     tab_target : table containing matched bright sources with SE source catalog
     tab_target_all : table containing matched all sources with SE source catalog
-    Cat_crop : PS-1 catalog of all sources in the region(s)
+    catalog_star : PS-1 catalog of all sources in the region(s)
         
     """
+    from astropy.table import join, vstack
+    from astropy.nddata.bitmask import interpret_bit_flags
     from API_PS1_DR2 import ps1cone
+    
     band = band.lower()
     mag_name = band + 'MeanPSFMag'
     c_name = 'PS'
@@ -1103,7 +1187,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
         constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':23}
 
         # strip blanks and weed out blank and commented-out values
-        columns = """objID,raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,gMeanPSFMag,rMeanPSFMag""".split(',')
+        columns = """raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,gMeanPSFMag,gMeanPSFMagErr,gFlags,rMeanPSFMag,rMeanPSFMagErr,rFlags""".split(',')
         columns = [x.strip() for x in columns]
         columns = [x for x in columns if x and not x.startswith('#')]
         results = ps1cone(ra, dec, radius.value, release='dr2', columns=columns, **constraints)
@@ -1151,31 +1235,44 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
             
             row_duplicate = np.array([], dtype=int)
             
-            # Use the measurement with most detections in that band
+            # Use the measurement using empirical criteria
             for i in inds_c[counts>1]:
                 obj_dup = Cat_crop[idxcatalog][idxc==i]
-                #obj_dup.pprint(max_lines=-1, max_width=-1)
+                obj_dup.pprint(max_lines=-1, max_width=-1)
                 
-                # Use the detection with coordinate err <= 0.1
+                # Coordinate error of detection
                 err_coord = np.sqrt(obj_dup["raMeanErr"]**2 + obj_dup["decMeanErr"]**2)
                 
-                for ID in obj_dup[(err_coord>0.25)]['ID'+'_'+c_name]:
+                # Use the detection with PSF mag err
+                has_err_mag = obj_dup[mag_name+'Err'] > 0   
+                
+                # Use the detection > 0
+                n_det = obj_dup['n'+band]
+                has_n_det = n_det > 0
+                
+                # Use photometry not from tycho in measurement
+                use_tycho_phot =  extract_bool_bitflags(obj_dup[band+'Flags'], 7)
+                
+                good_phot = has_err_mag & has_n_det & (~use_tycho_phot)  
+                    
+                # Remove rows
+                for ID in obj_dup[~good_phot]['ID'+'_'+c_name]:
                     k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
                     row_duplicate = np.append(row_duplicate, k)
                 
-                obj_dup = obj_dup[err_coord<=0.25]
+                obj_dup = obj_dup[good_phot]
+                
                 if len(obj_dup)<=1:
                     continue
-                    
-                # Use the detection with highest ng / nr
-                n_det = obj_dup['n'+band]
                 
-                for ID in obj_dup[n_det<np.max(n_det)]['ID'+'_'+c_name]:
+                # Use brightest detection
+                mag = obj_dup[mag_name]
+                for ID in obj_dup[mag>min(mag)]['ID'+'_'+c_name]:
                     k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
                     row_duplicate = np.append(row_duplicate, k)
-            
+                    
             Cat_crop.remove_rows(np.unique(row_duplicate))
-            Cat_crop = Cat_crop[Cat_crop['n'+band]>0]
+#             Cat_crop = Cat_crop[Cat_crop['n'+band]>0]
             
             Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_thre]
         
@@ -1192,22 +1289,25 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
         if j==0:
             tab_target_all = tab_match
             tab_target = tab_match_bright
-        else:
-            tab_target_all = join(tab_target_all, tab_match, keys=SE_columns,
-                                 join_type='left', metadata_conflicts='silent')
-            tab_target = join(tab_target, tab_match_bright, keys=SE_columns,
-                              join_type='left', metadata_conflicts='silent')
+            catalog_star = Cat_crop
             
-    # Sort matched catalog by SE MAG_AUTO
+        else:
+            tab_target_all = vstack([tab_target_all, tab_match], join_type='exact')
+            tab_target = vstack([tab_target, tab_match_bright], join_type='exact')
+            catalog_star = vstack([catalog_star, Cat_crop], join_type='exact')
+            
+    # Sort matched catalog by matched magnitude
     tab_target.sort(mag_name)
     tab_target_all.sort(mag_name)
-
-    print("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
-          %(mag_name, np.nanmin(tab_target_all[mag_name]), np.nanmax(tab_target_all[mag_name])))
-    print("Matched bright stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
-          %(mag_name, np.nanmin(tab_target[mag_name]), np.nanmax(tab_target[mag_name])))
+    if verbose:
+        print("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
+              %(mag_name, np.nanmin(tab_target_all[mag_name]),
+                np.nanmax(tab_target_all[mag_name])))
+        print("Matched bright stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
+              %(mag_name, np.nanmin(tab_target[mag_name]),
+                np.nanmax(tab_target[mag_name])))
     
-    return tab_target, tab_target_all, Cat_crop
+    return tab_target, tab_target_all, catalog_star
         
 
 def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
@@ -1405,6 +1505,27 @@ def build_independent_priors(priors):
         return v
     return prior_transform    
 
+def set_labels(n_spline, leg2d=False):
+    if n_spline==1:
+        labels = [r'$n0$', r'$\mu$', r'$\log\,\sigma$']
+    elif n_spline==2:
+        labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
+    elif n_spline==3:
+        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$',
+                  r'$\mu$', r'$\log\,\sigma$']
+    else:
+        labels = [r'$n_%d$'%d for d in range(n_spline)] \
+               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)] \
+               + [r'$\mu$', r'$\log\,\sigma$']
+        
+    if leg2d:
+        labels = np.insert(labels, -2, [r'$\log\,A_{01}$', r'$\log\,A_{10}$'])
+            
+#     if fit_frac:
+#         labels = np.insert(labels, -2, [r'$f_{pow}$'])
+        
+    return labels
+        
 ### Nested Fitting Helper ###
 
 class DynamicNestedSampler:
@@ -1511,8 +1632,9 @@ class DynamicNestedSampler:
         from plotting import plot_fit_PSF1D
         plot_fit_PSF1D(self.results, psf, **kwargs)
     
-    def generate_fit(self, psf, stars, image_base, brightest_only=False, draw_real=True,
-                     norm='brightness', leg2d=False, n_out=4, theta_out=1200):
+    def generate_fit(self, psf, stars, image_base,
+                     brightest_only=False, draw_real=True, leg2d=False,
+                     norm='brightness', n_out=4, theta_out=1200):
         psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d,
                                             n_out=n_out, theta_out=theta_out)
         from modeling import generate_image_fit
@@ -1532,7 +1654,8 @@ class DynamicNestedSampler:
         
     def draw_comparison_2D(self, image, mask, **kwargs):
         from plotting import draw_comparison_2D
-        draw_comparison_2D(self.image_fit, image, mask, self.image_star, self.noise_fit, **kwargs)
+        draw_comparison_2D(self.image_fit, image, mask, self.image_star,
+                           self.noise_fit, **kwargs)
         
     def draw_background(self, save=False, dir_name='.', suffix=''):
         plt.figure()

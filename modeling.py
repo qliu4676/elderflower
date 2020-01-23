@@ -1,21 +1,32 @@
+import os
 import time
 import math
 import numpy as np
-# import galsim
-# from galsim import GalSimBoundsError
-# from utils import *
+import matplotlib.pyplot as plt
+from scipy import stats
+from scipy.integrate import quad
+from scipy.spatial import distance
+from scipy.special import gamma as Gamma
+from astropy import units as u
+from astropy.io import fits, ascii
+from astropy.modeling import models
+from astropy.utils import lazyproperty
 
+import galsim
+from galsim import GalSimBoundsError
+
+from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
 from functools import partial
-# from usid_processing import parallel_compute
-from astropy.utils import lazyproperty
-from copy import deepcopy
+from usid_processing import parallel_compute
+
+from utils import fwhm_to_gamma, gamma_to_fwhm
+from utils import Intensity2SB, SB2Intensity
 
 ############################################
 # Functions for making PSF models
 ############################################
-from types import SimpleNamespace    
 
 class PSF_Model:
     """ A PSF Model object """
@@ -122,8 +133,8 @@ class PSF_Model:
                          contrast=1e6,
                          psf_scale=None,
                          psf_range=None,
-                         min_psf_range=30,
-                         max_psf_range=600,
+                         min_psf_range=60,
+                         max_psf_range=720,
                          interpolant="cubic"):
         """
         Generate Galsim PSF of aureole.
@@ -131,7 +142,7 @@ class PSF_Model:
         Parameters
         ----------
         contrast: Ratio of the intensity at max range and at center. Used to calculate the PSF size if not given.
-        psf_scale: Pixel scale of the PSF, in general <= pixel scale of data. In arcsec/pix.
+        psf_scale: Pixel scale of the PSF, <= pixel scale of data. In arcsec/pix.
         psf_range: Range of PSF. In arcsec.
         min_psf_range : Minimum range of PSF. In arcsec.
         max_psf_range : Maximum range of PSF. In arcsec.
@@ -199,7 +210,7 @@ class PSF_Model:
         return np.array(Amps)
     
     
-    def I2I0(self, I, r=10):
+    def I2I0(self, I, r=12):
         """ Convert aureole I(r) at r to I0. r in pixel """
         
         if self.aureole_model == "power":
@@ -208,7 +219,7 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             return I2I0_mpow(self.n_s, self.theta_s_pix, r, I=I)
         
-    def I02I(self, I0, r=10):
+    def I02I(self, I0, r=12):
         """ Convert aureole I(r) at r to I0. r in pixel """
         
         if self.aureole_model == "power":
@@ -227,12 +238,12 @@ class PSF_Model:
         
         """
         I_ext = np.zeros(stars.n_bright)
-        z_norm_verybright0 = stars.z_norm_verybright
+        z_norm_verybright0 = stars.z_norm_verybright.copy()
         pos_source, pos_eval = stars.star_pos_verybright, stars.star_pos_bright
         
         if self.aureole_model == "power":
             cal_ext_light = partial(calculate_external_light_pow,
-                                   n0=self.n, theta0=self.theta_s_pix,
+                                   n0=self.n, theta0=self.theta_0_pix,
                                    pos_source=pos_source, pos_eval=pos_eval)
         elif self.aureole_model == "multi-power":
             cal_ext_light = partial(calculate_external_light_mpow,
@@ -246,7 +257,7 @@ class PSF_Model:
             
         return I_ext
     
-    def I2Flux(self, I, r=10):
+    def I2Flux(self, I, r=12):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "power":
@@ -255,7 +266,7 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I=I)
         
-    def Flux2I(self, Flux, r=10):
+    def Flux2I(self, Flux, r=12):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "power":
@@ -264,13 +275,13 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
         
-    def SB2Flux(self, SB, BKG, ZP, r=10):
+    def SB2Flux(self, SB, BKG, ZP, r=12):
         """ Convert suface brightness SB at r to total flux, given background value and ZP. """
         # Intensity = I + BKG
         I = SB2Intensity(SB, BKG, ZP, self.pixel_scale) - BKG
         return self.I2Flux(I, r=r)
     
-    def Flux2SB(self, Flux, BKG, ZP, r=10):
+    def Flux2SB(self, Flux, BKG, ZP, r=12):
         """ Convert total flux to suface brightness SB at r, given background value and ZP. """
         I = self.Flux2I(Flux, r=r)
         return Intensity2SB(I+ BKG, BKG, ZP, self.pixel_scale)
@@ -503,7 +514,7 @@ class Stars:
 
 class Mask:
     """ Maksing of stars """
-    def __init__(self, image, stars, image_size, pad=100, mu=None):
+    def __init__(self, image, stars, image_size, pad=100, skymean=None):
         """
         Parameters
         ----------
@@ -512,7 +523,7 @@ class Mask:
         image_size : image size
         
         pad : padding size of the image (default: 100)
-        mu : estimate of background value (only for drawing)
+        skymean : estimate of background value (only for drawing)
         
         """
         self.image = image
@@ -522,7 +533,7 @@ class Mask:
         self.yy, self.xx = np.mgrid[:self.image_size_pad, :self.image_size_pad]
         
         self.pad = pad
-        self.mu = mu
+        self.mu = skymean
         
     @property
     def mask_base(self):
@@ -564,6 +575,7 @@ class Mask:
         dir_name : path of saving
         
         """
+        from utils import make_mask_map_dual
         
         image = self.image
         stars = self.stars
@@ -620,6 +632,7 @@ class Mask:
         dir_name : path of saving
         
         """
+        from utils import make_mask_strip
         
         if hasattr(self, 'mask_deep0') is False:
             return None
@@ -649,7 +662,8 @@ class Mask:
         
         # Clean medium bright stars far from bright stars
         if clean:
-            clean = clean_lonely_stars(self.xx, self.yy, mask_comb0,
+            from utils import clean_isolated_stars
+            clean = clean_isolated_stars(self.xx, self.yy, mask_comb0,
                                        stars.star_pos, pad=pad)
             if stars.n_verybright > 0:
                 clean[stars.Flux >= stars.F_verybright] = False
@@ -1072,7 +1086,7 @@ def multi_power2d_Flux2Amp(n_s, theta_s, Flux=1):
 def I2I0_pow(n0, theta0, r, I=1):
     """ Convert Intensity I(r) at r to I at theta_0 with power law.
         theata_s and r in pixel """
-    I_ = I * (r/theta0)**n0
+    I0 = I * (r/theta0)**n0
     return I0
 
 def I02I_pow(n0, theta0, r, I0=1):
@@ -1326,7 +1340,7 @@ def make_base_image(image_size, stars, psf_base, pad=0, psf_size=64, verbose=Tru
     if len(star_pos) == 0:
         return np.zeros((image_size, image_size))
     
-    # draw faint stars in Moffat with galsim in Fourier space   
+    # draw faint stars with fixed PSF using galsim in Fourier space   
     for k in range(len(star_pos)):
         try:
             draw_star(k, star_pos=star_pos, Flux=Flux,
@@ -1414,15 +1428,16 @@ def make_truth_image(psf, stars, contrast=1e6,
     return image
         
 def generate_image_by_flux(psf, stars,
-                           contrast=[3e4,3e5],
+                           contrast=[5e4,5e5],
                            psf_range=[None,None],
-                           min_psf_range=120,
+                           min_psf_range=60,
                            max_psf_range=1200,
                            psf_scale=2.5,
                            parallel=False,
                            draw_real=True,
                            n_real=2.5,
                            subtract_external=False,
+                           draw_core=False,
                            brightest_only=False,
                            interpolant='cubic'):
     """
@@ -1440,6 +1455,7 @@ def generate_image_by_flux(psf, stars,
     parallel : whether to run drawing for medium bright stars in parallel.
     draw_real : whether to draw very bright stars in real.
     n_real : first power index below which stars will be draw by conv.
+    draw_core : whether to draw the core for very bright stars in real.
     brightest_only : whether to draw very bright stars only.
     interpolant : Interpolant method in Galsim.
     
@@ -1512,9 +1528,14 @@ def generate_image_by_flux(psf, stars,
         
         func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
                                                        Flux=frac * stars.Flux_verybright)
-        image_real = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
+        image_aureole = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
         
-        image = image_gs + image_real
+        if draw_core:
+            func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright,
+                                                     Flux=(1-frac) * stars.Flux_verybright)
+            image_gs += np.sum([f2d(xx,yy) for f2d in func_core_2d_s], axis=0)
+                
+        image = image_gs + image_aureole
         
     else:
         # Draw very bright star in Fourier space 
@@ -1724,7 +1745,7 @@ def generate_image_fit(psf_fit, stars, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, theta_in=60, theta_out=300, 
+              n_min=1, d_n0=0.3, theta_in=50, theta_out=240, 
               nspline=None, std_poi=None, leg2d=False, **kwargs):
     
     """
@@ -1759,10 +1780,10 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     # logsigma : [std_poi, std_est]
     if std_poi is None:
-        Prior_sigma = stats.truncnorm(a=-1, b=0., loc=np.log10(std_est), scale=0.3)   
+        Prior_sigma = stats.truncnorm(a=-2, b=1, loc=np.log10(std_est), scale=0.3)   
     else:
-        bound_a = (np.log10(std_poi)-np.log10(std_est))/0.3
-        Prior_sigma = stats.truncnorm(a=bound_a, b=0., loc=np.log10(std_est), scale=0.3)   
+        bound_a = (np.log10(std_poi)+0.3-np.log10(std_est))/0.3
+        Prior_sigma = stats.truncnorm(a=bound_a, b=1, loc=np.log10(std_est), scale=0.3)   
     
     if n_spline == 1:
         from plotting import draw_independent_priors
@@ -1784,8 +1805,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
             v[-2] = Prior_mu.ppf(u[-2])          # mu
             v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
             if leg2d:
-                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-2, scale=2)  # log A10
-                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-2, scale=2)  # log A01
+                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-1.3, scale=1.3)  # log A10
+                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-1.3, scale=1.3)  # log A01
                 
             return v
         
@@ -1805,8 +1826,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
             v[-2] = Prior_mu.ppf(u[-2])          # mu
             v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
             if leg2d:
-                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-2, scale=2)  # log A10
-                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-2, scale=2)  # log A01
+                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-1.3, scale=1.3)  # log A10
+                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-1.3, scale=1.3)  # log A01
                 
             return v
         
@@ -1833,15 +1854,15 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
             v[-2] = Prior_mu.ppf(u[-2])          # mu
             v[-1] = Prior_sigma.ppf(u[-1])       # log sigma
             if leg2d:
-                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-2, scale=2)  # log A10
-                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-2, scale=2)  # log A01
+                v[-3] = stats.uniform.ppf(u[-3], loc=v[-1]-1.3, scale=1.3)  # log A10
+                v[-4] = stats.uniform.ppf(u[-4], loc=v[-1]-1.3, scale=1.3)  # log A01
             
             return v
         
         return prior_tf_sp
         
-def draw_proposal(draw_func, psf, stars, image_base,
-                  proposal=None, leg2d=False, **kwargs):
+def draw_proposal(draw_func, proposal, psf, stars, image_base,
+                  leg2d=False, H10=None, H01=None, **kwargs):
     # Draw image and calculate log-likelihood
     mu = proposal[-2] 
     
@@ -1865,7 +1886,8 @@ def calculate_likelihood(ypred, data, sigma):
     return loglike
 
 def set_likelihood(data, mask_fit, psf, stars,
-                   norm='brightness', n_spline=2, z_norm=None, 
+                   norm='brightness', z_norm=None, 
+                   n_spline=2, n_cutoff=4, theta_cutoff=1200,
                    image_base=None, psf_range=[None,None], leg2d=False,
                    brightest_only=False, parallel=False, draw_real=False):
     
@@ -1931,8 +1953,8 @@ def set_likelihood(data, mask_fit, psf, stars,
     elif n_spline==2:
         
         def loglike_2p(v):
-            n_s = np.append(v[:2], 4)
-            theta_s = np.append([theta_0, 10**v[2]], 1200)
+            n_s = np.append(v[:2], n_cutoff)
+            theta_s = np.append([theta_0, 10**v[2]], theta_cutoff)
             mu, sigma = v[-2], 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
@@ -1969,8 +1991,8 @@ def set_likelihood(data, mask_fit, psf, stars,
     elif n_spline==3:
     
         def loglike_3p(v):
-            n_s = np.append(v[:3], 4)
-            theta_s = np.append([theta_0, 10**v[3], 10**v[4]], 1200)
+            n_s = np.append(v[:3], n_cutoff)
+            theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_cutoff)
             mu, sigma = v[-2], 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
@@ -2000,14 +2022,14 @@ def set_likelihood(data, mask_fit, psf, stars,
     else:
         
         def loglike_sp(v):
-            n_s = np.append(v[:n_spline], 4)
-            theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [1200]])
+            n_s = np.append(v[:n_spline], n_cutoff)
+            theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [theta_cutoff]])
             sigma = 10**v[-1]
 
             psf.update({'n_s':n_s, 'theta_s':theta_s})
 
-            image_tri = draw_proposal(draw_func, psf, stars, image_base,
-                                      proposal=v, leg2d=leg2d,
+            image_tri = draw_proposal(draw_func, v, psf, stars, image_base,
+                                      leg2d=leg2d, H10=H10, H01=H01,
                                       psf_range=psf_range, psf_scale=pixel_scale,
                                       brightest_only=brightest_only,
                                       subtract_external=subtract_external,

@@ -247,7 +247,7 @@ def recommend_cpu_cores(num_jobs, requested_cores=None, lengthy_computation=Fals
         raise ValueError('num_jobs should be greater than 0')
 
     jobs_per_core = max(int(num_jobs / requested_cores), 1)
-    min_jobs_per_core = 20  # I don't like to hard-code things here but I don't have a better idea for now
+    min_jobs_per_core = 10  # I don't like to hard-code things here but I don't have a better idea for now
     if verbose:
         print('computational jobs per core = {}. For short computations, each core must have at least {} jobs to '
               'warrant parallel computation.'.format(jobs_per_core, min_jobs_per_core))
