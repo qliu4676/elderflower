@@ -78,8 +78,28 @@ def counter(i, number):
     if np.mod((i+1), number//4) == 0:
         print("completed: %d/%d"%(i+1, number))
 
-def round_good_fft(x):
+# deprecated
+def round_good_fft0(x):
     return min(2**math.ceil(math.log2(x)), 3 * 2**math.floor(math.log2(x)-1))
+
+def round_good_fft(x):
+    # Rounded PSF size to 2^k or 3*2^k
+    a = 1 << int(x-1).bit_length()
+    b = 3 << int(x-1).bit_length()-2
+    if x>b:
+        return a
+    else:
+        return min(a,b)
+
+def calculate_psf_size(n0, theta_0, contrast=1e5, psf_scale=2.5,
+                       min_psf_range=60, max_psf_range=720):
+    A0 = theta_0**n0
+    opt_psf_range = int((contrast * A0) ** (1./n0))
+    psf_range = max(min_psf_range, min(opt_psf_range, max_psf_range))
+    
+    # full (image) PSF size in pixel
+    psf_size = 2 * psf_range // psf_scale
+    return round_good_fft(psf_size)
     
 def compute_poisson_noise(data, n_frame=1, header=None, Gain=0.37):
     if header is not None:
@@ -87,8 +107,8 @@ def compute_poisson_noise(data, n_frame=1, header=None, Gain=0.37):
             n_frame = np.int(header['NFRAMES'])
         except KeyError:
             n_frame = 1
-        
-    std_poi = np.nanmedian(np.sqrt(data/Gain/n_frame))
+    G_effective = Gain * n_frame # effecitve gain: e-/ADU
+    std_poi = np.nanmedian(np.sqrt(data/G_effective))
     
     if np.isnan(std_poi):
         std_poi = None
@@ -965,7 +985,7 @@ def assign_star_props(table_list, sky_mean, ZP, image_size, pos_ref,
     # Positions & Flux (estimate) of bright stars from catalog
     star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE_PS'],
                            table_res_Rnorm['Y_IMAGE_PS']]).T - pos_ref
-    Flux2 = 10**((table_res_Rnorm["MAG_AUTO_corr"]-ZP)/(-2.5))
+    Flux2 = 10**((np.array(table_res_Rnorm["MAG_AUTO_corr"])-ZP)/(-2.5))
 
     # Estimate of brightness I at r_scale (I = Intensity - BKG) and flux
     z_norm = table_res_Rnorm['Imed'].data - sky_mean
@@ -975,10 +995,13 @@ def assign_star_props(table_list, sky_mean, ZP, image_size, pos_ref,
     print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
     if verbose:
         Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
-        SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
         print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
-        print("(<=> Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 at {2} pix)\n"\
-              .format(*np.around(SB_threshold,1),r_scale))
+        try:
+            SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
+            print("(<=> Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 at {2} pix)\n"\
+                  .format(*np.around(SB_threshold,1),r_scale))
+        except:
+            pass
 
     # Combine two samples, make sure they do not overlap
     star_pos = np.vstack([star_pos1, star_pos2])
@@ -1748,9 +1771,9 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, leg2d=False):
     
     return psf_fit, params
 
-def cal_reduced_chi2(fit, data, params):
-    sigma = 10**params[-1]
-    chi2_reduced = np.sum((fit-data)**2/sigma**2)/(len(data)-len(params))
+def cal_reduced_chi2(fit, data, uncertainty, dof=5):
+#     uncertainty = 10**params[-1]
+    chi2_reduced = np.sum((fit-data)**2/uncertainty**2)/(len(data)-dof)
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 
 def save_nested_fitting_result(res, filename='fit.res'):

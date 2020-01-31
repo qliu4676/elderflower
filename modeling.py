@@ -18,11 +18,20 @@ from galsim import GalSimBoundsError
 from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
-from functools import partial
+from functools import partial, lru_cache
 from usid_processing import parallel_compute
 
+try:
+    from numba import njit
+except ImportError:
+    def njit(*args, **kwargs):
+        def dummy_decorator(func):
+            return func 
+        return dummy_decorator
+    
 from utils import fwhm_to_gamma, gamma_to_fwhm
 from utils import Intensity2SB, SB2Intensity
+from utils import round_good_fft, calculate_psf_size
 
 ############################################
 # Functions for making PSF models
@@ -39,7 +48,7 @@ class PSF_Model:
         ----------
         params : a dictionary containing keywords of PSF parameter
         core_model : model of PSF core (moffat)
-        aureole_model : model of aureole ("power" or "multi-power")    
+        aureole_model : model of aureole ("moffat, "power" or "multi-power")    
         
         """
         self.core_model = core_model
@@ -58,6 +67,8 @@ class PSF_Model:
         if hasattr(self, 'gamma'):
             self.fwhm  = gamma_to_fwhm(self.gamma, self.beta)
             self.params['fwhm'] = self.fwhm
+            
+        self.gsparams = galsim.GSParams(folding_threshold=1e-10)
                 
     def make_grid(self, image_size, pixel_scale=2.5):
         """ Build grid for drawing """
@@ -67,12 +78,13 @@ class PSF_Model:
         self.pixel_scale = pixel_scale
         
         for key, val in self.params.items():
-            if (key == 'gamma') | ('theta' in key):
+            if ('gamma' in key) | ('theta' in key):
                 val = val / pixel_scale
                 exec('self.' + key + '_pix' + ' = val')
                 
     def update(self, params):
         """ Update PSF parameters from dictionary keys """
+        pixel_scale = self.pixel_scale
         for key, val in params.items():
             if np.ndim(val) > 0:
                 val = np.array(val)
@@ -80,8 +92,8 @@ class PSF_Model:
             exec('self.' + key + ' = val')
             self.params[key] = val
             
-            if 'theta' in key:
-                val = val / self.pixel_scale
+            if ('gamma' in key) | ('theta' in key):
+                val = val / pixel_scale
                 exec('self.' + key + '_pix' + ' = val')
                 
     def copy(self):
@@ -91,18 +103,24 @@ class PSF_Model:
     @property
     def f_core1D(self):
         """ 1D Core function """
-        c_mof2Dto1D = C_mof2Dto1D(self.gamma_pix, self.beta)
-        return lambda r: moffat1d_normed(r, self.gamma_pix, self.beta) / c_mof2Dto1D
+        gamma_pix, beta = self.gamma_pix, self.beta
+        c_mof2Dto1D = C_mof2Dto1D(gamma_pix, beta)
+        return lambda r: moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
 
     @property
     def f_aureole1D(self):
         """ 1D Aureole function """
-        if self.aureole_model == "power":
-            n, theta_0_pix = self.n, self.theta_0_pix
-            c_aureole_2Dto1D = C_pow2Dto1D(n, theta_0_pix)
-            f_aureole = lambda r: trunc_power1d_normed(r, n, theta_0_pix) / c_aureole_2Dto1D
+        if self.aureole_model == "moffat":
+            gamma1_pix, beta1 = self.gamma1_pix, self.beta1
+            c_mof2Dto1D = C_mof2Dto1D(gamma1_pix, beta1)
+            f_aureole = lambda r: moffat1d_normed(r, gamma1_pix, beta1) / c_mof2Dto1D
+        
+        elif self.aureole_model == "power":
+            n0, theta_0_pix = self.n0, self.theta_0_pix
+            c_aureole_2Dto1D = C_pow2Dto1D(n0, theta_0_pix)
+            f_aureole = lambda r: trunc_power1d_normed(r, n0, theta_0_pix) / c_aureole_2Dto1D
 
-        if self.aureole_model == "multi-power":
+        elif self.aureole_model == "multi-power":
             n_s, theta_s_pix = self.n_s, self.theta_s_pix
             c_aureole_2Dto1D = C_mpow2Dto1D(n_s, theta_s_pix)
             f_aureole = lambda r: multi_power1d_normed(r, n_s, theta_s_pix) / c_aureole_2Dto1D
@@ -120,12 +138,13 @@ class PSF_Model:
             for t in self.theta_s_pix:
                 plt.axvline(t, ls="--", color="k", alpha=0.3, zorder=1)
                 
-    def generate_core(self, folding_threshold=1.e-10):
+    def generate_core(self):
         """ Generate Galsim PSF of core. """
-        self.fwhm = self.gamma * 2. * math.sqrt(2**(1./self.beta)-1)
-        gsparams = galsim.GSParams(folding_threshold=folding_threshold)
-        psf_core = galsim.Moffat(beta=self.beta, fwhm=self.fwhm,
-                                flux=1., gsparams=gsparams) # in arcsec
+        gamma, beta = self.gamma, self.beta
+        self.fwhm = fwhm = gamma * 2. * math.sqrt(2**(1./beta)-1)
+        
+        psf_core = galsim.Moffat(beta=beta, fwhm=fwhm,
+                                 flux=1., gsparams=self.gsparams) # in arcsec
         self.psf_core = psf_core
         return psf_core
     
@@ -151,53 +170,61 @@ class PSF_Model:
         Returns
         ----------
         psf_aureole: power law Galsim PSF, flux normalized to be 1.
-        psf_size: Size of PSF used. In pixel.
+        psf_size: Full image size of PSF used. In pixel.
         
         """
-
-        
-        if self.aureole_model == "power":
-            n = self.n
-            theta_0 = self.theta_0
-            
-        elif self.aureole_model == "multi-power":
-            n_s = self.n_s
-            theta_s = self.theta_s
-            n = n_s[0]
-            theta_0 = theta_s[0]
-            
-            self.theta_0 = theta_0
-            self.n = n
-            
-        if psf_range is None:
-            a = theta_0**n
-            opt_psf_range = int((contrast * a) ** (1./n))
-            psf_range = max(min_psf_range, min(opt_psf_range, max_psf_range))
         
         if psf_scale is None:
-            psf_scale = 0.8 * self.pixel_scale
+            psf_scale = self.pixel_scale
             
-        # full (image) PSF size in pixel
-        psf_size = 2 * psf_range // psf_scale
+        if self.aureole_model == "moffat":
+            gamma1, beta1 = self.gamma1, self.beta1
+            
+            if psf_range is None:
+                psf_range = max_psf_range
+            psf_size = round_good_fft(2 * psf_range // psf_scale)   
+    
+        else:
+            if self.aureole_model == "power":
+                n0 = self.n0
+                theta_0 = self.theta_0
 
-        # Generate Grid of PSF and plot PSF model in real space onto it
-        cen_psf = ((psf_size-1)/2., (psf_size-1)/2.)
-        yy_psf, xx_psf = np.mgrid[:psf_size, :psf_size]
+            elif self.aureole_model == "multi-power":
+                n_s = self.n_s
+                theta_s = self.theta_s
+                self.n0 = n0 = n_s[0]
+                self.theta_0 = theta_0 = theta_s[0]
+
+            if psf_range is None:
+                psf_size = calculate_psf_size(n0, theta_0, contrast,
+                                              psf_scale, min_psf_range, max_psf_range)
+            else:
+                psf_size = round_good_fft(psf_range) 
         
-        if self.aureole_model == "power":
-            theta_0_pix = theta_0 / psf_scale
-            psf_model = trunc_power2d(xx_psf, yy_psf, n, theta_0_pix, I_theta0=1, cen=cen_psf) 
+            # Generate Grid of PSF and plot PSF model in real space onto it
+            xx_psf, yy_psf, cen_psf = generate_psf_grid(psf_size)
+        
+        if self.aureole_model == "moffat":
+            psf_aureole = galsim.Moffat(beta=beta1, scale_radius=gamma1,
+                                        flux=1., gsparams=self.gsparams)
             
-        elif self.aureole_model == "multi-power":
-            theta_s_pix = theta_s / psf_scale
-            psf_model =  multi_power2d(xx_psf, yy_psf, n_s, theta_s_pix, 1, cen=cen_psf) 
+        else:
+            if self.aureole_model == "power":
+                theta_0_pix = theta_0 / psf_scale
+                psf_model = trunc_power2d(xx_psf, yy_psf,
+                                          n0, theta_0_pix, I_theta0=1, cen=cen_psf) 
 
-        # Parse the image to Galsim PSF model by interpolation
-        image_psf = galsim.ImageF(psf_model)
-        psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
-                                               scale=psf_scale,
-                                               x_interpolant=interpolant,
-                                               k_interpolant=interpolant)
+            elif self.aureole_model == "multi-power":
+                theta_s_pix = theta_s / psf_scale
+                psf_model =  multi_power2d(xx_psf, yy_psf,
+                                           n_s, theta_s_pix, 1, cen=cen_psf) 
+
+            # Parse the image to Galsim PSF model by interpolation
+            image_psf = galsim.ImageF(psf_model)
+            psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
+                                                   scale=psf_scale,
+                                                   x_interpolant=interpolant,
+                                                   k_interpolant=interpolant)
         self.psf_aureole = psf_aureole
         return psf_aureole, psf_size   
 
@@ -213,8 +240,11 @@ class PSF_Model:
     def I2I0(self, I, r=12):
         """ Convert aureole I(r) at r to I0. r in pixel """
         
-        if self.aureole_model == "power":
-            return I2I0_pow(self.n, self.theta_0_pix, r, I=I)
+        if self.aureole_model == "moffat":
+            return I2I0_mof(self.gamma1_pix, self.beta1, r, I=I)
+        
+        elif self.aureole_model == "power":
+            return I2I0_pow(self.n0, self.theta_0_pix, r, I=I)
         
         elif self.aureole_model == "multi-power":
             return I2I0_mpow(self.n_s, self.theta_s_pix, r, I=I)
@@ -222,8 +252,11 @@ class PSF_Model:
     def I02I(self, I0, r=12):
         """ Convert aureole I(r) at r to I0. r in pixel """
         
-        if self.aureole_model == "power":
-            return I02I_pow(self.n, self.theta_0_pix, r, I0=I0)
+        if self.aureole_model == "moffat":
+            return I02I_mof(self.gamma1_pix, self.beta1, r, I0=I0)
+        
+        elif self.aureole_model == "power":
+            return I02I_pow(self.n0, self.theta_0_pix, r, I0=I0)
         
         elif self.aureole_model == "multi-power":
             return I02I_mpow(self.n_s, self.theta_s_pix, r, I0=I0)
@@ -243,25 +276,30 @@ class PSF_Model:
         
         if self.aureole_model == "power":
             cal_ext_light = partial(calculate_external_light_pow,
-                                   n0=self.n, theta0=self.theta_0_pix,
+                                   n0=self.n0, theta0=self.theta_0_pix,
                                    pos_source=pos_source, pos_eval=pos_eval)
         elif self.aureole_model == "multi-power":
             cal_ext_light = partial(calculate_external_light_mpow,
-                                   n_s=self.n_s, theta_s=self.theta_s_pix,
-                                   pos_source=pos_source, pos_eval=pos_eval)
-            
+                                    n_s=self.n_s, theta_s=self.theta_s_pix,
+                                    pos_source=pos_source, pos_eval=pos_eval)
+        # Loop the subtraction    
+        r_scale = stars.r_scale
+        n_verybright = stars.n_verybright
         for i in range(n_iter):
-            z_norm_verybright = z_norm_verybright0 - I_ext[:stars.n_verybright]
-            I0_verybright = self.I2I0(z_norm_verybright, r=stars.r_scale)
-            I_ext = cal_ext_light(I0=I0_verybright)
+            z_norm_verybright = z_norm_verybright0 - I_ext[:n_verybright]
+            I0_verybright = self.I2I0(z_norm_verybright, r=r_scale)
+            I_ext = cal_ext_light(I0_source=I0_verybright)
             
         return I_ext
     
     def I2Flux(self, I, r=12):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
-        if self.aureole_model == "power":
-            return I2Flux_pow(self.frac, self.n, self.theta_0_pix, r, I=I)
+        if self.aureole_model == "moffat":
+            return I2Flux_mof(self.frac, self.gamma1_pix, self.beta1, r, I=I)
+        
+        elif self.aureole_model == "power":
+            return I2Flux_pow(self.frac, self.n0, self.theta_0_pix, r, I=I)
         
         elif self.aureole_model == "multi-power":
             return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I=I)
@@ -269,8 +307,11 @@ class PSF_Model:
     def Flux2I(self, Flux, r=12):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
-        if self.aureole_model == "power":
-            return Flux2I_pow(self.frac, self.n, self.theta_0_pix, r, Flux=Flux)
+        if self.aureole_model == "moffat":
+            return Flux2I_mof(self.frac, self.gamma1_pix, self.beta1, r, Flux=Flux)
+        
+        elif self.aureole_model == "power":
+            return Flux2I_pow(self.frac, self.n0, self.theta_0_pix, r, Flux=Flux)
         
         elif self.aureole_model == "multi-power":
             return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
@@ -322,12 +363,32 @@ class PSF_Model:
     def draw_aureole2D_in_real(self, star_pos, Flux=None, I0=None):
         """ 2D drawing function of the aureole in real space given positions and flux / amplitude (of aureole) of target stars """
         
-        if self.aureole_model == "power":
-            n = self.n
+        if self.aureole_model == "moffat":
+            gamma1_pix, alpha1 = self.gamma1_pix, self.beta1
+            
+            # In this case I_theta0 is defined as the amplitude at gamma
+            if I0 is None:
+                I_theta0 = moffat2d_Flux2I0(gamma1_pix, alpha1, Flux=Flux)
+            elif Flux is None:
+                I_theta0 = I0
+            else:
+                raise MyError("Both Flux and I0 are not given.")
+                
+            Amps = np.array([moffat2d_I02Amp(alpha1, I0=I0)
+                             for I0 in I_theta0])
+            
+            f_aureole_2d_s = np.array([models.Moffat2D(amplitude=amp,
+                                                       x_0=x0, y_0=y0,
+                                                       gamma=gamma1_pix,
+                                                       alpha=alpha1)
+                                    for ((x0,y0), amp) in zip(star_pos, Amps)])
+            
+        elif self.aureole_model == "power":
+            n0 = self.n0
             theta_0_pix = self.theta_0_pix
             
             if I0 is None:
-                I_theta0 = power2d_Flux2Amp(n, theta_0_pix, Flux=1) * Flux
+                I_theta0 = power2d_Flux2Amp(n0, theta_0_pix, Flux=1) * Flux
             elif Flux is None:
                 I_theta0 = I0
             else:
@@ -335,7 +396,7 @@ class PSF_Model:
             
             f_aureole_2d_s = np.array([lambda xx, yy, cen=pos, I=I:\
                                       trunc_power2d(xx, yy, cen=cen,
-                                                    n=n, theta0=theta_0_pix,
+                                                    n=n0, theta0=theta_0_pix,
                                                     I_theta0=I)
                                       for (I, pos) in zip(I_theta0, star_pos)])
 
@@ -795,6 +856,7 @@ def compute_multi_pow_norm0(n0, n_s, theta0, theta_s, I_theta0):
             pass    
     return a0, a_s
 
+@njit
 def compute_multi_pow_norm(n_s, theta_s, I_theta0):
     """ Compute normalization factor A of each power law component A_i*(theta)^(n_i)"""
     n0, theta0 = n_s[0], theta_s[0]
@@ -804,12 +866,11 @@ def compute_multi_pow_norm(n_s, theta_s, I_theta0):
     
     I_theta_i = a0 * float(theta_s[1])**(-n0)
     for i, (n_i, theta_i) in enumerate(zip(n_s[1:], theta_s[1:])):
+#         if (i+2) == len(n_s):
+#             break
         a_i = I_theta_i/(theta_s[i+1])**(-n_i)
-        try:
-            a_s[i+1] = a_i
-            I_theta_i = a_i * float(theta_s[i+2])**(-n_i)
-        except IndexError:
-            pass    
+        a_s[i+1] = a_i
+        I_theta_i = a_i * float(theta_s[i+2])**(-n_i)
     return a_s
 
 # deprecated
@@ -936,6 +997,12 @@ def map2d(f, xx=None, yy=None):
 def map2d_k(k, func_list, xx=None, yy=None):
     return func_list[k](xx, yy)
 
+@lru_cache(maxsize=16)
+def generate_psf_grid(psf_size):
+    # Generate Grid of PSF and plot PSF model in real space onto it
+    cen_psf = ((psf_size-1)/2., (psf_size-1)/2.)
+    yy_psf, xx_psf = np.mgrid[:psf_size, :psf_size]
+    return xx_psf, yy_psf, cen_psf
 
 def power2d(xx, yy, n, theta0, I_theta0, cen): 
     """ Power law for 2d array, normalized = I_theta0 at theta0 """
@@ -945,13 +1012,14 @@ def power2d(xx, yy, n, theta0, I_theta0, cen):
     z = a * np.power(rr, -n) 
     return z 
 
+@njit
 def trunc_power2d(xx, yy, n, theta0, I_theta0, cen): 
     """ Truncated power law for 2d array, normalized = I_theta0 at theta0 """
-    rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2) + 1e-6
+    rr = np.sqrt((xx-cen[0])**2 + (yy-cen[1])**2).ravel() + 1e-6
     a = I_theta0 / (theta0)**(-n)
     z = a * np.power(rr, -n) 
     z[rr<=theta0] = I_theta0
-    return z
+    return z.reshape(xx.shape)
 
 # deprecated
 def multi_power2d_cover(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
@@ -972,6 +1040,7 @@ def multi_power2d_cover(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
             pass
     return z
 
+@njit
 def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen):
     """ Multi-power law for 2d array, I = I_theta0 at theta0, theta in pix"""
     a_s = compute_multi_pow_norm(n_s, theta_s, I_theta0)
@@ -1020,6 +1089,18 @@ def moffat2d_Flux2Amp(r_core, beta, Flux=1):
 def moffat2d_Amp2Flux(r_core, beta, Amp=1):
     return Amp / moffat2d_Flux2Amp(r_core, beta, Flux=1)
 
+def moffat2d_Flux2I0(r_core, beta, Flux=1):
+    Amp = moffat2d_Flux2Amp(r_core, beta, Flux=Flux)
+    return moffat2d_Amp2I0(beta, Amp=Amp)
+
+def moffat2d_I02Amp(beta, I0=1):
+    # Convert I0(r=r_core) to Amplitude
+    return I0 * 2**(2*beta)
+
+def moffat2d_Amp2I0(beta, Amp=1):
+    # Convert I0(r=r_core) to Amplitude
+    return Amp * 2**(-2*beta)
+
 # def power2d_Flux2Amp(n, theta0, Flux=1, trunc=True):
 #     if trunc:
 #         I_theta0 = (1./np.pi) * Flux * (n-2)/n / theta0**2
@@ -1049,8 +1130,9 @@ def power2d_Flux2Amp(n, theta0, Flux=1):
 
 def power2d_Amp2Flux(n, theta0, Amp=1):
     return Amp / power2d_Flux2Amp(n, theta0, Flux=1)
-
+            
 def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
+    """ convert amplitude(s) to integral flux with 2D multi-power law """
     if np.ndim(Amp)>0:
         a_s = compute_multi_pow_norm(n_s, theta_s, 1)
         a_s = np.multiply(a_s[:,np.newaxis], Amp)
@@ -1060,14 +1142,22 @@ def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
     n0, theta0 = n_s[0], theta_s[0]
     
     I_2D = Amp * np.pi * theta0**2
-    
-    for k in range(len(n_s)-1):
+
+    I_2D = sum_I2D_multi_power2d(I_2D, a_s, n_s, theta_s, theta_trunc)
         
+    return I_2D
+
+@njit
+def sum_I2D_multi_power2d(I_2D, a_s, n_s, theta_s, theta_trunc=1e5):
+    """ Supplementary function for multi_power2d_Amp2Flux tp speed up """
+
+    for k in range(len(n_s)-1):
+
         if n_s[k] == 2:
             I_2D += 2*np.pi * a_s[k] * math.log(theta_s[k+1]/theta_s[k])
         else:
             I_2D += 2*np.pi * a_s[k] * (theta_s[k]**(2-n_s[k]) - theta_s[k+1]**(2-n_s[k])) / (n_s[k]-2)
-            
+
     if n_s[-1] > 2:
         I_2D += 2*np.pi * a_s[-1] * theta_s[-1]**(2-n_s[-1]) / (n_s[-1]-2) 
     elif n_s[-1] == 2:
@@ -1075,13 +1165,40 @@ def multi_power2d_Amp2Flux(n_s, theta_s, Amp=1, theta_trunc=1e5):
     else:
         I_2D += 2*np.pi * a_s[-1] * (theta_trunc**(2-n_s[-1]) - theta_s[-1]**(2-n_s[-1])) / (2-n_s[-1])
 
-#     else:
-#         raise InconvergenceError('PSF is not convergent in Infinity.')
-        
-    return I_2D
-
 def multi_power2d_Flux2Amp(n_s, theta_s, Flux=1):
     return Flux / multi_power2d_Amp2Flux(n_s, theta_s, Amp=1)
+
+
+def I2I0_mof(r_core, beta, r, I=1):
+    """ Convert Intensity I(r) at r to I at r_core with moffat.
+        r_core and r in pixel """
+    Amp = I * (1+(r/r_core)**2)**beta
+    I0 = moffat2d_Amp2I0(beta, Amp)
+    return I0
+
+def I02I_mof(r_core, beta, r, I0=1):
+    """ Convert I at r_core to Intensity I(r) at r with moffat.
+        r_core and r in pixel """
+    Amp = moffat2d_I02Amp(beta, I0)
+    I = Amp * (1+(r/r_core)**2)**(-beta)
+    return I
+
+def I2Flux_mof(frac, r_core, beta, r, I=1):
+    """ Convert Intensity I(r) at r to total flux with fraction of moffat.
+        r_core and r in pixel """
+    Amp = I * (1+(r/r_core)**2)**beta
+    Flux_mof = moffat2d_Amp2Flux(r_core, beta, Amp=Amp)
+    Flux_tot = Flux_mof / frac
+    return Flux_tot
+
+def Flux2I_mof(frac, r_core, beta, r, Flux=1):
+    """ Convert total flux  at r to Intensity I(r) with fraction of moffat.
+        r_core and r in pixel """
+    Flux_mof = Flux * frac
+    Amp = moffat2d_Flux2Amp(r_core, beta, Flux=Flux_mof)
+    I = Amp * (1+(r/r_core)**2)**(-beta)
+    return I
+
 
 def I2I0_pow(n0, theta0, r, I=1):
     """ Convert Intensity I(r) at r to I at theta_0 with power law.
@@ -1134,33 +1251,33 @@ def I02I_mpow(n_s, theta_s, r, I0=1):
     return I
 
 
-def calculate_external_light_pow(n0, theta0, pos_source, pos_eval, I0):
+def calculate_external_light_pow(n0, theta0, pos_source, pos_eval, I0_source):
     # Calculate light produced by source (I0, pos_source) at pos_eval. 
     r_s = distance.cdist(pos_source,  pos_eval)
     
-    I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
+    I0_s = np.repeat(I0_source[:, np.newaxis], r_s.shape[-1], axis=1) 
     
     I_s = I0_s / (r_s/theta0)**n0
     I_s[(r_s==0)] = 0
     
     return I_s.sum(axis=0)
 
-def calculate_external_light_mpow(n_s, theta_s, pos_source, pos_eval, I0):
-    # Calculate light produced by source (I0, pos_source) at pos_eval. 
+def calculate_external_light_mpow(n_s, theta_s, pos_source, pos_eval, I0_source):
+    # Calculate light produced by source (I0_source, pos_source) at pos_eval. 
     r_s = distance.cdist(pos_source,  pos_eval)
     r_inds = np.digitize(r_s, theta_s, right=True) - 1
     r_inds[r_inds<=0] = 0
     
     r_inds_uni, r_inds_inv = np.unique(r_inds, return_inverse=True)
     
-    I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
+    I0_s = np.repeat(I0_source[:, np.newaxis], r_s.shape[-1], axis=1) 
     
     I_s = I0_s / r_s**(n_s[r_inds]) / theta_s[0]**(-n_s[0])
     I_s[(r_s==0)] = 0
     
     factors = np.array([np.prod([theta_s[j+1]**(n_s[j+1]-n_s[j])
                                  for j in range(i)]) for i in r_inds_uni])
-    I_s *= factors[r_inds_inv].reshape(len(I0),-1)
+    I_s *= factors[r_inds_inv].reshape(len(I0_source),-1)
     
     return I_s.sum(axis=0)
     
@@ -1223,22 +1340,27 @@ def Flux2I_mpow(frac, n_s, theta_s, r, Flux=1):
 
 ### 1D/2D conversion factor ###
 
+@njit
 def C_mof2Dto1D(r_core, beta):
     """ gamma in pixel """
     return 1./(beta-1) * 2*math.sqrt(np.pi) * r_core * Gamma(beta) / Gamma(beta-1./2) 
 
+@njit
 def C_mof1Dto2D(r_core, beta):
     """ gamma in pixel """
     return 1. / C_mof2Dto1D(r_core, beta)
 
+@njit
 def C_pow2Dto1D(n, theta0):
     """ theta0 in pixel """
     return np.pi * theta0 * (n-1) / (n-2)
 
+@njit
 def C_pow1Dto2D(n, theta0):
     """ theta0 in pixel """
     return 1. / C_pow2Dto1D(n, theta0)
 
+@njit
 def C_mpow2Dto1D(n_s, theta_s):
     """ theta in pixel """
     a_s = compute_multi_pow_norm(n_s, theta_s, 1)
@@ -1262,6 +1384,7 @@ def C_mpow2Dto1D(n_s, theta_s):
     
     return I_2D / I_1D 
 
+@njit
 def C_mpow1Dto2D(n_s, theta_s):
     """ theta in pixel """
     return 1. / C_mpow2Dto1D(n_s, theta_s)
@@ -1745,7 +1868,7 @@ def generate_image_fit(psf_fit, stars, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, theta_in=50, theta_out=240, 
+              n_min=1, d_n0=0.25, theta_in=50, theta_out=240, 
               nspline=None, std_poi=None, leg2d=False, **kwargs):
     
     """
@@ -1896,6 +2019,10 @@ def set_likelihood(data, mask_fit, psf, stars,
     
     Parameters
     ----------
+    data: 1d data to be fit
+    mask_fit: mask map (masked region is 1)
+    psf: PSF class
+    stars: Stars class
     
     Returns
     ----------
@@ -1905,6 +2032,8 @@ def set_likelihood(data, mask_fit, psf, stars,
     theta_0 = psf.theta_0
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
+    
+    bkg = stars.BKG
     
     if norm=='brightness':
         draw_func = generate_image_by_znorm
@@ -1934,7 +2063,7 @@ def set_likelihood(data, mask_fit, psf, stars,
         
             if norm=='brightness':
                 # I varies with sky background
-                stars.z_norm = z_norm + (stars.BKG - mu)
+                stars.z_norm = z_norm + (bkg - mu)
             
             image_tri = draw_func(psf, stars, psf_range=psf_range,
                                   brightest_only=brightest_only,
@@ -1961,7 +2090,7 @@ def set_likelihood(data, mask_fit, psf, stars,
             
             if norm=='brightness':
                 # I varies with sky background
-                stars.z_norm = z_norm + (stars.BKG - mu)
+                stars.z_norm = z_norm + (bkg - mu)
             
             image_tri = draw_func(psf, stars,
                                   psf_range=psf_range,
@@ -1999,7 +2128,7 @@ def set_likelihood(data, mask_fit, psf, stars,
             
             if norm=='brightness':
                 # I varies with sky background
-                stars.z_norm = z_norm + (stars.BKG - mu)
+                stars.z_norm = z_norm + (bkg - mu)
                 
             image_tri = draw_func(psf, stars,
                                   psf_range=psf_range,
