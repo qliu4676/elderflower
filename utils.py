@@ -1261,7 +1261,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
             # Use the measurement using empirical criteria
             for i in inds_c[counts>1]:
                 obj_dup = Cat_crop[idxcatalog][idxc==i]
-                obj_dup.pprint(max_lines=-1, max_width=-1)
+#                 obj_dup.pprint(max_lines=-1, max_width=-1)
                 
                 # Coordinate error of detection
                 err_coord = np.sqrt(obj_dup["raMeanErr"]**2 + obj_dup["decMeanErr"]**2)
@@ -1528,24 +1528,33 @@ def build_independent_priors(priors):
         return v
     return prior_transform    
 
-def set_labels(n_spline, leg2d=False):
+def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
+    """ Setup labels for cornerplot """
+    K = 0
+    if fit_frac: K += 1
+    if fit_sigma: K += 1
+        
     if n_spline==1:
-        labels = [r'$n0$', r'$\mu$', r'$\log\,\sigma$']
+        labels = [r'$n0$']
     elif n_spline==2:
-        labels = [r'$n0$', r'$n1$', r'$\theta_1$', r'$\mu$', r'$\log\,\sigma$']
+        labels = [r'$n0$', r'$n1$', r'$\theta_1$']
     elif n_spline==3:
-        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$',
-                  r'$\mu$', r'$\log\,\sigma$']
+        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$']
     else:
         labels = [r'$n_%d$'%d for d in range(n_spline)] \
-               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)] \
-               + [r'$\mu$', r'$\log\,\sigma$']
+               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)]
+        
+    labels += [r'$\mu$']
         
     if leg2d:
-        labels = np.insert(labels, -2, [r'$\log\,A_{01}$', r'$\log\,A_{10}$'])
-            
-#     if fit_frac:
-#         labels = np.insert(labels, -2, [r'$f_{pow}$'])
+        labels.insert(-1, r'$\log\,A_{01}$')
+        labels.insert(-1, r'$\log\,A_{10}$')
+    
+    if fit_sigma:
+        labels += [r'$\log\,\sigma$']
+        
+    if fit_frac:
+        labels += [r'$\log\,f_{pow}$']
         
     return labels
         
@@ -1656,9 +1665,11 @@ class DynamicNestedSampler:
         plot_fit_PSF1D(self.results, psf, **kwargs)
     
     def generate_fit(self, psf, stars, image_base,
-                     brightest_only=False, draw_real=True, leg2d=False,
+                     brightest_only=False, draw_real=True,
+                     fit_sigma=True, fit_frac=False, leg2d=False,
                      norm='brightness', n_out=4, theta_out=1200):
         psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d,
+                                            fit_sigma=fit_sigma, fit_frac=fit_frac,
                                             n_out=n_out, theta_out=theta_out)
         from modeling import generate_image_fit
         image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
@@ -1738,32 +1749,42 @@ def get_params_fit(results, return_sample=False):
     else:
         return pmed, pmean, pcov
     
-def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, leg2d=False):
+def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
+                      fit_sigma=True, fit_frac=False, leg2d=False):
     
     image_size = psf.image_size
     psf_fit = psf.copy()
     
     params, _, _ = get_params_fit(fit_res)
     
-    if leg2d:
-        N_n = (len(params)-4+1)//2
-        N_theta = len(params)-4-N_n
-        psf_fit.A10, psf_fit.A01 = 10**params[-3], 10**params[-4]
-    else:
-        N_n = (len(params)-2+1)//2
-        N_theta = len(params)-2-N_n
+    N_n = n_spline
+    N_theta = n_spline - 1
+        
+    K = 0
+    if fit_frac: K += 1        
+    if fit_sigma: K += 1
     
     if psf.aureole_model == "power":
-        n_fit, mu_fit, logsigma_fit = params
         psf_fit.update({'n':n_fit})
         
     elif psf.aureole_model == "multi-power":
         n_s_fit = np.concatenate([params[:N_n], [n_out]])
         theta_s_fit = np.concatenate([[psf.theta_0],
-                                      np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
-        psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
+                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
         
-    mu_fit, sigma_fit = params[-2], 10**params[-1]
+        param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
+        
+        if fit_frac:
+            frac = 10**params[-1]
+            param_update['frac'] = frac
+            
+        psf_fit.update(param_update)
+        
+        if leg2d:
+            psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
+
+        
+    mu_fit, sigma_fit = params[-K-1], 10**params[-K]
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
