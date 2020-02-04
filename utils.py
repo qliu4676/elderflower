@@ -690,7 +690,7 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     """ Return 3 sigma-clipped mean, med and std of ring r=R (half-width=wid) for image.
         Note the output norm is not background subtracted. masked region is 1."""
     
-    annulus_ma = CircularAnnulus(cen, R-wid, R+wid).to_mask()      
+    annulus_ma = CircularAnnulus([cen], R-wid, R+wid).to_mask()[0]      
     mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
     mask_clean = mask_ring & (~mask_field)                # sky ring with other sources masked
     
@@ -1666,9 +1666,10 @@ class DynamicNestedSampler:
     
     def generate_fit(self, psf, stars, image_base,
                      brightest_only=False, draw_real=True,
-                     fit_sigma=True, fit_frac=False, leg2d=False,
+                     fit_sigma=True, fit_frac=False, leg2d=False, sigma=None,
                      norm='brightness', n_out=4, theta_out=1200):
-        psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d,
+        psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d, 
+                                            sigma=sigma,
                                             fit_sigma=fit_sigma, fit_frac=fit_frac,
                                             n_out=n_out, theta_out=theta_out)
         from modeling import generate_image_fit
@@ -1750,7 +1751,7 @@ def get_params_fit(results, return_sample=False):
         return pmed, pmean, pcov
     
 def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
-                      fit_sigma=True, fit_frac=False, leg2d=False):
+                      fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
     
     image_size = psf.image_size
     psf_fit = psf.copy()
@@ -1784,7 +1785,12 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
             psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
 
         
-    mu_fit, sigma_fit = params[-K-1], 10**params[-K]
+    mu_fit = params[-K-1]
+    if fit_sigma:
+        sigma_fit = 10**params[-K]
+    else:
+        sigma_fit = sigma
+        
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
