@@ -19,11 +19,6 @@ from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
-import dynesty
-from dynesty import plotting as dyplot
-from dynesty import utils as dyfunc
-import multiprocess as mp
-
 from plotting import LogNorm, AsinhNorm, colorbar
 
 ### Baisc Funcs ###
@@ -1395,23 +1390,13 @@ def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
         
     return labels
         
-### Nested Fitting Helper ###
 
 
-def get_params_fit(results, return_sample=False):
-    samples = results.samples                                 # samples
-    weights = np.exp(results.logwt - results.logz[-1])        # normalized weights 
-    pmean, pcov = dyfunc.mean_and_cov(samples, weights)       # weighted mean and covariance
-    samples_eq = dyfunc.resample_equal(samples, weights)      # resample weighted samples
-    pmed = np.median(samples_eq,axis=0)
-    
-    if return_sample:
-        return pmed, pmean, pcov, samples_eq
-    else:
-        return pmed, pmean, pcov
+### Recostruct PSF from fit ###    
     
 def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
                       fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
+    from sampler import get_params_fit
     
     image_size = psf.image_size
     psf_fit = psf.copy()
@@ -1431,7 +1416,7 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
     elif psf.aureole_model == "multi-power":
         n_s_fit = np.concatenate([params[:N_n], [n_out]])
         theta_s_fit = np.concatenate([[psf.theta_0],
-                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
+                      np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
         
         param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
         
@@ -1462,17 +1447,6 @@ def cal_reduced_chi2(fit, data, uncertainty, dof=5):
 #     uncertainty = 10**params[-1]
     chi2_reduced = np.sum((fit-data)**2/uncertainty**2)/(len(data)-dof)
     print("Reduced Chi^2: %.5f"%chi2_reduced)
-
-def save_nested_fitting_result(res, filename='fit.res'):
-    import dill
-    with open(filename,'wb') as file:
-        dill.dump(res, file)
-        
-def load_nested_fitting_result(filename='fit.res'):        
-    import dill
-    with open(filename, "rb") as file:
-        res = dill.load(file)
-    return res
 
 
 class MyError(Exception): 
