@@ -5,10 +5,8 @@ import math
 import time
 import numpy as np
 from scipy import stats
-from skimage import morphology
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from astropy import wcs
 from astropy import units as u
@@ -17,10 +15,7 @@ from astropy.table import Table, Column
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
-from astropy.visualization.mpl_normalize import ImageNormalize
-from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 
-from photutils.segmentation import SegmentationImage
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
@@ -28,6 +23,8 @@ import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 import multiprocess as mp
+
+from plotting import LogNorm, AsinhNorm, colorbar
 
 ### Baisc Funcs ###
 
@@ -122,50 +119,6 @@ def extract_bool_bitflags(bitflags, ind):
     from astropy.nddata.bitmask import interpret_bit_flags
     return np.array(["{0:016b}".format(0xFFFFFFFF & interpret_bit_flags(flag))[-ind]
                      for flag in np.atleast_1d(bitflags)]).astype(bool)
-        
-    
-### Plotting Helpers ###
-
-def LogNorm():
-    return ImageNormalize(stretch=LogStretch())
-
-def AsinhNorm(a=0.1):
-    return ImageNormalize(stretch=AsinhStretch(a=a))
-
-def HistEqNorm(data):
-    return ImageNormalize(stretch=HistEqStretch(data))
-
-def vmin_3mad(img):
-    """ lower limit of visual imshow defined by 3 mad above median """ 
-    return np.median(img)-3*mad_std(img)
-
-def vmax_2sig(img):
-    """ upper limit of visual imshow defined by 2 sigma above median """ 
-    return np.median(img)+2*np.std(img)
-
-def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args):
-    """ Customized colorbar """
-    ax = mappable.axes
-    fig = ax.figure
-    divider = make_axes_locatable(ax)
-    
-    if loc=="bottom":
-        orent = "horizontal"
-        pad = 1.5*pad
-        rot = 75
-    else:
-        orent = "vertical"
-        rot = 0
-    
-    cax = divider.append_axes(loc, size=size, pad=pad)
-    
-    cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
-    cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
-    
-    cmap = cb.get_cmap()
-    cmap.set_bad(color=color_nan, alpha=0.3)
-    
-    return cb
 
 
 ### Photometry Funcs ###
@@ -190,6 +143,7 @@ def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
     return back, back_rms
 
 def display_background_sub(field, back):
+    from plotting import vmax_2sig, vmin_3mad
     # Display and save background subtraction result with comparison 
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
     ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=LogNorm())
@@ -223,181 +177,6 @@ def source_detection(data, sn=2, b_size=120,
 
     return data_ma, segm_sm
 
-def make_mask_map(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
-    """ Make mask map with S/N > sn_thre """
-    from photutils import detect_sources, deblend_sources
-    
-    # detect source
-    back, back_rms = background_sub_SE(image, b_size=b_size)
-    threshold = back + (sn_thre * back_rms)
-    segm0 = detect_sources(image, threshold, npixels=npix)
-    
-    # dilation
-    segmap = segm0.data.copy()
-    for i in range(n_dilation):
-        segmap = morphology.dilation(segmap)
-        
-    segmap[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
-    mask_deep = (segmap!=0)
-    
-    return mask_deep, segmap
-
-def make_mask_map_core(image, star_pos, r_core=12):
-    """ Make stars out to r_core """
-
-    # mask core
-    yy, xx = np.indices(image.shape)
-    mask_deep = np.zeros_like(image, dtype=bool)
-    
-    if np.ndim(r_core) == 0:
-        r_core = np.ones(len(star_pos)) * r_core
-    
-    core_region= np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r for (pos,r) in zip(star_pos,r_core)])
-    
-    mask_deep[core_region] = 1
-    segmap = mask_deep.astype(int).copy()
-    
-    return mask_deep, segmap
-
-def make_mask_map_dual(image, stars,
-                       xx=None, yy=None, by='radius', 
-                       pad=0, r_core=24, r_out=None, count=None,
-                       seg_base=None, n_bright=25, sn_thre=3, 
-                       nlevels=64, contrast=0.001, npix=4, 
-                       b_size=64, n_dilation=3):
-    """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
-    for bright stars, mask core (r < r_core pix) """
-    from photutils import detect_sources, deblend_sources
-    
-    if (xx is None) | (yy is None):
-        yy, xx = np.mgrid[:image.shape[0]+2*pad, :image.shape[1]+2*pad]
-        
-    star_pos = stars.star_pos_bright + pad
-    
-    if by == 'radius':
-        r_core_s = np.unique(r_core)[::-1]
-        if len(r_core_s) == 1:
-            r_core_A, r_core_B = r_core_s, r_core_s
-            r_core_s = np.ones(len(star_pos)) * r_core_s
-        else:
-            r_core_A, r_core_B = r_core_s[:2]
-            r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
-                                 for F in stars.Flux_bright])
-
-        if r_out is not None:
-            r_out_s = np.unique(r_out)[::-1]
-            if len(r_out_s) == 1:
-                r_out_A, r_out_B = r_out_s, r_out_s
-                r_out_s = np.ones(len(star_pos)) * r_out_s
-            else:
-                r_out_A, r_out_B = r_out_s[:2]
-                r_out_s = np.array([r_out_A if F >= stars.F_verybright else r_out_B
-                                     for F in stars.Flux_bright])
-            print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
-            
-    if sn_thre is not None:
-        print("Detect and deblend source... Mask S/N > %.1f (%dth enlarged)"%(sn_thre, n_dilation))
-        # detect all source first 
-        back, back_rms = background_sub_SE(image, b_size=b_size)
-        threshold = back + (sn_thre * back_rms)
-        segm0 = detect_sources(image, threshold, npixels=npix)
-
-        # deblend source
-        segm_deb = deblend_sources(image, segm0, npixels=npix,
-                                   nlevels=nlevels, contrast=contrast)
-
-    #     for pos in star_pos:
-    #         if (min(pos[0],pos[1]) > 0) & (pos[0] < image.shape[0]) & (pos[1] < image.shape[1]):
-    #             star_lab = segmap[coord_Im2Array(pos[0], pos[1])]
-    #             segm_deb.remove_label(star_lab)
-
-        segmap = segm_deb.data.copy()
-        max_lab = segm_deb.max_label
-
-        # remove S/N mask map for input (bright) stars
-        for pos in star_pos:
-            rr2 = (xx-pos[0])**2+(yy-pos[1])**2
-            lab = segmap[np.where(rr2==np.min(rr2))][0]
-            segmap[segmap==lab] = 0
-
-        # dilation
-        for i in range(n_dilation):
-            segmap = morphology.dilation(segmap)
-            
-    if seg_base is not None:
-        segmap2 = seg_base
-        
-        if sn_thre is not None:
-            # Combine Two mask
-            segmap[segmap2>n_bright] = max_lab + segmap2[segmap2>n_bright]
-            segm_deb = SegmentationImage(segmap)
-        else:
-            # Only use seg_base, bright stars are aggressively masked
-            segm_deb = SegmentationImage(segmap2)
-        
-        max_lab = segm_deb.max_label
-    
-    if by == 'radius':
-        # mask core for bright stars out to given radii
-        print("Mask core regions: r < %d (%d) pix "%(r_core_A, r_core_B))
-        core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r
-                                            for (pos,r) in zip(star_pos,r_core_s)])
-        mask_star = core_region.copy()
-
-        if r_out is not None:
-            # mask outer region for bright stars out to given radii
-            outskirt = np.logical_and.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) > r
-                                             for (pos,r) in zip(star_pos,r_out_s)])
-            mask_star = (mask_star) | (outskirt)
-    
-    elif by == 'brightness':
-        # If count is not given, use 5 sigma above background.
-        if count is None:
-            count = np.mean(back + (5 * back_rms))
-        # mask core for bright stars below given ADU count
-        print("Mask core regions: Count > %.2f ADU "%count)
-        mask_star = image >= count
-        
-    segmap[mask_star] = max_lab+1
-    
-    # set dilation border a different label (for visual)
-    segmap[(segmap!=0)&(segm_deb.data==0)] = max_lab+2
-    
-    # set mask map
-    mask_deep = (segmap!=0)
-    
-    return mask_deep, segmap
-
-def make_mask_strip(stars, xx, yy, pad=0, n_strip=24,
-                    wid_strip=16, dist_strip=500,
-                    wid_cross=10, dist_cross=72):    
-    """ Make mask map in strips with width=width """
-    
-    print("Use sky strips crossing very bright stars")
-    
-    if stars.n_verybright>0:
-        mask_strip_s = np.empty((stars.n_verybright, xx.shape[0], xx.shape[1]))
-        mask_cross_s = np.empty_like(mask_strip_s)
-    else:
-        return None, None
-    
-    star_pos = stars.star_pos_verybright + pad
-    
-    phi_s = np.linspace(-90, 90, n_strip+1)
-#     phi_s = np.setdiff1d(phi_s, [-90,0,90])
-    a_s = np.tan(phi_s*np.pi/180)
-    
-    for k, (x_b, y_b) in enumerate(star_pos):
-        m_s = (y_b-a_s*x_b)
-        mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < wid_strip 
-                                           for (a, m) in zip(a_s, m_s)])
-        mask_cross = np.logical_or.reduce([abs(yy-y_b)<wid_cross, abs(xx-x_b)<wid_cross])
-        dist_map1 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
-        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_cross
-        mask_strip_s[k] = mask_strip & dist_map1
-        mask_cross_s[k] = mask_cross & dist_map2
-
-    return mask_strip_s, mask_cross_s
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
     
@@ -538,7 +317,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
         plt.xscale("log")
         plt.xlim(max(r_rbin[np.isfinite(r_rbin)][0]*0.8, 1e-1),r_rbin[np.isfinite(r_rbin)][-1]*1.2)
-        plt.xlabel("r [acrsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
+        plt.xlabel("R [arcsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
         
         if scatter:
             plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, 
@@ -629,6 +408,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
         Do a finer detection&deblending to remove faint undetected source."""
     
+    from skimage import morphology
     thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
                                           n_win=n_win, seeing=seeing, verbose=verbose)
     img_thumb, seg_thumb, mask_thumb = thumb_list
@@ -963,14 +743,71 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def assign_star_props(table_list, sky_mean, ZP, image_size, pos_ref,
+def read_measurement_tables(dir_name, image_bounds0, pad=100,
+                            band='G', obj_name='NGC5907',
+                            r_scale=12, mag_limit=[15,23]):
+    """ Read measurement tables from the directory """
+    
+    patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
+        
+    image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
+                    patch_Xmax0-pad, patch_Ymax0-pad)
+    
+    # Magnitude name
+    b_name = band.lower()
+    mag_name = b_name+'MeanPSFMag' if 'PS' in dir_name else b_name+'mag'
+    
+    # Read measurement for faint stars from catalog
+    # Faint star catalog name
+    fname_catalog = os.path.join(dir_name, "%s-%s-catalog_PS_%s_all.txt"%(obj_name, band, b_name))
+    
+    # Check if the file exist
+    if os.path.isfile(fname_catalog):
+        table_catalog = Table.read(fname_catalog, format="ascii")
+        mag_catalog = table_catalog[mag_name]
+    else:
+        sys.exit("Table %s does not exist. Exit."%fname_catalog)
+    
+    # stars fainter than magnitude limit (fixed as background)
+    table_faint = table_catalog[(mag_catalog>=mag_limit[0]) & (mag_catalog<mag_limit[1])]
+    table_faint = crop_catalog(table_faint,
+                               keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
+                               bounds=image_bounds)
+    # Read measurement for bright stars
+    # Catalog name
+    fname_res_Rnorm = os.path.join(dir_name, "%s-%s-norm_%dpix_%s%smag_X%dY%d.txt"\
+                                   %(obj_name, band, r_scale, b_name,
+                                     mag_limit[0], patch_Xmin0, patch_Ymin0))
+    # Check if the file exist
+    if os.path.isfile(fname_res_Rnorm):
+        table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
+    else:
+        sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
+    
+    # Crop the catalog
+    table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=image_bounds0)
+    
+    # Do not use flagged measurement
+    Iflag = table_res_Rnorm["Iflag"]
+    table_res_Rnorm = table_res_Rnorm[Iflag==0]    
+    
+    return table_faint, table_res_Rnorm
+    
+
+def assign_star_props(table_faint, table_res_Rnorm, Image, 
                       r_scale=12, mag_threshold=np.array([14,11]),
                       psf=None, keys='Imed', verbose=True, 
-                      draw=True, save=True, dir_name='./'):
+                      draw=True, save=False, save_dir='./'):
     """ Assign position and flux for faint and bright stars from tables. """
+    
     from modeling import Stars
-    # tables for two star samples
-    table_faint, table_res_Rnorm = table_list
+    
+    # Image attributes
+    ZP = Image.ZP
+    sky_mean = Image.bkg
+    image_size = Image.image_size
+    
+    pos_ref = (Image.image_bounds[0], Image.image_bounds[1])
     
     try:
         ma = table_faint['FLUX_AUTO'].data.mask
@@ -1010,13 +847,13 @@ def assign_star_props(table_list, sky_mean, ZP, image_size, pos_ref,
 
     # Bright stars in model
     stars_0 = Stars(star_pos2, Flux2, Flux_threshold=Flux_threshold,
-                   z_norm=z_norm, r_scale=r_scale, BKG=sky_mean)
-    stars_0 = stars_0.remove_outsider(image_size, d=[36, 12], verbose=verbose)
+                   z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=True)
+    stars_0 = stars_0.remove_outsider(image_size, d=[36, 12])
     
     if draw:
         stars_all.plot_flux_dist(label='All', color='plum')
         stars_0.plot_flux_dist(label='Model', color='orange', ZP=ZP,
-                              save=save, dir_name=dir_name)
+                              save=save, save_dir=save_dir)
         
     return stars_0, stars_all
 
@@ -1497,7 +1334,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
-        file_name = os.path.join(dir_name, "Seg_%s_X%dY%d.fits" %(cat_name, Xmin, Ymin))
+        file_name = os.path.join(dir_name, "Segm_catalog_X%dY%d.fits" %(Xmin, Ymin))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         
@@ -1559,183 +1396,6 @@ def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
     return labels
         
 ### Nested Fitting Helper ###
-
-class DynamicNestedSampler:
-    def __init__(self,  loglike,  prior_transform, ndim,
-                 sample='auto', bound='multi',
-                 n_cpu=None, n_thread=None):
-        
-        self.ndim = ndim
-
-        if n_cpu is None:
-            n_cpu = mp.cpu_count()
-            
-        if n_thread is not None:
-            n_thread = max(n_thread, n_cpu-1)
-        
-        if n_cpu > 1:
-            self.open_pool(n_cpu)
-            use_pool = {'update_bound': False}
-        else:
-            self.pool=None
-            use_pool = None
-            
-        dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
-                                                sample=sample, bound=bound,
-                                                pool=self.pool, queue_size=n_thread,
-                                                use_pool=use_pool)
-        self.dsampler = dsampler
-        
-        
-    def run_fitting(self, nlive_init=100,
-                    maxiter=10000,
-                    nlive_batch=50, maxbatch=2,
-                    pfrac=0.8, close_pool=True,
-                    print_progress=True):
-    
-        print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
-        start = time.time()
-   
-        dlogz = 1e-3 * (nlive_init - 1) + 0.01
-        
-        self.dsampler.run_nested(nlive_init=nlive_init, 
-                                 nlive_batch=nlive_batch, 
-                                 maxbatch=maxbatch,
-                                 maxiter=maxiter,
-                                 dlogz_init=dlogz, 
-                                 wt_kwargs={'pfrac': pfrac},
-                                 print_progress=print_progress) 
-        
-        end = time.time()
-        self.run_time = (end-start)
-        
-        print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
-        
-        if (self.pool is not None) & close_pool:
-            self.close_pool()
-        
-    def open_pool(self, n_cpu):
-        print("\nOpening new pool: # of CPU used: %d"%(n_cpu - 1))
-        self.pool = mp.Pool(processes=n_cpu - 1)
-        self.pool.size = n_cpu - 1
-    
-    def close_pool(self):
-        print("\nPool Closed.")
-        self.pool.close()
-        self.pool.join()
-    
-    @property
-    def results(self):
-        res = getattr(self.dsampler, 'results', {})
-        return res
-    
-    def save_result(self, filename, fit_info=None, dir_name='.'):
-        res = {}
-        if fit_info is not None:
-            for key, val in fit_info.items():
-                res[key] = val
-
-        res['run_time'] = self.run_time
-        res['fit_res'] = self.results
-        
-        fname = os.path.join(dir_name, filename)
-        save_nested_fitting_result(res, fname)
-        
-        self.res = res
-    
-    def cornerplot(self, labels=None, truths=None, figsize=(16,15),
-                   save=False, dir_name='.', suffix=''):
-        from plotting import draw_cornerplot
-        draw_cornerplot(self.results, self.ndim,
-                        labels=labels, truths=truths, figsize=figsize,
-                        save=save, dir_name=dir_name, suffix=suffix)
-        
-    def cornerbound(self, prior_transform, labels=None, figsize=(10,10),
-                    save=False, dir_name='.', suffix=''):
-        fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
-        fg, ax = dyplot.cornerbound(self.results, it=1000, labels=labels,
-                                    prior_transform=prior_transform,
-                                    show_live=True, fig=(fig, axes))
-        if save:
-            plt.savefig(os.path.join(dir_name, "Cornerbound%s.png"%suffix), dpi=120)
-            plt.close()
-    
-    def plot_fit_PSF1D(self, psf, **kwargs):
-        from plotting import plot_fit_PSF1D
-        plot_fit_PSF1D(self.results, psf, **kwargs)
-    
-    def generate_fit(self, psf, stars, image_base,
-                     brightest_only=False, draw_real=True,
-                     fit_sigma=True, fit_frac=False, leg2d=False, sigma=None,
-                     norm='brightness', n_out=4, theta_out=1200):
-        psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d, 
-                                            sigma=sigma,
-                                            fit_sigma=fit_sigma, fit_frac=fit_frac,
-                                            n_out=n_out, theta_out=theta_out)
-        from modeling import generate_image_fit
-        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
-                                                            brightest_only=brightest_only,
-                                                            draw_real=draw_real, leg2d=leg2d)
-        if image_base is None:
-            image_base = np.zeros_like(image_star)
-        image_fit = image_star + image_base + bkg_fit
-        
-        self.image_fit = image_fit
-        self.image_star = image_star
-        self.bkg_fit = bkg_fit
-        self.noise_fit = noise_fit
-        
-        return psf_fit, params
-        
-    def draw_comparison_2D(self, image, mask, **kwargs):
-        from plotting import draw_comparison_2D
-        draw_comparison_2D(self.image_fit, image, mask, self.image_star,
-                           self.noise_fit, **kwargs)
-        
-    def draw_background(self, save=False, dir_name='.', suffix=''):
-        plt.figure()
-        im = plt.imshow(self.bkg_fit); colorbar(im)
-        if save:
-            plt.savefig(os.path.join(dir_name,'Legendre2D%s.png'%(suffix)), dpi=80)
-        else:
-            plt.show()
-            
-def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
-                               nlive_init=100, sample='auto', 
-                               nlive_batch=50, maxbatch=2,
-                               pfrac=0.8, n_cpu=None, print_progress=True):
-    
-    print("Run Nested Fitting for the image... #a of params: %d"%ndim)
-    
-    start = time.time()
-    
-    if n_cpu is None:
-        n_cpu = mp.cpu_count()-1
-        
-    with mp.Pool(processes=n_cpu) as pool:
-        print("Opening pool: # of CPU used: %d"%(n_cpu))
-        pool.size = n_cpu
-
-        dlogz = 1e-3 * (nlive_init - 1) + 0.01
-
-        pdsampler = dynesty.DynamicNestedSampler(loglike,
-                                                 prior_transform, ndim,
-                                                 sample=sample,
-                                                 pool=pool, use_pool={'update_bound': False})
-        pdsampler.run_nested(nlive_init=nlive_init, 
-                             nlive_batch=nlive_batch, 
-                             maxbatch=maxbatch,
-                             print_progress=print_progress, 
-                             dlogz_init=dlogz, 
-                             wt_kwargs={'pfrac': pfrac})
-        
-    end = time.time()
-    print("Finish Fitting! Total time elapsed: %.3gs"%(end-start))
-    
-    return pdsampler
-
-def merge_run(re_list):
-    return dyfunc.merge_runs(res_list)
 
 
 def get_params_fit(results, return_sample=False):
@@ -1824,124 +1484,3 @@ class InconvergenceError(MyError):
     def __init__(self, message):  self.message = message 
     def __repr__(self):
         return 'InconvergenceError: %r'%self.message
-    
-## Snipplet From TurbuStat
-# def make_extended_ISM(imsize, powerlaw=2.0, theta=0., ellip=1.,
-#                       return_fft=False, full_fft=True, randomseed=32768324):
-#     '''
-#     Generate a 2D power-law image with a specified index and random phases.
-#     Adapted from https://github.com/keflavich/image_registration. Added ability
-#     to make the power spectra elliptical. Also changed the random sampling so
-#     the random phases are Hermitian (and the inverse FFT gives a real-valued
-#     image).
-#     Parameters
-#     ----------
-#     imsize : int
-#         Array size.
-#     powerlaw : float, optional
-#         Powerlaw index.
-#     theta : float, optional
-#         Position angle of major axis in radians. Has no effect when ellip==1.
-#     ellip : float, optional
-#         Ratio of the minor to major axis. Must be > 0 and <= 1. Defaults to
-#         the circular case (ellip=1).
-#     return_fft : bool, optional
-#         Return the FFT instead of the image. The full FFT is
-#         returned, including the redundant negative phase phases for the RFFT.
-#     full_fft : bool, optional
-#         When `return_fft=True`, the full FFT, with negative frequencies, will
-#         be returned. If `full_fft=False`, the RFFT is returned.
-#     randomseed: int, optional
-#         Seed for random number generator.
-#     Returns
-#     -------
-#     newmap : np.ndarray
-#         Two-dimensional array with the given power-law properties.
-#     full_powermap : np.ndarray
-#         The 2D array in Fourier space. The zero-frequency is shifted to
-#         the centre.
-#     '''
-#     imsize = int(imsize)
-
-#     if ellip > 1 or ellip <= 0:
-#         raise ValueError("ellip must be > 0 and <= 1.")
-
-#     yy, xx = np.meshgrid(np.fft.fftfreq(imsize),
-#                          np.fft.rfftfreq(imsize), indexing="ij")
-
-#     if ellip < 1:
-#         # Apply a rotation and scale the x-axis (ellip).
-#         costheta = np.cos(theta)
-#         sintheta = np.sin(theta)
-
-#         xprime = ellip * (xx * costheta - yy * sintheta)
-#         yprime = xx * sintheta + yy * costheta
-
-#         rr2 = xprime**2 + yprime**2
-
-#         rr = rr2**0.5
-#     else:
-#         # Circular whenever ellip == 1
-#         rr = (xx**2 + yy**2)**0.5
-
-#     # flag out the bad point to avoid warnings
-#     rr[rr == 0] = np.nan
-    
-#     from astropy.utils import NumpyRNGContext
-#     with NumpyRNGContext(randomseed):
-
-#         Np1 = (imsize - 1) // 2 if imsize % 2 != 0 else imsize // 2
-
-#         angles = np.random.uniform(0, 2 * np.pi,
-#                                    size=(imsize, Np1 + 1))
-
-#     phases = np.cos(angles) + 1j * np.sin(angles)
-
-#     # Rescale phases to an amplitude of unity
-#     phases /= np.sqrt(np.sum(phases**2) / float(phases.size))
-
-#     output = (rr**(-powerlaw / 2.)).astype('complex') * phases
-
-#     output[np.isnan(output)] = 0.
-
-#     # Impose symmetry
-#     # From https://dsp.stackexchange.com/questions/26312/numpys-real-fft-rfft-losing-power
-#     if imsize % 2 == 0:
-#         output[1:Np1, 0] = np.conj(output[imsize:Np1:-1, 0])
-#         output[1:Np1, -1] = np.conj(output[imsize:Np1:-1, -1])
-#         output[Np1, 0] = output[Np1, 0].real + 1j * 0.0
-#         output[Np1, -1] = output[Np1, -1].real + 1j * 0.0
-
-#     else:
-#         output[1:Np1 + 1, 0] = np.conj(output[imsize:Np1:-1, 0])
-#         output[1:Np1 + 1, -1] = np.conj(output[imsize:Np1:-1, -1])
-
-#     # Zero freq components must have no imaginary part to be own conjugate
-#     output[0, -1] = output[0, -1].real + 1j * 0.0
-#     output[0, 0] = output[0, 0].real + 1j * 0.0
-
-#     if return_fft:
-
-#         if not full_fft:
-#             return output
-
-#         # Create the full power map, with the symmetric conjugate component
-#         if imsize % 2 == 0:
-#             power_map_symm = np.conj(output[:, -2:0:-1])
-#         else:
-#             power_map_symm = np.conj(output[:, -1:0:-1])
-
-#         power_map_symm[1::, :] = power_map_symm[:0:-1, :]
-
-#         full_powermap = np.concatenate((output, power_map_symm), axis=1)
-
-#         if not full_powermap.shape[1] == imsize:
-#             raise ValueError("The full output should have a square shape."
-#                              " Instead has {}".format(full_powermap.shape))
-
-#         return np.fft.fftshift(full_powermap)
-
-#     newmap = np.fft.irfft2(output)
-
-#     return newmap
-

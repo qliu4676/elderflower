@@ -1,6 +1,8 @@
-from utils import *
+import os
+import numpy as np
 
 from matplotlib import rcParams
+import matplotlib.pyplot as plt
 plt.rcParams['image.origin'] = 'lower'
 plt.rcParams['image.cmap'] = 'gnuplot2'
 plt.rcParams["font.serif"] = "Times New Roman"
@@ -19,15 +21,56 @@ rcParams.update({'ytick.minor.width': '0.8'})
 rcParams.update({'axes.labelsize': 14})
 rcParams.update({'font.size': 14})
 
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+from astropy.visualization.mpl_normalize import ImageNormalize
+from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
+from astropy.stats import mad_std
+
+from photutils import CircularAperture
+
+### Plotting Helpers ###
+
 def LogNorm():
-    from astropy.visualization import LogStretch
-    from astropy.visualization.mpl_normalize import ImageNormalize
     return ImageNormalize(stretch=LogStretch())
 
-def AsinhNorm():
-    from astropy.visualization import AsinhStretch
-    from astropy.visualization.mpl_normalize import ImageNormalize
-    return ImageNormalize(stretch=AsinhStretch())
+def AsinhNorm(a=0.1):
+    return ImageNormalize(stretch=AsinhStretch(a=a))
+
+def HistEqNorm(data):
+    return ImageNormalize(stretch=HistEqStretch(data))
+
+def vmin_3mad(img):
+    """ lower limit of visual imshow defined by 3 mad above median """ 
+    return np.median(img)-3*mad_std(img)
+
+def vmax_2sig(img):
+    """ upper limit of visual imshow defined by 2 sigma above median """ 
+    return np.median(img)+2*np.std(img)
+
+def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args):
+    """ Customized colorbar """
+    ax = mappable.axes
+    fig = ax.figure
+    divider = make_axes_locatable(ax)
+    
+    if loc=="bottom":
+        orent = "horizontal"
+        pad = 1.5*pad
+        rot = 75
+    else:
+        orent = "vertical"
+        rot = 0
+    
+    cax = divider.append_axes(loc, size=size, pad=pad)
+    
+    cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
+    cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
+    
+    cmap = cb.get_cmap()
+    cmap.set_bad(color=color_nan, alpha=0.3)
+    
+    return cb
 
 def make_rand_cmap(n_label, rand_state = 12345):
     from photutils.utils import make_random_cmap
@@ -50,16 +93,19 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     """ Visualize mask map """
     
     from matplotlib import patches
+    from photutils import CircularAperture
     
     mu = np.nanmedian(image)
     std = mad_std(image)
+    
     if vmin is None:
         vmin = mu - std
     if vmax is None:
         vmax = mu + 10*std
     
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
-    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(), vmin=vmin, vmax=1e4, aspect='auto')
+    
+    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(), vmin=vmin, vmax=1e4)
     ax1.set_title("Image")
     
     n_label = seg_map.max()
@@ -81,6 +127,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
         aper = CircularAperture(star_pos_A, r=r_core[0])
         aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
+        
         aper = CircularAperture(star_pos_B, r=r_core[1])
         aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
     
@@ -101,7 +148,8 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
         plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=120)
         plt.show()
         plt.close()
-
+    else:
+        plt.show()
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
                         ma_example=None, r_core=None, vmin=None, vmax=None,
@@ -124,8 +172,9 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
         vmax = mu + 10*std
         
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
+    
     mask_strip[mask_cross.astype(bool)]=0.5
-    ax1.imshow(mask_strip, cmap="gray_r", aspect='auto')
+    ax1.imshow(mask_strip, cmap="gray_r")
     ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
     ax1.set_title("Strip/Cross")
     
@@ -144,8 +193,10 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     if r_core is not None:
         if np.ndim(r_core) == 0:
             r_core = [r_core, r_core]
+            
         aper = CircularAperture(star_pos_A, r=r_core[0])
         aper.plot(color='lime',lw=2,label="",alpha=0.9, axes=ax3)
+        
         aper = CircularAperture(star_pos_B, r=r_core[1])
         aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
 
@@ -159,11 +210,15 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
         plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=120)
         plt.show()
         plt.close()
+    else:
+        plt.show()
 
         
 def Fit_background_distribution(image, mask_deep):
     # Check background, fit with gaussian and exp-gaussian distribution
     import seaborn as sns
+    from scipy import stats
+    
     plt.figure(figsize=(6,4))
     z_sky = image[~mask_deep]
     sns.distplot(z_sky, label='Data', hist_kws={'alpha':0.3})
@@ -185,12 +240,14 @@ def Fit_background_distribution(image, mask_deep):
 def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
                       yunit='Intensity', label='combined', log_scale=True,
                       ZP=27.1, pixel_scale=2.5, decompose=True):
+    from utils import Intensity2SB
     
     r = np.logspace(0, np.log10(psf_range), 100)
     
     I_core = (1-frac) * f_core(r)
     I_aureole = frac * f_aureole(r)
     I_tot = I_core + I_aureole
+    
     if log_scale:
         I_core, I_aureole, I_tot = np.log10(I_core), np.log10(I_aureole), np.log10(I_tot) 
     
@@ -225,6 +282,8 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     
 def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_name='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
+    from utils import Intensity2SB, cal_profile_1d
+    
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
@@ -286,7 +345,7 @@ def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_nam
     return img_star
     
 def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
-                   save=False, dir_name='.', figsize=None, **kwargs):
+                   save=False, save_dir='.', figsize=None, **kwargs):
     import seaborn as sns
     F_bright, F_verybright = Flux_thresholds
     if figsize is not None:
@@ -316,7 +375,7 @@ def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
             
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Flux_dist.png"), dpi=80)
+        plt.savefig(os.path.join(save_dir, "Flux_dist.png"), dpi=80)
         plt.show()
         plt.close()
 
@@ -339,6 +398,8 @@ def draw_independent_priors(priors, xlabels=None, plabels=None,
         
 def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                     save=False, dir_name='.', suffix=''):
+    from dynesty import plotting as dyplot
+    
     fig = plt.subplots(ndim, ndim, figsize=figsize)
     dyplot.cornerplot(results, truths=truths, labels=labels, 
                       color="royalblue", truth_color="indianred",
@@ -425,13 +486,18 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)    
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm(), cmap=cmap)    
+    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm(a=0.1), cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
 #     frac_diff[mask_fit] = 0
     im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="seismic")
     ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
+    
+#     noise = np.sqrt((data/0.37/618)**2+(2/0.37/618)**2)
+#     chi = (image_fit-data)/noise
+#     im = ax4.imshow(chi, vmin=-10, vmax=10, cmap="seismic")
+#     ax4.set_title("Chi. [(I$_f$ - I$_0$)/$\sigma_0$]", fontsize=15); colorbar(im)
     
     residual = (data-image_star)
     im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
@@ -442,6 +508,8 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
     
     if r_core is not None:
+        if np.ndim(r_core) == 0:
+            r_core = [r_core,r_core]
         aper1 = CircularAperture(mask.stars.star_pos_verybright, r=r_core[0])
         aper1.plot(color='lime',lw=2,alpha=0.9, axes=ax6)
         aper2 = CircularAperture(mask.stars.star_pos_medbright, r=r_core[1])
@@ -461,6 +529,9 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
                    r_core=None, n_out=4, theta_out=1200,
                    save=False, dir_name="./", suffix='', figsize=(7,6)):
 
+    from astropy.stats import bootstrap
+    from utils import get_params_fit
+    
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
@@ -478,7 +549,6 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
     print("Fitting (mean) : ", np.around(pmean,3))
     print("Fitting (median) : ", np.around(pmed,3))
     
-    from astropy.stats import bootstrap
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     # Number of n and theta in the fitting
@@ -537,18 +607,18 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
             plt.semilogy(r, frac * comp2,
                          color="seagreen", lw=2, ls="--", alpha=0.7, label="med aureole",zorder=4)
 
-        if Amp_max is not None:
-            std_fit = 10**fits[-1]
-            contrast = Amp_max/(std_fit)
-            y_min_contrast = y_fit.max()/contrast
+#         if Amp_max is not None:
+#             std_fit = 10**fits[-1]
+#             contrast = Amp_max/(std_fit)
+#             y_min_contrast = y_fit.max()/contrast
             
-            plt.axhline(y_min_contrast, color="k", ls="-.", alpha=0.5)
-            plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
-            plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
-            plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
+#             plt.axhline(y_min_contrast, color="k", ls="-.", alpha=0.5)
+#             plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
+#             plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
+#             plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
             
-            r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
-            plt.xlim(0.9, 5*r_max)  
+#             r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
+#             plt.xlim(0.9, 5*r_max)  
                 
     # Draw boundaries etc.
     if r_core is not None:
@@ -578,6 +648,8 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
 def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
                              bkg_sky=460, std_sky=2, pixel_scale=2.5, ZP=27.1,
                              mag_name='MAG_AUTO_corr', figsize=(8,6)):
+    
+    from utils import Intensity2SB, cal_profile_1d
     
     r = np.logspace(0.03,3,100)
     

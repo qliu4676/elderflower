@@ -280,7 +280,7 @@ class PSF_Model:
                                    pos_source=pos_source, pos_eval=pos_eval)
         elif self.aureole_model == "multi-power":
             cal_ext_light = partial(calculate_external_light_mpow,
-                                    n_s=self.n_s, theta_s=self.theta_s_pix,
+                                    n_s=self.n_s, theta_s_pix=self.theta_s_pix,
                                     pos_source=pos_source, pos_eval=pos_eval)
         # Loop the subtraction    
         r_scale = stars.r_scale
@@ -333,7 +333,6 @@ class PSF_Model:
         frac = self.frac
         psf_core, psf_aureole = self.psf_core, self.psf_aureole
         return (1-frac) * psf_core + frac * psf_aureole
-    
 
     def plot_PSF_model_galsim(self, contrast=None, save=False, dir_name='.'):
         """ Build and plot Galsim 2D model averaged in 1D """
@@ -427,8 +426,8 @@ class Stars:
     """
     def __init__(self, star_pos, Flux, 
                  Flux_threshold=[7e4, 2.7e6],
-                 z_norm=None, r_scale=12, BKG=0,
-                 verbose=False):
+                 z_norm=None, r_scale=12, 
+                 BKG=0, verbose=False):
         """
         Parameters
         ----------
@@ -461,7 +460,8 @@ class Stars:
         self.r_scale = r_scale
         self.BKG = BKG
 
-            
+        self.verbose = verbose
+        
         if verbose:
             if len(Flux[self.medbright])>0:
                 print("# of medium bright (flux:%.2g~%.2g) stars: %d "\
@@ -493,6 +493,7 @@ class Stars:
     
     def update_Flux(self, Flux):
         self.Flux = Flux
+        
 
     @lazyproperty
     def n_faint(self):
@@ -557,7 +558,20 @@ class Stars:
     def copy(self):
         return deepcopy(self) 
     
-    def remove_outsider(self, image_size, d=[24,12], verbose=False):
+    def use_verybright(self):
+        """ Crop the object into a new object only contains its very bright stars """
+        if self.verbose:
+            print("\nOnly model brightest stars in the field.\n")
+            
+        stars_vb = Stars(self.star_pos_verybright,
+                         self.Flux_verybright,
+                         Flux_threshold=self.Flux_threshold,
+                         z_norm=self.z_norm_verybright,
+                         r_scale=self.r_scale, BKG=self.BKG)
+        
+        return stars_vb
+    
+    def remove_outsider(self, image_size, d=[24,12]):
         """ Remove out-of-field stars far from the edge. """
         star_pos = self.star_pos
         Flux = self.Flux
@@ -570,182 +584,8 @@ class Stars:
 
         remove = remove_A | remove_B
         return Stars(star_pos[~remove], Flux[~remove], self.Flux_threshold,
-                     self.z_norm[~remove], r_scale=self.r_scale, BKG=self.BKG, verbose=True)
+                     self.z_norm[~remove], r_scale=self.r_scale, BKG=self.BKG)
         
-
-class Mask:
-    """ Maksing of stars """
-    def __init__(self, image, stars, image_size, pad=100, skymean=None):
-        """
-        Parameters
-        ----------
-        image : image data
-        stars : Star object
-        image_size : image size
-        
-        pad : padding size of the image (default: 100)
-        skymean : estimate of background value (only for drawing)
-        
-        """
-        self.image = image
-        self.stars = stars
-        self.image_size = image_size
-        self.image_size_pad = image_size + 2 * pad
-        self.yy, self.xx = np.mgrid[:self.image_size_pad, :self.image_size_pad]
-        
-        self.pad = pad
-        self.mu = skymean
-        
-    @property
-    def mask_base(self):
-        mask_base0 = getattr(self, 'mask_base0', self.mask_deep0)
-        return mask_base0[self.pad:self.image_size+self.pad,
-                          self.pad:self.image_size+self.pad]
-    @property
-    def seg_base(self):
-        seg_base0 = getattr(self, 'seg_base0', self.seg_deep0)
-        return seg_base0[self.pad:self.image_size+self.pad,
-                         self.pad:self.image_size+self.pad]
-    @property
-    def mask_deep(self):
-        return self.mask_deep0[self.pad:self.image_size+self.pad,
-                               self.pad:self.image_size+self.pad]
-    @property
-    def seg_deep(self):
-        return self.seg_deep0[self.pad:self.image_size+self.pad,
-                              self.pad:self.image_size+self.pad]
-        
-    def make_mask_map_deep(self, by='radius', seg_base=None, 
-                           r_core=None, r_out=None, count=None,
-                           draw=True, save=False, dir_name='.', **kwargs):
-        """
-        Make deep mask map of bright stars based on either of:
-        (1) aperture (2) brightness
-        The mask map is then combined with a base segm map (if given) (for masking sources below S/N threshold) and a S_N seg map (for masking bright sources/features not contained in the catalog)
-        
-        Parameters
-        ----------
-        by : mask type
-            "radius": aperture-like masking
-            "brightness": brightness-limit masking
-        seg_base : base segm map generated by catalog
-        r_core : core radius of [medium, very bright] stars to be masked
-        count : absolute count (in ADU) above which is masked        
-        draw : whether to draw mask map
-        save : whether to save the image
-        dir_name : path of saving
-        
-        """
-        from utils import make_mask_map_dual
-        
-        image = self.image
-        stars = self.stars
-        pad = self.pad
-        
-        if seg_base is not None:
-            print("Read mask map built from catalog: ", seg_base)
-            if os.path.isfile(seg_base) is False:
-                print("%s doe not exist. Use source detection only."%seg_base)
-                seg_base0 = None
-            else:
-                seg_base0 = fits.getdata(seg_base)
-                self.seg_base0 = seg_base0
-                self.mask_base0 = seg_base0 > 0
-        
-        # S/N + Core mask
-        mask_deep0, seg_deep0 = make_mask_map_dual(image, stars, self.xx, self.yy,
-                                                   by=by, pad=pad, seg_base=seg_base0,
-                                                   r_core=r_core, r_out=r_out, count=count, 
-                                                   n_bright=stars.n_bright, **kwargs)
-        self.mask_deep0 = mask_deep0
-        self.seg_deep0 = seg_deep0
-            
-        self.r_core = r_core
-        self.count = count
-        
-        # Display mask
-        if draw:
-            from plotting import draw_mask_map
-            draw_mask_map(image, seg_deep0, mask_deep0, stars,
-                          pad=pad, r_core=r_core, r_out=r_out,
-                          vmin=self.mu, save=save, dir_name=dir_name)
-            
-    def make_mask_strip(self, n_strip=24,
-                        wid_strip=16, dist_strip=500,
-                        wid_cross=10, dist_cross=72,
-                        clean=True, draw=True, 
-                        save=False, dir_name='.'):
-        
-        """
-        Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
-        Note: make_mask_map_deep() should be run first.
-        
-        Parameters
-        ----------
-        n_strip : number of each strip mask
-        wid_strip : width of each strip mask
-        dist_strip : furthest range of each strip mask
-        wid_cross : half-width of spike mask
-        dist_cross: furthest range of each spike mask
-        clean : whether to remove medium bright stars far from any available pixels for fitting. A new Stars object will be stored in stars_new, otherwise it is simply a copy.
-        draw : whether to draw mask map
-        save : whether to save the image
-        dir_name : path of saving
-        
-        """
-        from utils import make_mask_strip
-        
-        if hasattr(self, 'mask_deep0') is False:
-            return None
-        
-        image = self.image
-        stars = self.stars
-        pad = self.pad 
-        
-        # Strip + Cross mask
-        mask_strip_s, mask_cross_s =  make_mask_strip(stars, self.xx, self.yy,
-                                                      pad=pad, n_strip=n_strip,
-                                                      wid_strip=wid_strip, dist_strip=dist_strip,
-                                                      wid_cross=wid_cross, dist_cross=dist_cross)
-
-        mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
-        mask_cross_all = ~np.logical_or.reduce(mask_cross_s)
-        
-        seg_comb0 = self.seg_deep0.copy()
-        ma_extra = (mask_strip_all|~mask_cross_all) & (self.seg_deep0==0)
-        seg_comb0[ma_extra] = self.seg_deep0.max()-2
-        mask_comb0 = (seg_comb0!=0)
-        
-        self.mask_comb = mask_comb0[pad:self.image_size+pad, pad:self.image_size+pad]
-        self.seg_comb = seg_comb0[pad:self.image_size+pad, pad:self.image_size+pad]
-        self.mask_comb0 = mask_comb0
-        self.seg_comb0 = seg_comb0
-        
-        # Clean medium bright stars far from bright stars
-        if clean:
-            from utils import clean_isolated_stars
-            clean = clean_isolated_stars(self.xx, self.yy, mask_comb0,
-                                       stars.star_pos, pad=pad)
-            if stars.n_verybright > 0:
-                clean[stars.Flux >= stars.F_verybright] = False
-            
-            z_norm_clean = stars.z_norm[~clean] if hasattr(stars, 'z_norm') else None
-            stars_new = Stars(stars.star_pos[~clean], stars.Flux[~clean],
-                              stars.Flux_threshold, z_norm=z_norm_clean,
-                              r_scale=stars.r_scale, BKG=stars.BKG, verbose=False)
-            self.stars_new = stars_new
-            
-        else:
-            self.stars_new = stars.copy()
-            
-        # Display mask
-        if draw:
-            from plotting import draw_mask_map_strip
-            draw_mask_map_strip(image, seg_comb0, mask_comb0, stars_new,
-                                pad=pad, r_core=self.r_core, 
-                                ma_example=[mask_strip_s[0], mask_cross_s[0]],
-                                vmin=self.mu, save=save, dir_name=dir_name)
-            
         
 # ### (Old) Galsim Modelling Funcs ###
 # def Generate_PSF_pow_Galsim(n, theta_t=5, psf_scale=2,
@@ -1229,25 +1069,24 @@ def Flux2I_pow(frac, n0, theta0, r, Flux=1):
     I = I0 / (r/theta0)**n0
     return I
 
-def I2I0_mpow(n_s, theta_s, r, I=1):
+def I2I0_mpow(n_s, theta_s_pix, r, I=1):
     """ Convert Intensity I(r) at r to I at theta_0 with multi-power law.
         theata_s and r in pixel """
-    i = np.digitize(r, theta_s, right=True) - 1
-        
-    I0 = I * r**(n_s[i]) * theta_s[0]**(-n_s[0])
+    i = np.digitize(r, theta_s_pix, right=True) - 1
+    I0 = I * r**(n_s[i]) * theta_s_pix[0]**(-n_s[0])
     for j in range(i):
-        I0 *= theta_s[j+1]**(n_s[j]-n_s[j+1])
+        I0 *= theta_s_pix[j+1]**(n_s[j]-n_s[j+1])
         
     return I0
 
-def I02I_mpow(n_s, theta_s, r, I0=1):
+def I02I_mpow(n_s, theta_s_pix, r, I0=1):
     """ Convert Intensity I(r) at r to I at theta_0 with multi-power law.
         theata_s and r in pixel """
-    i = np.digitize(r, theta_s, right=True) - 1
+    i = np.digitize(r, theta_s_pix, right=True) - 1
         
-    I = I0 / r**(n_s[i]) / theta_s[0]**(-n_s[0])
+    I = I0 / r**(n_s[i]) / theta_s_pix[0]**(-n_s[0])
     for j in range(i):
-        I *= theta_s[j+1]**(n_s[j+1]-n_s[j])
+        I *= theta_s_pix[j+1]**(n_s[j+1]-n_s[j])
         
     return I
 
@@ -1263,22 +1102,22 @@ def calculate_external_light_pow(n0, theta0, pos_source, pos_eval, I0_source):
     
     return I_s.sum(axis=0)
 
-def calculate_external_light_mpow(n_s, theta_s, pos_source, pos_eval, I0_source):
+def calculate_external_light_mpow(n_s, theta_s_pix, pos_source, pos_eval, I0_source):
     # Calculate light produced by source (I0_source, pos_source) at pos_eval. 
-    r_s = distance.cdist(pos_source,  pos_eval)
-    r_inds = np.digitize(r_s, theta_s, right=True) - 1
-    r_inds[r_inds<=0] = 0
+    r_s = distance.cdist(pos_source, pos_eval)
+    r_inds = np.digitize(r_s, theta_s_pix, right=True) - 1
     
     r_inds_uni, r_inds_inv = np.unique(r_inds, return_inverse=True)
     
     I0_s = np.repeat(I0_source[:, np.newaxis], r_s.shape[-1], axis=1) 
     
-    I_s = I0_s / r_s**(n_s[r_inds]) / theta_s[0]**(-n_s[0])
-    I_s[(r_s==0)] = 0
-    
-    factors = np.array([np.prod([theta_s[j+1]**(n_s[j+1]-n_s[j])
+    # I(r) = I0 * (theta0/theta1)^(n0) * (theta1/theta2)^(n1) *...* (theta_{k}/r)^(nk)
+    I_s = I0_s * theta_s_pix[0]**n_s[0] / r_s**(n_s[r_inds])
+    factors = np.array([np.prod([theta_s_pix[j+1]**(n_s[j+1]-n_s[j])
                                  for j in range(i)]) for i in r_inds_uni])
     I_s *= factors[r_inds_inv].reshape(len(I0_source),-1)
+    
+    I_s[(r_s==0)] = 0
     
     return I_s.sum(axis=0)
     
@@ -1447,20 +1286,20 @@ def make_noise_image(image_size, noise_std, random_seed=42, verbose=True):
     return noise_image.array
 
 
-def make_base_image(image_size, stars, psf_base, pad=0, psf_size=64, verbose=True):
+def make_base_image(image_size, stars, psf_base, pad=100, psf_size=64, verbose=True):
     """ Background images composed of dim stars with fixed PSF psf_base"""
     if verbose:
         print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
     
     start = time.time()
-    image_size = image_size + 2 * pad
-    full_image0 = galsim.ImageF(image_size, image_size)
+    image_size0 = image_size + 2 * pad
+    full_image0 = galsim.ImageF(image_size0, image_size0)
     
     star_pos = stars.star_pos_faint + pad
     Flux = stars.Flux_faint
     
     if len(star_pos) == 0:
-        return np.zeros((image_size, image_size))
+        return np.zeros((image_size0, image_size0))
     
     # draw faint stars with fixed PSF using galsim in Fourier space   
     for k in range(len(star_pos)):
@@ -1478,7 +1317,7 @@ def make_base_image(image_size, stars, psf_base, pad=0, psf_size=64, verbose=Tru
     end = time.time()
     if verbose: print("Total Time: %.3f s\n"%(end-start))
     
-    return image_gs0[pad:image_size-pad, pad:image_size-pad]
+    return image_gs0[pad:image_size0-pad, pad:image_size0-pad]
 
 
 def make_truth_image(psf, stars, contrast=1e6,
@@ -1609,8 +1448,6 @@ def generate_image_by_flux(psf, stars,
                                                max_psf_range=max_psf_range//2,
                                                interpolant=interpolant)
         
-        # Rounded PSF size to 2^k or 3*2^k for faster FT
-#         psf_size = round_good_fft(psf_size)
         psf_size = psf_size // 2 * 2
         
         psf_star = (1-frac) * psf_c + frac * psf_e               
@@ -1639,10 +1476,10 @@ def generate_image_by_flux(psf, stars,
             for (stamp, bounds) in results:
                 full_image[bounds] += stamp[bounds]
                 
-    # 2. Draw very bright stars
-    if (psf.aureole_model == "power"):
-        if psf.n < n_real:
-            draw_real = True
+#     # 2. Draw very bright stars
+#     if (psf.aureole_model == "power"):
+#         if psf.n < n_real:
+#             draw_real = True
 
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
@@ -1668,8 +1505,8 @@ def generate_image_by_flux(psf, stars,
                                                    max_psf_range=max_psf_range,
                                                    interpolant=interpolant)
         
-#         psf_size_2 = round_good_fft(psf_size_2)
         psf_size_2 = psf_size_2 // 2 * 2
+        
         psf_star_2 = (1-frac) * psf_c + frac * psf_e_2
         
         for k in range(stars.n_verybright):
@@ -1724,6 +1561,7 @@ def generate_image_by_znorm(psf, stars,
     yy, xx = psf.yy, psf.xx
     
     frac = psf.frac
+    r_scale = stars.r_scale
 
     z_norm = stars.z_norm.copy()
     # Subtract external light from brightest stars
@@ -1733,15 +1571,15 @@ def generate_image_by_znorm(psf, stars,
     
     if draw_real & brightest_only:
         # Skip computation of Flux, and ignore core PSF
-        I0_verybright = psf.I2I0(z_norm[stars.verybright], stars.r_scale)
+        I0_verybright = psf.I2I0(z_norm[stars.verybright], r_scale)
         
     else:
         # Core PSF
         psf_c = psf.psf_core
 
         # Update stellar flux:
-#         z_norm[z_norm<=0] = z_norm[z_norm>0].min()/10 # problematic negatives
-        Flux = psf.I2Flux(z_norm, stars.r_scale)
+        z_norm[z_norm<=0] = z_norm[z_norm>0].min()/10 # problematic negatives
+        Flux = psf.I2Flux(z_norm, r_scale)
         stars.update_Flux(Flux) 
         
     # Setup the canvas
@@ -1905,23 +1743,20 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     # counting helper for # of parameters
     K = 0
-    
-    if fit_frac:
-        K += 1
-        Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
+    if fit_frac: K += 1
+    if fit_sigma: K += 1
         
-    if fit_sigma:
-        K += 1
-        # logsigma : [std_poi, std_est]
-        if std_poi is None:
-            Prior_logsigma = stats.truncnorm(a=-2, b=1,
-                                             loc=np.log10(std_est), scale=0.3)   
-        else:
-            bound_a = (np.log10(std_poi)+0.3-np.log10(std_est))/0.3
-            Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
-                                             loc=np.log10(std_est), scale=0.3)   
-    
+    Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
         
+    # logsigma : [std_poi, std_est]
+    if std_poi is None:
+        Prior_logsigma = stats.truncnorm(a=-2, b=1,
+                                         loc=np.log10(std_est), scale=0.3)   
+    else:
+        bound_a = (np.log10(std_poi)+0.3-np.log10(std_est))/0.3
+        Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
+                                         loc=np.log10(std_est), scale=0.3)   
+    
     if n_spline == 1:
         # Single power law
         from plotting import draw_independent_priors
@@ -1934,7 +1769,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         return prior_tf_p
     
     elif n_spline==2:
-        def prior_tf_2p(u, fit_sigma=fit_sigma, fit_frac=fit_frac):
+        def prior_tf_2p(u):
             v = u.copy()
 #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
             v[0] = Prior_n.ppf(u[0])    # n0 : N (n +/- d_n0)
@@ -1956,7 +1791,6 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                                             loc=leg_level-1.3, scale=1.3)  # log A01
             if fit_frac:
                 v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-                
             return v
         
         return prior_tf_2p
@@ -2060,8 +1894,9 @@ def calculate_likelihood(ypred, data, sigma):
         
     return loglike
 
-def set_likelihood(data, mask_fit, psf, stars,
-                   norm='brightness', z_norm=None, sigma=None, 
+
+def set_likelihood(data, mask_fit, psf0, stars0,
+                   norm='brightness', z_norm=None,
                    n_spline=2, n_cutoff=4, theta_cutoff=1200,
                    image_base=None, psf_range=[None,None],
                    leg2d=False, fit_sigma=True, fit_frac=False, 
@@ -2082,8 +1917,11 @@ def set_likelihood(data, mask_fit, psf, stars,
     loglike : log-likelihood function for fitting
     
     """
+    
+    stars = stars0.copy()
+    psf = psf0.copy()
+    
     theta_0 = psf.theta_0
-    image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
     bkg = stars.BKG
@@ -2101,21 +1939,17 @@ def set_likelihood(data, mask_fit, psf, stars,
     if image_base is None:
         image_base = np.zeros((image_size, image_size))
     
-    if sigma is None:
-        fit_sigma =True
-        
-    K = 0
-    if fit_frac: K += 1        
-    if fit_sigma: K += 1
-        
+#     if sigma is None:
+#         fit_sigma =True
     
-    if leg2d:
-        cen = psf.cen
-        x_grid = y_grid = np.linspace(0,image_size-1,image_size)
-        H10 = leggrid2d((x_grid-cen[1])/image_size,
-                        (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
-        H01 = leggrid2d((x_grid-cen[1])/image_size,
-                        (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
+    # 1st-order Legendre Polynomial
+    cen = psf.cen
+    image_size = psf.image_size
+    x_grid = y_grid = np.linspace(0,image_size-1, image_size)
+    H10 = leggrid2d((x_grid-cen[1])/image_size,
+                    (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
+    H01 = leggrid2d((x_grid-cen[1])/image_size,
+                    (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
         
     if n_spline==1:
         
@@ -2150,22 +1984,29 @@ def set_likelihood(data, mask_fit, psf, stars,
 
             return loglike_p
     
-    elif n_spline==2:
+    if n_spline==2:
         
         def loglike_2p(v):
+            K = 0
+            if fit_frac: K += 1        
+            if fit_sigma: K += 1
+                
             n_s = np.append(v[:2], n_cutoff)
             theta_s = np.append([theta_0, 10**v[2]], theta_cutoff)
             mu = v[-K-1]
+            loglike = -1000
             
-            param_update ={'n_s':n_s, 'theta_s':theta_s}
+            param_update = {'n_s':n_s, 'theta_s':theta_s}
             
             if fit_sigma:
                 sigma = 10**v[-K]
+                
             if fit_frac:
                 frac = 10**v[-1]
                 param_update['frac'] = frac
 
             psf.update(param_update)
+            psf.update({'n_s':n_s, 'theta_s':theta_s})
             
             if norm=='brightness':
                 # I varies with sky background
@@ -2192,13 +2033,17 @@ def set_likelihood(data, mask_fit, psf, stars,
                 loglike = -1e100
 
             return loglike
-        
+
         return loglike_2p        
         
         
     elif n_spline==3:
     
         def loglike_3p(v):
+            K = 0
+            if fit_frac: K += 1        
+            if fit_sigma: K += 1
+                
             n_s = np.append(v[:3], n_cutoff)
             theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_cutoff)
             mu = v[-K-1]
@@ -2239,8 +2084,13 @@ def set_likelihood(data, mask_fit, psf, stars,
     else:
         
         def loglike_sp(v):
+            K = 0
+            if fit_frac: K += 1        
+            if fit_sigma: K += 1
+                
             n_s = np.append(v[:n_spline], n_cutoff)
             theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [theta_cutoff]])
+            mu = v[-K-1]
             param_update ={'n_s':n_s, 'theta_s':theta_s}
             
             if fit_sigma:
