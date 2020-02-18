@@ -25,15 +25,15 @@ class DynamicNestedSampler:
         
         if n_cpu > 1:
             self.open_pool(n_cpu)
-            use_pool = {'update_bound': False}
+            self.use_pool = {'update_bound': False}
         else:
-            self.pool=None
-            use_pool = None
+            self.pool = None
+            self.use_pool = None
             
         dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
                                                 sample=sample, bound=bound,
                                                 pool=self.pool, queue_size=n_thread,
-                                                use_pool=use_pool)
+                                                use_pool=self.use_pool)
         self.dsampler = dsampler
         
         
@@ -82,7 +82,7 @@ class DynamicNestedSampler:
     def get_params(self, return_sample=False):
         return get_params_fit(self.results, return_sample)
     
-    def save_result(self, filename, fit_info=None, save_dir='.'):
+    def save_results(self, filename, fit_info=None, save_dir='.'):
         res = {}
         if fit_info is not None:
             for key, val in fit_info.items():
@@ -118,14 +118,14 @@ class DynamicNestedSampler:
         plot_fit_PSF1D(self.results, psf, **kwargs)
     
     def generate_fit(self, psf, stars, image_base,
-                     brightest_only=False, draw_real=True,
+                     brightest_only=False, draw_real=True, n_spline=2,
                      fit_sigma=True, fit_frac=False, leg2d=False, sigma=None,
                      norm='brightness', n_out=4, theta_out=1200):
         from utils import make_psf_from_fit
         from modeling import generate_image_fit
         
         psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d, 
-                                            sigma=sigma,
+                                            sigma=sigma, n_spline=n_spline,
                                             fit_sigma=fit_sigma, fit_frac=fit_frac,
                                             n_out=n_out, theta_out=theta_out)
         image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
