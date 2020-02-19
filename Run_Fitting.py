@@ -263,7 +263,7 @@ def Run_Fitting(hdu_path, image_bounds0,
         mask.make_mask_strip(wid_strip=wid_strip, n_strip=n_strip,
                              dist_strip=image_size, dist_cross=72,
                              clean=True, draw=draw_real,
-                             save=save, dir_name=dir_name)
+                             save=save, save_dir=dir_name)
         stars_b = mask.stars_new
         mask_fit = mask.mask_comb
         
@@ -300,37 +300,33 @@ def Run_Fitting(hdu_path, image_bounds0,
     print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
 
     ############################################
-    # Priors and Likelihood Models for Fitting
+    # Setup Priors and Likelihood Models for Fitting
     ############################################
-    from utils import set_labels
-    from modeling import set_prior, set_likelihood
-    
-    # Make Priors
-    prior_tf = set_prior(n_est=n0, mu_est=mu, std_est=std_patch,
-                         n_spline=n_spline, leg2d=leg2d,
-                         fit_sigma=True, fit_frac=False,
-                         n_min=1, theta_in=50, theta_out=240)
-                         
-    labels = set_labels(n_spline=2, leg2d=leg2d,
-                        fit_sigma=True, fit_frac=False)
-    ndim = len(labels)
-    
-    psf_range = [None, None]
-    loglike = set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
-                             n_spline=n_spline, psf_range=psf_range,
-                             leg2d=leg2d, fit_sigma=True, fit_frac=False,
+    from container import Container
+
+    container = Container(n_spline=2, leg2d=False,
+                          fit_sigma=True, fit_frac=False,
+                          brightest_only=False,
+                          parallel=False, draw_real=True)
+    # Set Priors
+    container.set_prior(n0, mu, std_patch, n_min=1, theta_in=50, theta_out=240)
+
+    # Set Likelihood
+    container.set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
+                             psf_range=[None, None], 
                              norm='brightness', z_norm=z_norm_stars,
-                             brightest_only=brightest_only, parallel=parallel, 
-                             image_base=image_base, draw_real=draw_real)
+                             image_base=image_base)
+    
+    ndim = container.ndim
     
     ############################################
     # Run Sampling
     ############################################
-    from utils import DynamicNestedSampler
+    from sampler import DynamicNestedSampler
     
-    ds = DynamicNestedSampler(loglike, prior_tf, ndim,
-                              sample='auto', n_cpu=n_cpu)
-    ds.run_fitting(nlive_init=8*ndim, nlive_batch=2*ndim+2, 
+    ds = DynamicNestedSampler(container, sample='auto', n_cpu=n_cpu)
+    
+    ds.run_fitting(nlive_init=ndim*10, nlive_batch=2*ndim+2,
                    maxbatch=2, print_progress=print_progress)
     
     if save:
@@ -344,19 +340,19 @@ def Run_Fitting(hdu_path, image_bounds0,
         if leg2d: fname+='l'
         if brightest_only: fname += 'b'
             
-        ds.save_result(fname+'.res', fit_info, dir_name=dir_name)
+        ds.save_results(fname+'.res', fit_info, save_dir=dir_name)
         
     ############################################
     # Plot Results
     ############################################
     from utils import cal_reduced_chi2
     
-    ds.cornerplot(labels=labels, figsize=(18, 16),
-                  save=save, dir_name=dir_name, suffix='_'+method)
+    ds.cornerplot(figsize=(18, 16),
+                  save=save, save_dir=dir_name, suffix='_'+method)
     
     # Plot recovered PSF
     ds.plot_fit_PSF1D(psf, n_bootstrap=800, r_core=r_core, leg2d=leg2d,
-                      save=save, dir_name=dir_name, suffix='_'+method)
+                      save=save, save_dir=dir_name, suffix='_'+method)
     
     # Recovered PSF
     psf_fit, params = ds.generate_fit(psf, stars, image_base,
@@ -368,10 +364,10 @@ def Run_Fitting(hdu_path, image_bounds0,
     
     # Draw compaison
     ds.draw_comparison_2D(image, mask, vmin=mu-psf_fit.bkg_std, vmax=mu+25*psf_fit.bkg_std,
-                          save=save, dir_name=dir_name, suffix='_'+method)
+                          save=save, save_dir=dir_name, suffix='_'+method)
     
     if leg2d:
-        ds.draw_background(save=save, dir_name=dir_name, suffix='_'+method)
+        ds.draw_background(save=save, save_dir=dir_name, suffix='_'+method)
 
     return ds
     

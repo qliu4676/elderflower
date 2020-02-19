@@ -11,12 +11,10 @@ from dynesty import utils as dyfunc
 
 class DynamicNestedSampler:
 
-    def __init__(self,  loglike,  prior_transform, ndim,
+    def __init__(self, container,
                  sample='auto', bound='multi',
                  n_cpu=None, n_thread=None):
         
-        self.ndim = ndim
-
         if n_cpu is None:
             n_cpu = mp.cpu_count()
             
@@ -29,18 +27,29 @@ class DynamicNestedSampler:
         else:
             self.pool = None
             self.use_pool = None
-            
-        dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
+        
+        self.container = container
+        
+        self.prior_tf = container.prior_transform
+        self.loglike = container.loglikelihood
+        self.ndim = container.ndim
+        
+        self.labels = container.labels
+        
+        dsampler = dynesty.DynamicNestedSampler(self.loglike, self.prior_tf, self.ndim,
                                                 sample=sample, bound=bound,
                                                 pool=self.pool, queue_size=n_thread,
                                                 use_pool=self.use_pool)
         self.dsampler = dsampler
         
         
-    def run_fitting(self, nlive_init=100,
+    def run_fitting(self,
+                    nlive_init=100,
                     maxiter=10000,
-                    nlive_batch=50, maxbatch=2,
-                    pfrac=0.8, close_pool=True,
+                    nlive_batch=50,
+                    maxbatch=2,
+                    wt_kwargs={'pfrac': 0.8},
+                    close_pool=True,
                     print_progress=True):
     
         print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
@@ -53,7 +62,7 @@ class DynamicNestedSampler:
                                  maxbatch=maxbatch,
                                  maxiter=maxiter,
                                  dlogz_init=dlogz, 
-                                 wt_kwargs={'pfrac': pfrac},
+                                 wt_kwargs=wt_kwargs,
                                  print_progress=print_progress) 
         
         end = time.time()
@@ -96,18 +105,20 @@ class DynamicNestedSampler:
         
         self.res = res
     
-    def cornerplot(self, labels=None, truths=None, figsize=(16,15),
+    def cornerplot(self, truths=None, figsize=(16,15),
                    save=False, save_dir='.', suffix=''):
         from plotting import draw_cornerplot
+        
         draw_cornerplot(self.results, self.ndim,
-                        labels=labels, truths=truths, figsize=figsize,
+                        labels=self.labels, truths=truths, figsize=figsize,
                         save=save, save_dir=save_dir, suffix=suffix)
         
-    def cornerbound(self, prior_transform, labels=None, figsize=(10,10),
+    def cornerbound(self, figsize=(10,10),
                     save=False, save_dir='.', suffix=''):
+        
         fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
-        fg, ax = dyplot.cornerbound(self.results, it=1000, labels=labels,
-                                    prior_transform=prior_transform,
+        fg, ax = dyplot.cornerbound(self.results, it=1000, labels=self.labels,
+                                    prior_transform=self.prior_tf,
                                     show_live=True, fig=(fig, axes))
         if save:
             plt.savefig(os.path.join(save_dir, "Cornerbound%s.png"%suffix), dpi=120)
@@ -115,24 +126,30 @@ class DynamicNestedSampler:
     
     def plot_fit_PSF1D(self, psf, **kwargs):
         from plotting import plot_fit_PSF1D
-        plot_fit_PSF1D(self.results, psf, **kwargs)
+        plot_fit_PSF1D(self.results, psf, leg2d=self.leg2d, **kwargs)
     
-    def generate_fit(self, psf, stars, image_base,
-                     brightest_only=False, draw_real=True, n_spline=2,
-                     fit_sigma=True, fit_frac=False, leg2d=False, sigma=None,
+    def generate_fit(self, psf, stars,
                      norm='brightness', n_out=4, theta_out=1200):
+        
         from utils import make_psf_from_fit
         from modeling import generate_image_fit
         
-        psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d, 
-                                            sigma=sigma, n_spline=n_spline,
-                                            fit_sigma=fit_sigma, fit_frac=fit_frac,
-                                            n_out=n_out, theta_out=theta_out)
-        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
-                                                            brightest_only=brightest_only,
-                                                            draw_real=draw_real, leg2d=leg2d)
-        if image_base is None:
-            image_base = np.zeros_like(image_star)
+        ct = self.container
+        
+        psf_fit, params = make_psf_from_fit(self.results, psf,
+                                            n_spline=ct.n_spline,
+                                            leg2d=ct.leg2d, 
+                                            fit_sigma=ct.fit_sigma,
+                                            fit_frac=ct.fit_frac,
+                                            n_out=n_out,
+                                            theta_out=theta_out)
+        
+        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars,
+                                                            norm=norm, leg2d=ct.leg2d,
+                                                            brightest_only=ct.brightest_only,
+                                                            draw_real=ct.draw_real)
+        image_base = ct.image_base
+            
         image_fit = image_star + image_base + bkg_fit
         
         self.image_fit = image_fit
@@ -154,8 +171,9 @@ class DynamicNestedSampler:
             plt.savefig(os.path.join(save_dir,'Legendre2D%s.png'%(suffix)), dpi=80)
         else:
             plt.show()
+
             
-def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
+def Run_Dynamic_Nested_Fitting(loglikelihood, prior_transform, ndim,
                                nlive_init=100, sample='auto', 
                                nlive_batch=50, maxbatch=2,
                                pfrac=0.8, n_cpu=None, print_progress=True):
@@ -173,10 +191,9 @@ def Run_Dynamic_Nested_Fitting(loglike, prior_transform, ndim,
 
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
 
-        pdsampler = dynesty.DynamicNestedSampler(loglike,
-                                                 prior_transform, ndim,
-                                                 sample=sample,
-                                                 pool=pool, use_pool={'update_bound': False})
+        pdsampler = dynesty.DynamicNestedSampler(loglikelihood, prior_transform, ndim,
+                                                 sample=sample, pool=pool,
+                                                 use_pool={'update_bound': False})
         pdsampler.run_nested(nlive_init=nlive_init, 
                              nlive_batch=nlive_batch, 
                              maxbatch=maxbatch,

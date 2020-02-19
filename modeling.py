@@ -334,11 +334,11 @@ class PSF_Model:
         psf_core, psf_aureole = self.psf_core, self.psf_aureole
         return (1-frac) * psf_core + frac * psf_aureole
 
-    def plot_PSF_model_galsim(self, contrast=None, save=False, dir_name='.'):
+    def plot_PSF_model_galsim(self, contrast=None, save=False, save_dir='.'):
         """ Build and plot Galsim 2D model averaged in 1D """
         from plotting import plot_PSF_model_galsim
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
-                                          save=save, dir_name=dir_name)
+                                          save=save, save_dir=save_dir)
         self.image_psf = image_psf
     
     @staticmethod
