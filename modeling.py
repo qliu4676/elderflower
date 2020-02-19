@@ -1440,7 +1440,7 @@ def generate_image_by_flux(psf, stars,
     full_image = galsim.ImageF(image_size, image_size)
         
     if not brightest_only:
-        # 1. Draw medium bright stars with galsim in Fourier space
+        # Draw medium bright stars with galsim in Fourier space
         psf_e, psf_size = psf.generate_aureole(contrast=contrast[0],
                                                psf_scale=psf_scale,
                                                psf_range=psf_range[0],
@@ -1475,11 +1475,6 @@ def generate_image_by_flux(psf, stars,
 
             for (stamp, bounds) in results:
                 full_image[bounds] += stamp[bounds]
-                
-#     # 2. Draw very bright stars
-#     if (psf.aureole_model == "power"):
-#         if psf.n < n_real:
-#             draw_real = True
 
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
@@ -1738,7 +1733,6 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     log_t_out = np.log10(theta_out)
     dlog_t = log_t_out - log_t_in
     
-    Prior_n = stats.truncnorm(a=-2, b=2., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
     Prior_mu = stats.truncnorm(a=-2, b=2., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
     
     # counting helper for # of parameters
@@ -1757,29 +1751,19 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
                                          loc=np.log10(std_est), scale=0.3)   
     
-    if n_spline == 1:
-        # Single power law
-        from plotting import draw_independent_priors
-        #Prior_n = stats.uniform(loc=n_est-d_n0, scale=1.)   # n : n+/-d_n0
-        Priors = [Prior_n, Prior_mu, Prior_logsigma]
-        # Draw the priors
-        draw_independent_priors(Priors, **kwargs)
-        # Build independent priors
-        prior_tf_p = build_independent_priors(Priors)
-        return prior_tf_p
-    
-    elif n_spline==2:
-        def prior_tf_2p(u):
+    if n_spline == 'm':
+        Prior_gamma = stats.uniform(loc=5., scale=15.)       
+        Prior_beta = stats.uniform(loc=1.1, scale=6.)  
+        
+        def prior_tf_mof(u):
             v = u.copy()
-#             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
-            v[0] = Prior_n.ppf(u[0])    # n0 : N (n +/- d_n0)
-            v[1] = u[1] * (v[0]- 0.5 - n_min) + n_min        # n1 : n_min - n0-0.5
-            v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
+            v[0] = Prior_gamma.ppf(u[0])             # gamma1
+            v[1] = Prior_beta.ppf(u[1])              # beta1
             
             v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
             
             if fit_sigma:
-                v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+                v[-K] = Prior_logsigma.ppf(u[-K])    # log sigma
                 leg_level = v[-K]
             else:
                 leg_level = 0.5
@@ -1793,90 +1777,129 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                 v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
             return v
         
-        return prior_tf_2p
-    
-    elif n_spline==3:
-        def prior_tf_3p(u):
-            v = u.copy()
-            v[0] = Prior_n.ppf(u[0])
-            v[1] = u[1] * 0.5 + (v[0]-1)               # n1 : n0-1.0 - n0-0.5
-            v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
-                # n2 : max[n_min, n1-1.5] - n1-0.5
-            v[3] = u[3] * dlog_t + log_t_in                 
-                # log theta1 : t_in-t_out  arcsec
-            v[4] = u[4] * (log_t_out - v[3]) + v[3]
-                # log theta2 : theta1 - t_out  arcsec
-                
-            v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
-            
-            if fit_sigma:
-                v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
-                leg_level = v[-K]
-            else:
-                leg_level = 0.5
-                
-            if leg2d:
-                v[-K-2] = stats.uniform.ppf(u[-K-2], 
-                                            loc=leg_level-1.3, scale=1.3)  # log A10
-                v[-K-3] = stats.uniform.ppf(u[-K-3],
-                                            loc=leg_level-1.3, scale=1.3)  # log A01
-            if fit_frac:
-                v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-                
-            return v
-        
-        return prior_tf_3p
+        return prior_tf_mof
     
     else:
-        def prior_tf_sp(u):
-            v = u.copy()
-
-            v[0] = Prior_n.ppf(u[0])
-            
-            for k in range(n_spline-1):
-                v[k+1] = u[k+1] * max(-0.3, 1.3-v[k]) + (v[k]-0.3)         
-                # n_k+1 : [1, n_k-0.6] - n_k-0.3a
-            v[n_spline] = u[n_spline] * dlog_t + log_t_in
-            # log theta1 : t_in-t_out  arcsec
-
-            for k in range(n_spline-2):
-                
-                v[k+n_spline+1] = u[k+n_spline+1] * \
-                                    min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
-                # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
-
-            v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
-            
-            if fit_sigma:
-                v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
-                leg_level = v[-K]
-            else:
-                leg_level = 0.5
-                
-            if leg2d:
-                v[-K-2] = stats.uniform.ppf(u[-K-2], 
-                                            loc=leg_level-1.3, scale=1.3)  # log A10
-                v[-K-3] = stats.uniform.ppf(u[-K-3],
-                                            loc=leg_level-1.3, scale=1.3)  # log A01
-            if fit_frac:
-                v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-                
-            return v
+        Prior_n = stats.truncnorm(a=-2, b=2., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
         
-        return prior_tf_sp
+        if n_spline == 1:
+            # Single power law
+            from plotting import draw_independent_priors
+            Priors = [Prior_n, Prior_mu, Prior_logsigma]
+
+            # Draw the priors
+            draw_independent_priors(Priors, **kwargs)
+
+            # Build independent priors
+            prior_tf_p = build_independent_priors(Priors)
+
+            return prior_tf_p
+
+        elif n_spline==2:
+            def prior_tf_2p(u):
+                v = u.copy()
+    #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
+                v[0] = Prior_n.ppf(u[0])    # n0 : N (n +/- d_n0)
+                v[1] = u[1] * (v[0]- 0.5 - n_min) + n_min        # n1 : n_min - n0-0.5
+                v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
+
+                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+
+                if fit_sigma:
+                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+                    leg_amp = v[-K]
+                else:
+                    leg_amp = 0.5
+
+                if leg2d:
+                    v[-K-2] = stats.uniform.ppf(u[-K-2], 
+                                                loc=leg_amp-1.3, scale=1.3)  # log A10
+                    v[-K-3] = stats.uniform.ppf(u[-K-3],
+                                                loc=leg_amp-1.3, scale=1.3)  # log A01
+                if fit_frac:
+                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+                return v
+
+            return prior_tf_2p
+
+        elif n_spline==3:
+            def prior_tf_3p(u):
+                v = u.copy()
+                v[0] = Prior_n.ppf(u[0])
+                v[1] = u[1] * 0.5 + (v[0]-1)               # n1 : n0-1.0 - n0-0.5
+                v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
+                    # n2 : max[n_min, n1-1.5] - n1-0.5
+                v[3] = u[3] * dlog_t + log_t_in                 
+                    # log theta1 : t_in-t_out  arcsec
+                v[4] = u[4] * (log_t_out - v[3]) + v[3]
+                    # log theta2 : theta1 - t_out  arcsec
+
+                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+
+                if fit_sigma:
+                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+                    leg_amp = v[-K]
+                else:
+                    leg_amp = 0.5
+
+                if leg2d:
+                    v[-K-2] = stats.uniform.ppf(u[-K-2], 
+                                                loc=leg_amp-1.3, scale=1.3)  # log A10
+                    v[-K-3] = stats.uniform.ppf(u[-K-3],
+                                                loc=leg_amp-1.3, scale=1.3)  # log A01
+                if fit_frac:
+                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+
+                return v
+
+            return prior_tf_3p
+
+        else:
+            def prior_tf_sp(u):
+                v = u.copy()
+
+                v[0] = Prior_n.ppf(u[0])
+
+                for k in range(n_spline-1):
+                    v[k+1] = u[k+1] * max(-0.3, 1.3-v[k]) + (v[k]-0.3)         
+                    # n_k+1 : [1, n_k-0.6] - n_k-0.3a
+                v[n_spline] = u[n_spline] * dlog_t + log_t_in
+                # log theta1 : t_in-t_out  arcsec
+
+                for k in range(n_spline-2):
+
+                    v[k+n_spline+1] = u[k+n_spline+1] * \
+                                        min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
+                    # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
+
+                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+
+                if fit_sigma:
+                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+                    leg_amp = v[-K]
+                else:
+                    leg_amp = 0.5
+
+                if leg2d:
+                    v[-K-2] = stats.uniform.ppf(u[-K-2], 
+                                                loc=leg_amp-1.3, scale=1.3)  # log A10
+                    v[-K-3] = stats.uniform.ppf(u[-K-3],
+                                                loc=leg_amp-1.3, scale=1.3)  # log A01
+                if fit_frac:
+                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+
+                return v
+
+            return prior_tf_sp
         
 def draw_proposal(draw_func, proposal, psf, stars, image_base,
-                  leg2d=False, H10=None, H01=None,
-                  fit_sigma=True, fit_frac=False, **kwargs):
-    K = 0
-    if fit_frac: K += 1
-    if fit_sigma: K += 1
-        
+                  leg2d=False, H10=None, H01=None, K=0, **kwargs):
+    
     # Draw image and calculate log-likelihood
     mu = proposal[-K-1] 
     
     image_tri = draw_func(psf, stars, **kwargs)
-    image_tri = image_tri + image_base + mu 
+    image_tri +=  image_base + mu 
 
     if leg2d:
         A10, A01 = 10**proposal[-K-2], 10**proposal[-K-3]
@@ -1895,7 +1918,7 @@ def calculate_likelihood(ypred, data, sigma):
     return loglike
 
 
-def set_likelihood(data, mask_fit, psf0, stars0,
+def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                    norm='brightness', z_norm=None,
                    n_spline=2, n_cutoff=4, theta_cutoff=1200,
                    image_base=None, psf_range=[None,None],
@@ -1918,24 +1941,23 @@ def set_likelihood(data, mask_fit, psf0, stars0,
     
     """
     
-    stars = stars0.copy()
-    psf = psf0.copy()
+    stars = stars_tri.copy()
+    psf = psf_tri.copy()
     
-    theta_0 = psf.theta_0
     pixel_scale = psf.pixel_scale
-    
     bkg = stars.BKG
     
     if norm=='brightness':
         draw_func = generate_image_by_znorm
+        
     elif norm=='flux':
         draw_func = generate_image_by_flux
     
-    if (stars.n_verybright > 0) & (norm=='brightness'):
+    if (psf.aureole_model!='moffat') & (stars.n_verybright > 0) & (norm=='brightness'):
         subtract_external = True
     else:
         subtract_external = False
-    
+        
     if image_base is None:
         image_base = np.zeros((image_size, image_size))
     
@@ -1951,171 +1973,215 @@ def set_likelihood(data, mask_fit, psf0, stars0,
     H01 = leggrid2d((x_grid-cen[1])/image_size,
                     (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
         
-    if n_spline==1:
+    if n_spline == 'm':
         
-        def loglike_p(v):
-            n, mu = v[:-K]
+        def loglike_mof(v):
+            K = 0
+            if fit_frac: K += 1        
+            if fit_sigma: K += 1
+
+            gamma1, beta1 = v[:2]
+            mu = v[-K-1]
+            
             if fit_sigma:
                 sigma = 10**v[-K]
-                
-            param_update = {'n':n}
-            
+
+            param_update = {'gamma1':gamma1, 'beta1':beta1}
+
             if fit_frac:
                 frac = 10**v[-1]
                 param_update['frac'] = frac
 
             psf.update(param_update)
-        
+
             if norm=='brightness':
                 # I varies with sky background
                 stars.z_norm = z_norm + (bkg - mu)
-            
+
             image_tri = draw_func(psf, stars, psf_range=psf_range,
                                   brightest_only=brightest_only,
+                                  subtract_external=subtract_external,
                                   parallel=parallel, draw_real=draw_real)
             image_tri = image_tri + image_base + mu 
-
+            
             ypred = image_tri[~mask_fit].ravel()
-            residsq = (ypred - Y)**2 / sigma**2
-            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
 
-            if not np.isfinite(loglike):
-                loglike = -1e100
-
-            return loglike_p
-    
-    if n_spline==2:
-        
-        def loglike_2p(v):
-            K = 0
-            if fit_frac: K += 1        
-            if fit_sigma: K += 1
-                
-            n_s = np.append(v[:2], n_cutoff)
-            theta_s = np.append([theta_0, 10**v[2]], theta_cutoff)
-            mu = v[-K-1]
-            loglike = -1000
+            loglike = calculate_likelihood(ypred, data, sigma)
             
-            param_update = {'n_s':n_s, 'theta_s':theta_s}
-            
-            if fit_sigma:
-                sigma = 10**v[-K]
-                
-            if fit_frac:
-                frac = 10**v[-1]
-                param_update['frac'] = frac
-
-            psf.update(param_update)
-            psf.update({'n_s':n_s, 'theta_s':theta_s})
-            
-            if norm=='brightness':
-                # I varies with sky background
-                stars.z_norm = z_norm + (bkg - mu)
-            
-            image_tri = draw_func(psf, stars,
-                                  psf_range=psf_range,
-                                  psf_scale=pixel_scale, 
-                                  brightest_only=brightest_only,
-                                  subtract_external=subtract_external,
-                                  parallel=parallel, draw_real=draw_real)
-            
-            image_tri += image_base + mu 
-            
-            if leg2d:
-                A10, A01 = 10**v[-K-2], 10**v[-K-3]
-                image_tri += A10 * H10 + A01 * H01
-
-            ypred = image_tri[~mask_fit].ravel()
-            residsq = (ypred - data)**2 / sigma**2
-            loglike = -0.5 * np.sum(residsq + np.log(2 * np.pi * sigma**2))
-
-            if not np.isfinite(loglike):
-                loglike = -1e100
-
             return loglike
 
-        return loglike_2p        
+        return loglike_mof
         
-        
-    elif n_spline==3:
-    
-        def loglike_3p(v):
-            K = 0
-            if fit_frac: K += 1        
-            if fit_sigma: K += 1
-                
-            n_s = np.append(v[:3], n_cutoff)
-            theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_cutoff)
-            mu = v[-K-1]
-            
-            param_update ={'n_s':n_s, 'theta_s':theta_s}
-            
-            if fit_sigma:
-                sigma = 10**v[-K]
-                
-            if fit_frac:
-                frac = 10**v[-1]  
-                param_update['frac'] = frac
-
-            psf.update(param_update)
-            
-            if norm=='brightness':
-                # I varies with sky background
-                stars.z_norm = z_norm + (bkg - mu)
-                
-            image_tri = draw_func(psf, stars,
-                                  psf_range=psf_range,
-                                  psf_scale=pixel_scale, 
-                                  brightest_only=brightest_only, 
-                                  subtract_external=subtract_external,
-                                  parallel=parallel, draw_real=draw_real)
-            image_tri += image_base + mu 
-
-            if leg2d:
-                A10, A01 = 10**v[-K-2], 10**v[-K-3]
-                image_tri += A10 * H10 + A01 * H01
-
-            ypred = image_tri[~mask_fit].ravel()
-
-            return calculate_likelihood(ypred, data, sigma)
-        
-        return loglike_3p
-    
     else:
+        theta_0 = psf.theta_0
         
-        def loglike_sp(v):
-            K = 0
-            if fit_frac: K += 1        
-            if fit_sigma: K += 1
-                
-            n_s = np.append(v[:n_spline], n_cutoff)
-            theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [theta_cutoff]])
-            mu = v[-K-1]
-            param_update ={'n_s':n_s, 'theta_s':theta_s}
-            
-            if fit_sigma:
-                sigma = 10**v[-K]
-                
-            if fit_frac:
-                frac = 10**v[-1]  
-                param_update['frac'] = frac
-                
-            psf.update(param_update)
+        if n_spline==1:
 
-            image_tri = draw_proposal(draw_func, v, psf, stars, image_base,
-                                      leg2d=leg2d, H10=H10, H01=H01,
-                                      fit_sigma=fit_sigma, fit_frac=fit_frac,
-                                      psf_range=psf_range, psf_scale=pixel_scale,
+            def loglike_p(v):
+                K = 0
+                if fit_frac: K += 1        
+                if fit_sigma: K += 1
+                    
+                n, mu = v[0], v[-K-1]
+                
+                if fit_sigma:
+                    sigma = 10**v[-K]
+
+                param_update = {'n':n}
+
+                if fit_frac:
+                    frac = 10**v[-1]
+                    param_update['frac'] = frac
+
+                psf.update(param_update)
+
+                if norm=='brightness':
+                    # I varies with sky background
+                    stars.z_norm = z_norm + (bkg - mu)
+
+                image_tri = draw_func(psf, stars, psf_range=psf_range,
+                                      brightest_only=brightest_only,
+                                      parallel=parallel, draw_real=draw_real)
+                image_tri = image_tri + image_base + mu 
+
+                ypred = image_tri[~mask_fit].ravel()
+
+                loglike = calculate_likelihood(ypred, data, sigma)
+                
+                return loglike
+
+            return loglike_p
+
+        if n_spline==2:
+
+            def loglike_2p(v):
+                K = 0
+                if fit_frac: K += 1        
+                if fit_sigma: K += 1
+
+                n_s = np.append(v[:2], n_cutoff)
+                theta_s = np.append([theta_0, 10**v[2]], theta_cutoff)
+                mu = v[-K-1]
+                loglike = -1000
+
+                param_update = {'n_s':n_s, 'theta_s':theta_s}
+
+                if fit_sigma:
+                    sigma = 10**v[-K]
+
+                if fit_frac:
+                    frac = 10**v[-1]
+                    param_update['frac'] = frac
+
+                psf.update(param_update)
+                psf.update({'n_s':n_s, 'theta_s':theta_s})
+
+                if norm=='brightness':
+                    # I varies with sky background
+                    stars.z_norm = z_norm + (bkg - mu)
+
+                image_tri = draw_func(psf, stars,
+                                      psf_range=psf_range,
+                                      psf_scale=pixel_scale, 
                                       brightest_only=brightest_only,
                                       subtract_external=subtract_external,
                                       parallel=parallel, draw_real=draw_real)
-            
-            ypred = image_tri[~mask_fit].ravel()
-            loglike = calculate_likelihood(ypred, data, sigma)
 
-            return loglike
+                image_tri += image_base + mu 
+
+                if leg2d:
+                    A10, A01 = 10**v[-K-2], 10**v[-K-3]
+                    image_tri += A10 * H10 + A01 * H01
+
+                ypred = image_tri[~mask_fit].ravel()
+
+                loglike = calculate_likelihood(ypred, data, sigma)
+
+                return loglike
+
+            return loglike_2p        
+
+
+        elif n_spline==3:
+
+            def loglike_3p(v):
+                K = 0
+                if fit_frac: K += 1        
+                if fit_sigma: K += 1
+
+                n_s = np.append(v[:3], n_cutoff)
+                theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_cutoff)
+                mu = v[-K-1]
+
+                param_update ={'n_s':n_s, 'theta_s':theta_s}
+
+                if fit_sigma:
+                    sigma = 10**v[-K]
+
+                if fit_frac:
+                    frac = 10**v[-1]  
+                    param_update['frac'] = frac
+
+                psf.update(param_update)
+
+                if norm=='brightness':
+                    # I varies with sky background
+                    stars.z_norm = z_norm + (bkg - mu)
+
+                image_tri = draw_func(psf, stars,
+                                      psf_range=psf_range,
+                                      psf_scale=pixel_scale, 
+                                      brightest_only=brightest_only, 
+                                      subtract_external=subtract_external,
+                                      parallel=parallel, draw_real=draw_real)
+                image_tri += image_base + mu 
+
+                if leg2d:
+                    A10, A01 = 10**v[-K-2], 10**v[-K-3]
+                    image_tri += A10 * H10 + A01 * H01
         
-        return loglike_sp
+                ypred = image_tri[~mask_fit].ravel()
+
+                loglike = calculate_likelihood(ypred, data, sigma)
+                
+                return loglike
+
+            return loglike_3p
+
+        else:
+
+            def loglike_sp(v):
+                K = 0
+                if fit_frac: K += 1        
+                if fit_sigma: K += 1
+
+                n_s = np.append(v[:n_spline], n_cutoff)
+                theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1], [theta_cutoff]])
+                mu = v[-K-1]
+                param_update ={'n_s':n_s, 'theta_s':theta_s}
+
+                if fit_sigma:
+                    sigma = 10**v[-K]
+
+                if fit_frac:
+                    frac = 10**v[-1]  
+                    param_update['frac'] = frac
+
+                psf.update(param_update)
+
+                image_tri = draw_proposal(draw_func, v, psf, stars, image_base,
+                                          leg2d=leg2d, H10=H10, H01=H01, K=K,
+                                          psf_range=psf_range, psf_scale=pixel_scale,
+                                          brightest_only=brightest_only,
+                                          subtract_external=subtract_external,
+                                          parallel=parallel, draw_real=draw_real)
+
+                ypred = image_tri[~mask_fit].ravel()
+                loglike = calculate_likelihood(ypred, data, sigma)
+
+                return loglike
+
+            return loglike_sp
 
 
     

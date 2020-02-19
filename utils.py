@@ -1360,35 +1360,6 @@ def build_independent_priors(priors):
         return v
     return prior_transform    
 
-def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
-    """ Setup labels for cornerplot """
-    K = 0
-    if fit_frac: K += 1
-    if fit_sigma: K += 1
-        
-    if n_spline==1:
-        labels = [r'$n0$']
-    elif n_spline==2:
-        labels = [r'$n0$', r'$n1$', r'$\theta_1$']
-    elif n_spline==3:
-        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$']
-    else:
-        labels = [r'$n_%d$'%d for d in range(n_spline)] \
-               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)]
-        
-    labels += [r'$\mu$']
-        
-    if leg2d:
-        labels.insert(-1, r'$\log\,A_{01}$')
-        labels.insert(-1, r'$\log\,A_{10}$')
-    
-    if fit_sigma:
-        labels += [r'$\log\,\sigma$']
-        
-    if fit_frac:
-        labels += [r'$\log\,f_{pow}$']
-        
-    return labels
         
 # ###
 # class DynamicNestedSampler:
@@ -1548,39 +1519,45 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
     psf_fit = psf.copy()
     
     params, _, _ = get_params_fit(fit_res)
-    
-    N_n = n_spline
-    N_theta = n_spline - 1
         
     K = 0
     if fit_frac: K += 1        
     if fit_sigma: K += 1
     
-    if psf.aureole_model == "power":
-        psf_fit.update({'n':n_fit})
+    if psf.aureole_model == "moffat":
+        gamm1_fit, beta1_fit = params[:2]
+        param_update = {'gamma1':gamma1_fit, 'beta1':beta1_fit}
         
-    elif psf.aureole_model == "multi-power":
-        n_s_fit = np.concatenate([params[:N_n], [n_out]])
-        theta_s_fit = np.concatenate([[psf.theta_0],
-                      np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
-        
-        param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
-        
-        if fit_frac:
-            frac = 10**params[-1]
-            param_update['frac'] = frac
-            
-        psf_fit.update(param_update)
-        
-        if leg2d:
-            psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
+    else:
+        N_n = n_spline
+        N_theta = n_spline - 1
+    
+        if psf.aureole_model == "power":
+            n_fit = params[0]
+            param_update = {'n':n_fit}
 
-        
+        elif psf.aureole_model == "multi-power":
+            n_s_fit = np.concatenate([params[:N_n], [n_out]])
+            theta_s_fit = np.concatenate([[psf.theta_0],
+                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
+
+            param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
+
+    if fit_frac:
+        frac = 10**params[-1]
+        param_update['frac'] = frac
+
+    psf_fit.update(param_update)
+
     mu_fit = params[-K-1]
+    
     if fit_sigma:
         sigma_fit = 10**params[-K]
     else:
         sigma_fit = sigma
+        
+    if leg2d:
+        psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
         
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     

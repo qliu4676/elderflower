@@ -89,7 +89,7 @@ def make_rand_color(n_color, seed=1234,
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=None, r_out=None, vmin=None, vmax=None,
-                  pad=0, save=False, dir_name='./'):
+                  pad=0, save=False, save_dir='./'):
     """ Visualize mask map """
     
     from matplotlib import patches
@@ -145,7 +145,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     plt.tight_layout()
     
     if save:
-        plt.savefig(os.path.join(dir_name, "Mask_dual.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Mask_dual.png"), dpi=120)
         plt.show()
         plt.close()
     else:
@@ -153,7 +153,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
 def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
                         ma_example=None, r_core=None, vmin=None, vmax=None,
-                        pad=0, save=False, dir_name='./'):
+                        pad=0, save=False, save_dir='./'):
     """ Visualize mask map w/ strips """
     
     from matplotlib import patches
@@ -207,7 +207,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Mask_strip.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Mask_strip.png"), dpi=120)
         plt.show()
         plt.close()
     else:
@@ -280,7 +280,7 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     plt.xlabel('r [pix]', fontsize=14)
 
     
-def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_name='.'):
+def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, save_dir='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     from utils import Intensity2SB, cal_profile_1d
     
@@ -339,7 +339,7 @@ def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, dir_nam
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Model_PSF.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Model_PSF.png"), dpi=120)
         plt.close()
         
     return img_star
@@ -380,7 +380,7 @@ def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
         plt.close()
 
 def draw_independent_priors(priors, xlabels=None, plabels=None,
-                            save=False, dir_name='./'):
+                            save=False, save_dir='./'):
     
     x_s = [np.linspace(d.ppf(0.01), d.ppf(0.99), 100) for d in priors]
     
@@ -392,12 +392,12 @@ def draw_independent_priors(priors, xlabels=None, plabels=None,
             ax.set_xlabel(xlabels[k], fontsize=12)
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Prior.png"), dpi=100)
+        plt.savefig(os.path.join(save_dir, "Prior.png"), dpi=100)
         plt.close()
 
         
 def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
-                    save=False, dir_name='.', suffix=''):
+                    save=False, save_dir='.', suffix=''):
     from dynesty import plotting as dyplot
     
     fig = plt.subplots(ndim, ndim, figsize=figsize)
@@ -406,8 +406,9 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                       title_kwargs={'fontsize':18, 'y': 1.04},
                       label_kwargs={'fontsize':16}, 
                       show_titles=True, fig=fig)
+    
     if save:
-        plt.savefig(os.path.join(dir_name, "Cornerplot%s.png"%suffix), dpi=150)
+        plt.savefig(os.path.join(save_dir, "Cornerplot%s.png"%suffix), dpi=150)
         plt.show()
         plt.close()
     else:
@@ -416,8 +417,10 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
         
 def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  image_base=None, vmin=None, vmax=None,
-                                 avg_func='median', save=False, dir_name="."):
+                                 avg_func='median', save=False, save_dir="."):
     """ Compare 2D fit and truth image """
+    from sampler import get_params_fit
+    
     N_n = len([lab for lab in labels if "n" in lab])
     N_theta = len([lab for lab in labels if "theta" in lab])
     
@@ -462,13 +465,13 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
     
     plt.tight_layout()   
     if save:
-        plt.savefig(os.path.join(dir_name,
+        plt.savefig(os.path.join(save_dir,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
 def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
                        r_core=None, vmin=None, vmax=None, cmap='gnuplot2',
-                       save=False, dir_name=".", suffix=""):
+                       save=False, save_dir=".", suffix=""):
     """ Compare data and fit in 2D """
     
     mask_fit = getattr(mask, 'mask_comb', mask.mask_deep)
@@ -517,20 +520,20 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
         
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(dir_name, "Comparison_fit_data2D%s.png"%suffix), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Comparison_fit_data2D%s.png"%suffix), dpi=120)
         plt.show()
         plt.close()
     else:
         plt.show()
     
     
-def plot_fit_PSF1D(results, psf, n_bootstrap=500, 
+def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500, 
                    truth=None, Amp_max=None, leg2d=False,
                    r_core=None, n_out=4, theta_out=1200,
-                   save=False, dir_name="./", suffix='', figsize=(7,6)):
+                   save=False, save_dir="./", suffix='', figsize=(7,6)):
 
     from astropy.stats import bootstrap
-    from utils import get_params_fit
+    from sampler import get_params_fit
     
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
@@ -552,13 +555,8 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     # Number of n and theta in the fitting
-    if leg2d:
-        N_n = (len(pmed)-4+1)//2
-        N_theta = len(pmed)-4-N_n
-    else:
-        N_n = (len(pmed)-2+1)//2
-        N_theta = len(pmed)-2-N_n
-
+    N_n = n_spline
+    N_theta = n_spline - 1
     psf_fit = psf.copy()
     
     r = np.logspace(0., np.log10(image_size), 100)
@@ -641,7 +639,7 @@ def plot_fit_PSF1D(results, psf, n_bootstrap=500,
     plt.tight_layout()
     
     if save:
-        plt.savefig("%s/Fit_PSF1D%s.png"%(dir_name,suffix),dpi=150)
+        plt.savefig("%s/Fit_PSF1D%s.png"%(save_dir, suffix),dpi=150)
         plt.show()
         plt.close()
     

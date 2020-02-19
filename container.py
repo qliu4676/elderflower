@@ -28,7 +28,6 @@ class Container:
                   n_min=1, theta_in=50, theta_out=240):
         """ Setup priors for fitting and labels for displaying the results"""
         from modeling import set_prior
-        from utils import set_labels
     
         prior_tf = set_prior(n_est, mu_est, std_est,
                              n_spline=self.n_spline, leg2d=self.leg2d,
@@ -74,3 +73,36 @@ class Container:
                                  draw_real=self.draw_real)
         
         self.loglikelihood = loglike
+        
+        
+def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
+    """ Setup labels for cornerplot """
+    K = 0
+    if fit_frac: K += 1
+    if fit_sigma: K += 1
+    
+    if n_spline=='m':
+        labels = [r'$\gamma_1$', r'$\beta_1$']
+    elif n_spline==1:
+        labels = [r'$n0$']
+    elif n_spline==2:
+        labels = [r'$n0$', r'$n1$', r'$\theta_1$']
+    elif n_spline==3:
+        labels = [r'$n0$', r'$n1$', r'$n2$', r'$\theta_1$', r'$\theta_2$']
+    else:
+        labels = [r'$n_%d$'%d for d in range(n_spline)] \
+               + [r'$\theta_%d$'%(d+1) for d in range(n_spline-1)]
+        
+    labels += [r'$\mu$']
+        
+    if leg2d:
+        labels.insert(-1, r'$\log\,A_{01}$')
+        labels.insert(-1, r'$\log\,A_{10}$')
+    
+    if fit_sigma:
+        labels += [r'$\log\,\sigma$']
+        
+    if fit_frac:
+        labels += [r'$\log\,f_{pow}$']
+        
+    return labels
