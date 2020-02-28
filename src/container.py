@@ -27,7 +27,7 @@ class Container:
     def set_prior(self, n_est, mu_est, std_est,
                   n_min=1, theta_in=50, theta_out=240):
         """ Setup priors for fitting and labels for displaying the results"""
-        from modeling import set_prior
+        from .modeling import set_prior
     
         prior_tf = set_prior(n_est, mu_est, std_est,
                              n_spline=self.n_spline, leg2d=self.leg2d,
@@ -51,7 +51,7 @@ class Container:
                        psf_range=[None, None],
                        image_base=None):
         """ Setup likelihood function for fitting """
-        from modeling import set_likelihood
+        from .modeling import set_likelihood
         
         if image_base is None:
             image_base = np.zeros_like(mask_fit)
@@ -66,8 +66,7 @@ class Container:
                                  leg2d=self.leg2d,
                                  fit_sigma=self.fit_sigma,
                                  fit_frac=self.fit_frac,
-                                 norm='brightness',
-                                 z_norm=z_norm,
+                                 norm=norm, z_norm=z_norm,
                                  brightest_only=self.brightest_only,
                                  parallel=self.parallel, 
                                  draw_real=self.draw_real)
@@ -103,6 +102,6 @@ def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
         labels += [r'$\log\,\sigma$']
         
     if fit_frac:
-        labels += [r'$\log\,f_{pow}$']
+        labels += [r'$\log\,f$']
         
     return labels

@@ -107,7 +107,7 @@ class DynamicNestedSampler:
     
     def cornerplot(self, truths=None, figsize=(16,15),
                    save=False, save_dir='.', suffix=''):
-        from plotting import draw_cornerplot
+        from .plotting import draw_cornerplot
         
         draw_cornerplot(self.results, self.ndim,
                         labels=self.labels, truths=truths, figsize=figsize,
@@ -125,14 +125,16 @@ class DynamicNestedSampler:
             plt.close()
     
     def plot_fit_PSF1D(self, psf, **kwargs):
-        from plotting import plot_fit_PSF1D
-        plot_fit_PSF1D(self.results, psf, leg2d=self.leg2d, **kwargs)
+        from .plotting import plot_fit_PSF1D
+        ct = self.container
+        
+        plot_fit_PSF1D(self.results, psf, n_spline=ct.n_spline, **kwargs)
     
     def generate_fit(self, psf, stars,
                      norm='brightness', n_out=4, theta_out=1200):
         
-        from utils import make_psf_from_fit
-        from modeling import generate_image_fit
+        from .utils import make_psf_from_fit
+        from .modeling import generate_image_fit
         
         ct = self.container
         
@@ -160,7 +162,7 @@ class DynamicNestedSampler:
         return psf_fit, params
         
     def draw_comparison_2D(self, image, mask, **kwargs):
-        from plotting import draw_comparison_2D
+        from .plotting import draw_comparison_2D
         draw_comparison_2D(self.image_fit, image, mask, self.image_star,
                            self.noise_fit, **kwargs)
         

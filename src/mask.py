@@ -2,8 +2,8 @@ import os
 import math
 import numpy as np
 from astropy.io import fits
-from modeling import Stars
-from utils import background_sub_SE
+from .modeling import Stars
+from .utils import background_sub_SE
 
 class Mask:
     """ Class for masking sources """
@@ -55,7 +55,7 @@ class Mask:
         
     def make_mask_map_deep(self, by='radius', dir_measure=None, 
                            r_core=None, r_out=None, count=None,
-                           draw=True, save=False, dir_name='.', **kwargs):
+                           draw=True, save=False, save_dir='.', **kwargs):
         """
         Make deep mask map of bright stars based on either of:
         (1) aperture (2) brightness
@@ -71,7 +71,7 @@ class Mask:
         count : absolute count (in ADU) above which is masked        
         draw : whether to draw mask map
         save : whether to save the image
-        dir_name : path of saving
+        save_dir : path of saving
         
         """
         
@@ -105,17 +105,17 @@ class Mask:
         
         # Display mask
         if draw:
-            from plotting import draw_mask_map
+            from .plotting import draw_mask_map
             draw_mask_map(image0, seg_deep0, mask_deep0, stars,
                           pad=pad, r_core=r_core, r_out=r_out,
-                          vmin=self.bkg, save=save, dir_name=dir_name)
+                          vmin=self.bkg, save=save, save_dir=save_dir)
             
             
     def make_mask_strip(self, n_strip=24,
                         wid_strip=16, dist_strip=500,
                         wid_cross=10, dist_cross=72,
                         clean=True, draw=True, 
-                        save=False, dir_name='.'):
+                        save=False, save_dir='.'):
         
         """
         Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
@@ -131,7 +131,7 @@ class Mask:
         clean : whether to remove medium bright stars far from any available pixels for fitting. A new Stars object will be stored in stars_new, otherwise it is simply a copy.
         draw : whether to draw mask map
         save : whether to save the image
-        dir_name : path of saving
+        save_dir : path of saving
         
         """
         
@@ -168,7 +168,7 @@ class Mask:
         
         # Clean medium bright stars far from bright stars
         if clean:
-            from utils import clean_isolated_stars
+            from .utils import clean_isolated_stars
             clean = clean_isolated_stars(self.xx, self.yy, mask_comb0,
                                        stars.star_pos, pad=pad)
             if stars.n_verybright > 0:
@@ -185,11 +185,11 @@ class Mask:
             
         # Display mask
         if draw:
-            from plotting import draw_mask_map_strip
+            from .plotting import draw_mask_map_strip
             draw_mask_map_strip(image0, seg_comb0, mask_comb0, stars_new,
                                 pad=pad, r_core=self.r_core, 
                                 ma_example=[mask_strip_s[0], mask_cross_s[0]],
-                                vmin=self.bkg, save=save, dir_name=dir_name)
+                                vmin=self.bkg, save=save, save_dir=save_dir)
             
 def make_mask_map(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
     """ Make mask map with S/N > sn_thre """

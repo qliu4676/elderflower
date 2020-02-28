@@ -19,7 +19,7 @@ from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 
-from plotting import LogNorm, AsinhNorm, colorbar
+from .plotting import LogNorm, AsinhNorm, colorbar
 
 ### Baisc Funcs ###
 
@@ -138,7 +138,7 @@ def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
     return back, back_rms
 
 def display_background_sub(field, back):
-    from plotting import vmax_2sig, vmin_3mad
+    from .plotting import vmax_2sig, vmin_3mad
     # Display and save background subtraction result with comparison 
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
     ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=LogNorm())
@@ -795,7 +795,7 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
                       draw=True, save=False, save_dir='./'):
     """ Assign position and flux for faint and bright stars from tables. """
     
-    from modeling import Stars
+    from .modeling import Stars
     
     # Image attributes
     ZP = Image.ZP
@@ -1020,7 +1020,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     """
     from astropy.table import join, vstack
     from astropy.nddata.bitmask import interpret_bit_flags
-    from API_PS1_DR2 import ps1cone
+    from .API_PS1_DR2 import ps1cone
     
     band = band.lower()
     mag_name = band + 'MeanPSFMag'
@@ -1320,7 +1320,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
         if star_ma is not None:
             seg_map_catalog[star_ma.astype(bool)] = k+2
     if draw:
-        from plotting import make_rand_cmap
+        from .plotting import make_rand_cmap
         plt.figure(figsize=(5,5))
         plt.imshow(seg_map_catalog, vmin=1, cmap=make_rand_cmap(int(seg_map_catalog.max())))
         plt.show()
@@ -1513,7 +1513,7 @@ def build_independent_priors(priors):
     
 def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
                       fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
-    from sampler import get_params_fit
+    from .sampler import get_params_fit
     
     image_size = psf.image_size
     psf_fit = psf.copy()
@@ -1525,7 +1525,7 @@ def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
     if fit_sigma: K += 1
     
     if psf.aureole_model == "moffat":
-        gamm1_fit, beta1_fit = params[:2]
+        gamma1_fit, beta1_fit = params[:2]
         param_update = {'gamma1':gamma1_fit, 'beta1':beta1_fit}
         
     else:

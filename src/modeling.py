@@ -19,7 +19,7 @@ from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
 from functools import partial, lru_cache
-from usid_processing import parallel_compute
+from .parallel import parallel_compute
 
 try:
     from numba import njit
@@ -29,9 +29,9 @@ except ImportError:
             return func 
         return dummy_decorator
     
-from utils import fwhm_to_gamma, gamma_to_fwhm
-from utils import Intensity2SB, SB2Intensity
-from utils import round_good_fft, calculate_psf_size
+from .utils import fwhm_to_gamma, gamma_to_fwhm
+from .utils import Intensity2SB, SB2Intensity
+from .utils import round_good_fft, calculate_psf_size
 
 ############################################
 # Functions for making PSF models
@@ -130,7 +130,7 @@ class PSF_Model:
 
     def plot1D(self, **kwargs):
         """ Plot 1D profile """
-        from plotting import plot_PSF_model_1D
+        from .plotting import plot_PSF_model_1D
         
         plot_PSF_model_1D(self.frac, self.f_core1D, self.f_aureole1D, **kwargs)
         
@@ -262,7 +262,8 @@ class PSF_Model:
             return I02I_mpow(self.n_s, self.theta_s_pix, r, I0=I0)
     
     def calculate_external_light(self, stars, n_iter=2):
-        """ Calculate the integrated external scatter light that affects the flux scaling from very bright stars on the other stars.
+        """ Calculate the integrated external scatter light that affects
+        the flux scaling from very bright stars on the other stars.
         
         Parameters
         ----------
@@ -270,25 +271,31 @@ class PSF_Model:
         n_iter : iteration time to do the calculation
         
         """
-        I_ext = np.zeros(stars.n_bright)
-        z_norm_verybright0 = stars.z_norm_verybright.copy()
-        pos_source, pos_eval = stars.star_pos_verybright, stars.star_pos_bright
         
-        if self.aureole_model == "power":
-            cal_ext_light = partial(calculate_external_light_pow,
-                                   n0=self.n0, theta0=self.theta_0_pix,
-                                   pos_source=pos_source, pos_eval=pos_eval)
-        elif self.aureole_model == "multi-power":
-            cal_ext_light = partial(calculate_external_light_mpow,
-                                    n_s=self.n_s, theta_s_pix=self.theta_s_pix,
-                                    pos_source=pos_source, pos_eval=pos_eval)
-        # Loop the subtraction    
-        r_scale = stars.r_scale
-        n_verybright = stars.n_verybright
-        for i in range(n_iter):
-            z_norm_verybright = z_norm_verybright0 - I_ext[:n_verybright]
-            I0_verybright = self.I2I0(z_norm_verybright, r=r_scale)
-            I_ext = cal_ext_light(I0_source=I0_verybright)
+        I_ext = np.zeros(stars.n_bright)
+        
+        if self.aureole_model == "moffat":
+            pass
+        
+        else:
+            z_norm_verybright0 = stars.z_norm_verybright.copy()
+            pos_source, pos_eval = stars.star_pos_verybright, stars.star_pos_bright
+
+            if self.aureole_model == "power":
+                cal_ext_light = partial(calculate_external_light_pow,
+                                       n0=self.n0, theta0=self.theta_0_pix,
+                                       pos_source=pos_source, pos_eval=pos_eval)
+            elif self.aureole_model == "multi-power":
+                cal_ext_light = partial(calculate_external_light_mpow,
+                                        n_s=self.n_s, theta_s_pix=self.theta_s_pix,
+                                        pos_source=pos_source, pos_eval=pos_eval)
+            # Loop the subtraction    
+            r_scale = stars.r_scale
+            n_verybright = stars.n_verybright
+            for i in range(n_iter):
+                z_norm_verybright = z_norm_verybright0 - I_ext[:n_verybright]
+                I0_verybright = self.I2I0(z_norm_verybright, r=r_scale)
+                I_ext = cal_ext_light(I0_source=I0_verybright)
             
         return I_ext
     
@@ -336,7 +343,7 @@ class PSF_Model:
 
     def plot_PSF_model_galsim(self, contrast=None, save=False, save_dir='.'):
         """ Build and plot Galsim 2D model averaged in 1D """
-        from plotting import plot_PSF_model_galsim
+        from .plotting import plot_PSF_model_galsim
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
                                           save=save, save_dir=save_dir)
         self.image_psf = image_psf
@@ -552,7 +559,7 @@ class Stars:
         return self.star_pos[self.medbright]
             
     def plot_flux_dist(self, **kwargs):
-        from plotting import plot_flux_dist
+        from .plotting import plot_flux_dist
         plot_flux_dist(self.Flux, [self.F_bright, self.F_verybright], **kwargs)
 
     def copy(self):
@@ -1676,7 +1683,8 @@ def generate_image_fit(psf_fit, stars, norm='brightness',
     elif norm=='flux':
         draw_func = generate_image_by_flux
     
-    image_fit = draw_func(psf_fit, stars, psf_range=[900,1800], psf_scale=psf_fit.pixel_scale,
+    image_fit = draw_func(psf_fit, stars,
+                          psf_range=[900,1800], psf_scale=psf_fit.pixel_scale,
                           brightest_only=brightest_only, draw_real=draw_real)
 
     bkg_fit = psf_fit.bkg * np.ones((image_size, image_size))
@@ -1740,7 +1748,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     if fit_frac: K += 1
     if fit_sigma: K += 1
         
-    Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
+    
         
     # logsigma : [std_poi, std_est]
     if std_poi is None:
@@ -1752,8 +1760,9 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                                          loc=np.log10(std_est), scale=0.3)   
     
     if n_spline == 'm':
-        Prior_gamma = stats.uniform(loc=5., scale=15.)       
+        Prior_gamma = stats.uniform(loc=0., scale=10.)       
         Prior_beta = stats.uniform(loc=1.1, scale=6.)  
+        Prior_logfrac = stats.uniform(loc=-2, scale=2.)
         
         def prior_tf_mof(u):
             v = u.copy()
@@ -1781,10 +1790,11 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     else:
         Prior_n = stats.truncnorm(a=-2, b=2., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
+        Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
         
         if n_spline == 1:
             # Single power law
-            from plotting import draw_independent_priors
+            from .plotting import draw_independent_priors
             Priors = [Prior_n, Prior_mu, Prior_logsigma]
 
             # Draw the priors

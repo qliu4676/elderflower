@@ -4,7 +4,7 @@ import numpy as np
 
 from astropy import wcs
 from astropy.io import fits
-from utils import crop_image
+from .utils import crop_image
 
 class Image:
     """ A Image Class """

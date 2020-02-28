@@ -240,7 +240,7 @@ def Fit_background_distribution(image, mask_deep):
 def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
                       yunit='Intensity', label='combined', log_scale=True,
                       ZP=27.1, pixel_scale=2.5, decompose=True):
-    from utils import Intensity2SB
+    from .utils import Intensity2SB
     
     r = np.logspace(0, np.log10(psf_range), 100)
     
@@ -282,7 +282,7 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     
 def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, save_dir='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
-    from utils import Intensity2SB, cal_profile_1d
+    from .utils import Intensity2SB, cal_profile_1d
     
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
@@ -419,7 +419,7 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  image_base=None, vmin=None, vmax=None,
                                  avg_func='median', save=False, save_dir="."):
     """ Compare 2D fit and truth image """
-    from sampler import get_params_fit
+    from .sampler import get_params_fit
     
     N_n = len([lab for lab in labels if "n" in lab])
     N_theta = len([lab for lab in labels if "theta" in lab])
@@ -527,19 +527,21 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
         plt.show()
     
     
-def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500, 
-                   truth=None, Amp_max=None, leg2d=False,
-                   r_core=None, n_out=4, theta_out=1200,
-                   save=False, save_dir="./", suffix='', figsize=(7,6)):
+def plot_fit_PSF1D(results, psf, n_spline=2,
+                   n_bootstrap=500, truth=None,  
+                   Amp_max=None, r_core=None,
+                   n_out=4, theta_out=1200,
+                   save=False, save_dir="./",
+                   suffix='', figsize=(7,6)):
 
     from astropy.stats import bootstrap
-    from sampler import get_params_fit
+    from .sampler import get_params_fit
     
     image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac
-    theta_0 = psf.theta_0
+    
     if figsize is not None:
         fig, ax = plt.subplots(1,1, figsize=figsize)
     
@@ -555,8 +557,11 @@ def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500,
     samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     # Number of n and theta in the fitting
-    N_n = n_spline
-    N_theta = n_spline - 1
+    if psf.aureole_model != "moffat":
+        theta_0 = psf.theta_0
+        N_n = n_spline
+        N_theta = n_spline - 1
+    
     psf_fit = psf.copy()
     
     r = np.logspace(0., np.log10(image_size), 100)
@@ -566,14 +571,22 @@ def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500,
     for sample in samples_eq_bs:
         frac_k = frac
         
-        if psf.aureole_model == "power":
-            n_k = sample[0]
-            psf_fit.update({'n':n_k})
+        if psf.aureole_model == "moffat":
+            gamma1_k = sample[0]
+            beta1_k = sample[1]
+            psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
             
-        elif psf.aureole_model == "multi-power":
-            n_s_k = np.concatenate([sample[:N_n], [n_out]])
-            theta_s_k = np.concatenate([[theta_0], np.atleast_1d(10**sample[N_n:N_n+N_theta]), [theta_out]])
-            psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
+        else:    
+            if psf.aureole_model == "power":
+                n_k = sample[0]
+                psf_fit.update({'n':n_k})
+
+            elif psf.aureole_model == "multi-power":
+                n_s_k = np.concatenate([sample[:N_n], [n_out]])
+                theta_s_k = np.concatenate([[theta_0],
+                                            np.atleast_1d(10**sample[N_n:N_n+N_theta]),
+                                            [theta_out]])
+                psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
             
         comp2_k = psf_fit.f_aureole1D(r)
             
@@ -584,14 +597,22 @@ def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500,
     for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
                               ["-.","-"], ["mean", "med"]):
         
-        if psf.aureole_model == "power":
-            n_fit = fits[0]
-            psf_fit.update({'n':n_fit})
+        if psf.aureole_model == "moffat":
+            gamma1_fit = fits[0]
+            beta1_fit = fits[1]
+            psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
+            
+        else:
+            if psf.aureole_model == "power":
+                n_fit = fits[0]
+                psf_fit.update({'n':n_fit})
 
-        elif psf.aureole_model == "multi-power":
-            n_s_fit = np.concatenate([fits[:N_n], [n_out]])
-            theta_s_fit = np.concatenate([[theta_0], np.atleast_1d(10**fits[N_n:N_n+N_theta]),[theta_out]])
-            psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
+            elif psf.aureole_model == "multi-power":
+                n_s_fit = np.concatenate([fits[:N_n], [n_out]])
+                theta_s_fit = np.concatenate([[theta_0],
+                                              np.atleast_1d(10**fits[N_n:N_n+N_theta]),
+                                              [theta_out]])
+                psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
             
         comp2 = psf_fit.f_aureole1D(r)
 
@@ -620,6 +641,7 @@ def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500,
                 
     # Draw boundaries etc.
     if r_core is not None:
+        
         if figsize is not None:
             plt.axvspan(np.atleast_1d(r_core).max(), theta_out/pixel_scale,
                         color='steelblue', alpha=0.15, zorder=1)
@@ -627,8 +649,10 @@ def plot_fit_PSF1D(results, psf, n_spline=2, n_bootstrap=500,
                         color='seagreen', alpha=0.15, zorder=1)
             plt.axvspan(plt.gca().get_xlim()[0], np.atleast_1d(r_core).min(),
                         color='gray', alpha=0.15, zorder=1)
-        for t in psf_fit.theta_s_pix:
-            plt.axvline(t, lw=2, ls='--', color='k', alpha=0.5)        
+            
+        if psf.aureole_model != "moffat":
+            for t in psf_fit.theta_s_pix:
+                plt.axvline(t, lw=2, ls='--', color='k', alpha=0.5)        
         
     plt.legend(loc=1, fontsize=12)    
     plt.xlabel(r"$\rm r\,[pix]$",fontsize=18)
@@ -647,7 +671,7 @@ def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
                              bkg_sky=460, std_sky=2, pixel_scale=2.5, ZP=27.1,
                              mag_name='MAG_AUTO_corr', figsize=(8,6)):
     
-    from utils import Intensity2SB, cal_profile_1d
+    from .utils import Intensity2SB, cal_profile_1d
     
     r = np.logspace(0.03,3,100)
     
