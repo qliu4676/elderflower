@@ -37,7 +37,7 @@ weights, etc. and diagnostic plots will be saved.
 
 import sys
 import getopt
-from plotting import *
+from src.plotting import *
 
 def main(argv):
     # Image Parameter (default)
@@ -62,7 +62,7 @@ def main(argv):
 
     # Measure Parameter
     r_scale = 12
-    mag_threshold = [14, 11]
+    mag_threshold = np.array([14, 11])
     
     # Mask Setup
     mask_type = 'radius'
@@ -78,8 +78,10 @@ def main(argv):
                                         "N_COMP=", "R_SCALE=", "MAG_THRE=",
                                         "MASK_TYPE=", "R_CORE=", "SB_FIT_THRE=", 
                                         "N_CPU=", "PARALLEL", "BRIGHTEST_ONLY", 
-                                        "NO_PRINT", "W_STRIP=", "N_STRIP=", "CONV",
-                                        "NO_SAVE", "DIR_NAME=", "DIR_MEASURE="])
+                                        "NO_PRINT", "W_STRIP=", "N_STRIP=",
+                                        "CONV", "NO_SAVE",
+                                        "DIR_NAME=", "DIR_MEASURE=", "DIR_DATA="])
+        
         opts = [opt for opt, arg in optlists]        
         
     except getopt.GetoptError as e:
@@ -97,6 +99,7 @@ def main(argv):
     hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
     dir_name = './fit-real'
     dir_measure = './Measure'
+    dir_data = '/home/qliu/Desktop/PSF/data'
                 
     for opt, arg in optlists:
         if opt in ("-I", "--IMAGE"):
@@ -128,7 +131,9 @@ def main(argv):
             dir_name = arg
         elif opt in ("--DIR_MEASURE"):
             dir_measure = arg 
-        
+        elif opt in ("--DIR_DATA"):
+            dir_data = arg
+            
     if '-L' in opts: leg2d = True
     if '-F' in opts: fit_frac = True
     if ('-B' in opts)|("--BRIGHTEST_ONLY" in opts): brightest_only = True
@@ -155,7 +160,7 @@ def main(argv):
                      wid_strip=wid_strip, n_strip=n_strip,
                      brightest_only=brightest_only, draw_real=draw_real,
                      parallel=parallel, print_progress=print_progress, 
-                     draw=draw, dir_measure=dir_measure,
+                     draw=draw, dir_measure=dir_measure, dir_data=dir_data,
                      save=save, dir_name=dir_name)
 
     return opts
@@ -173,12 +178,12 @@ def Run_Fitting(hdu_path, image_bounds0,
                 brightest_only=True, draw_real=True,
                 draw=True, print_progress=True,
                 save=False, dir_name='./',
-                dir_measure='./Measure'):
+                dir_measure='./Measure', dir_data='./data'):
     
     ############################################
     # Setup PSF
     ############################################
-    from modeling import PSF_Model
+    from src.modeling import PSF_Model
     
     image_size = (image_bounds0[2] - image_bounds0[0]) - 2 * pad
     
@@ -195,11 +200,14 @@ def Run_Fitting(hdu_path, image_bounds0,
     
     if n_spline == 1:
         # Single-power PSF
-        params_pow = {"fwhm":fwhm, "beta":beta, "frac":frac, "n":n0, 'theta_0':theta_0}
+        params_pow = {"fwhm":fwhm, "beta":beta,
+                      "frac":frac, "n":n0, 'theta_0':theta_0}
         psf = PSF_Model(params=params_pow, aureole_model='power')
+        
     else:
         # Multi-power PSF
-        params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac, "n_s":n_s, 'theta_s':theta_s}
+        params_mpow = {"fwhm":fwhm, "beta":beta,
+                       "frac":frac, "n_s":n_s, 'theta_s':theta_s}
         psf = PSF_Model(params=params_mpow, aureole_model='multi-power')
 
     # Build grid of image for drawing
@@ -208,33 +216,37 @@ def Run_Fitting(hdu_path, image_bounds0,
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e6, psf_range=image_size)
-    star_psf = (1-frac) * psf_c + frac * psf_e
+    psf_star = psf.psf_star
     
+    # Make a deep copy
     psf_tri = psf.copy()
 
     ############################################
     # Read Image and Table
     ############################################
-    from image import Image
-    DF_Image = Image("./data/coadd_Sloan%s_NGC_5907.fits"%band, image_bounds0)
+    from src.image import Image
+    DF_Image = Image(os.path.join(dir_data,
+                                  "coadd_Sloan%s_NGC_5907.fits"%band),
+                     image_bounds0)
 
-    from utils import read_measurement_tables
+    from src.utils import read_measurement_tables
     table_faint, table_res_Rnorm = read_measurement_tables(dir_measure, image_bounds0)
     
     ############################################
     # Setup Stars
     ############################################    
-    from utils import assign_star_props
+    from src.utils import assign_star_props
     stars_0, stars_all = assign_star_props(table_faint, table_res_Rnorm, DF_Image, 
+                                           mag_threshold=mag_threshold,
                                            r_scale=r_scale, verbose=True,
                                            draw=True, save=save, save_dir=dir_name)
     
     ############################################
     # Setup Image
     ############################################
-    from modeling import make_base_image
+    from src.modeling import make_base_image
     # Make fixed background of dim stars
-    image_base = make_base_image(image_size, stars_all, psf_base=star_psf,
+    image_base = make_base_image(image_size, stars_all, psf_base=psf_star,
                                  psf_size=64, pad=pad, verbose=True)
 
     image = DF_Image.image
@@ -242,13 +254,14 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Make Mask
     ############################################
-    from utils import SB2Intensity
-    from mask import Mask
+    from src.utils import SB2Intensity
+    from src.mask import Mask
     
     mask = Mask(DF_Image, stars0)
 
     if mask_type=='brightness':
-        count = SB2Intensity(SB_fit_thre, mu, ZP, pixel_scale)[0]
+        count = SB2Intensity(SB_fit_thre, DF_Image.bkg,
+                             DF_Image.ZP, pixel_sDF_Image.pixel_scalecale)[0]
     else:
         count = None
     
@@ -284,8 +297,10 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Estimates
     ############################################
-    from utils import compute_poisson_noise
+    from src.utils import compute_poisson_noise
     from astropy.stats import sigma_clip
+    
+    image = DF_Image.image
     
     Y = image[~mask_fit].copy().ravel()
     
@@ -309,7 +324,8 @@ def Run_Fitting(hdu_path, image_bounds0,
                           brightest_only=False,
                           parallel=False, draw_real=True)
     # Set Priors
-    container.set_prior(n0, mu, std_patch, n_min=1, theta_in=50, theta_out=240)
+    container.set_prior(n0, DF_Image.bkg, std_patch,
+                        n_min=1, theta_in=50, theta_out=240)
 
     # Set Likelihood
     container.set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
@@ -322,7 +338,7 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Run Sampling
     ############################################
-    from sampler import DynamicNestedSampler
+    from src.sampler import DynamicNestedSampler
     
     ds = DynamicNestedSampler(container, sample='auto', n_cpu=n_cpu)
     
@@ -345,7 +361,7 @@ def Run_Fitting(hdu_path, image_bounds0,
     ############################################
     # Plot Results
     ############################################
-    from utils import cal_reduced_chi2
+    from src.utils import cal_reduced_chi2
     
     ds.cornerplot(figsize=(18, 16),
                   save=save, save_dir=dir_name, suffix='_'+method)
