@@ -1522,11 +1522,10 @@ def build_independent_priors(priors):
 
 ### Recostruct PSF from fit ###    
     
-def make_psf_from_fit(fit_res, psf, n_out=4, theta_out=1200, n_spline=2,
+def make_psf_from_fit(fit_res, psf, image_size=600, n_out=4, theta_out=1200, n_spline=2,
                       fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
     from .sampler import get_params_fit
-    
-    image_size = psf.image_size
+
     psf_fit = psf.copy()
     
     params, _, _ = get_params_fit(fit_res)

@@ -69,12 +69,15 @@ class PSF_Model:
             self.params['fwhm'] = self.fwhm
             
         self.gsparams = galsim.GSParams(folding_threshold=1e-10)
+        
+    def __str__(self):
+        return "A PSF Model Class"
+
+    def __repr__(self):
+        return " ".join([f"{self.__class__.__name__}", f"<{self.aureole_model}>"])
                 
-    def make_grid(self, image_size, pixel_scale=2.5):
+    def pixelize(self, pixel_scale=2.5):
         """ Build grid for drawing """
-        self.image_size = image_size
-        self.yy, self.xx = np.mgrid[:image_size, :image_size]
-        self.cen = ((image_size-1)/2., (image_size-1)/2.)
         self.pixel_scale = pixel_scale
         
         for key, val in self.params.items():
@@ -486,6 +489,12 @@ class Stars:
             else: 
                 print("Crowded fields w/ bright stars > 50, will draw in parallel.\n")
                 self.parallel = True
+    
+    def __str__(self):
+        return "A Star Class"
+
+    def __repr__(self):
+        return ' N='.join([f"{self.__class__.__name__}", str(self.n_tot)])
 
     @classmethod            
     def from_znorm(cls, psf, star_pos, z_norm,
@@ -1327,7 +1336,7 @@ def make_base_image(image_size, stars, psf_base, pad=100, psf_size=64, verbose=T
     return image_gs0[pad:image_size0-pad, pad:image_size0-pad]
 
 
-def make_truth_image(psf, stars, contrast=1e6,
+def make_truth_image(psf, stars, image_size, contrast=1e6,
                      parallel=False, verbose=False, saturation=4.5e4):
     
     """
@@ -1344,12 +1353,7 @@ def make_truth_image(psf, stars, contrast=1e6,
     gamma_pix = psf.gamma_pix
     beta = psf.beta
 
-    if hasattr(psf, 'image_size'):
-        image_size = psf.image_size
-        yy, xx = psf.yy, psf.xx
-    else:
-        print('Grid has not been built.')
-        return None
+    yy, xx = np.mgrid[:image_size, :image_size]
     
     psf_core = psf.psf_core
         
@@ -1395,7 +1399,7 @@ def make_truth_image(psf, stars, contrast=1e6,
     
     return image
         
-def generate_image_by_flux(psf, stars,
+def generate_image_by_flux(psf, stars, xx, yy,
                            contrast=[5e4,5e5],
                            psf_range=[None,None],
                            min_psf_range=60,
@@ -1432,8 +1436,8 @@ def generate_image_by_flux(psf, stars,
     image : drawn image
     
     """
-    image_size = psf.image_size
-    yy, xx = psf.yy, psf.xx
+    
+    image_size = xx.shape[0]
     
     frac = psf.frac
     
@@ -1523,7 +1527,7 @@ def generate_image_by_flux(psf, stars,
 
     return image
 
-def generate_image_by_znorm(psf, stars,
+def generate_image_by_znorm(psf, stars, xx, yy,
                             contrast=[1e5,1e6],
                             psf_range=[None,None],
                             min_psf_range=120, 
@@ -1559,8 +1563,7 @@ def generate_image_by_znorm(psf, stars,
     image : drawn image
     
     """
-    image_size = psf.image_size
-    yy, xx = psf.yy, psf.xx
+    image_size = xx.shape[0]
     
     frac = psf.frac
     r_scale = stars.r_scale
@@ -1671,11 +1674,9 @@ def generate_image_by_znorm(psf, stars,
     return image
 
 
-def generate_image_fit(psf_fit, stars, norm='brightness',
+def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
                        brightest_only=False, draw_real=True, leg2d=False):
 
-    image_size  = psf_fit.image_size
-    
     noise_fit = make_noise_image(image_size, psf_fit.bkg_std, verbose=False)
     
     if norm=='brightness':
@@ -1902,13 +1903,13 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
             return prior_tf_sp
         
-def draw_proposal(draw_func, proposal, psf, stars, image_base,
+def draw_proposal(draw_func, proposal, psf, stars, xx, yy, image_base,
                   leg2d=False, H10=None, H01=None, K=0, **kwargs):
     
     # Draw image and calculate log-likelihood
     mu = proposal[-K-1] 
     
-    image_tri = draw_func(psf, stars, **kwargs)
+    image_tri = draw_func(psf, stars, xx, yy, **kwargs)
     image_tri +=  image_base + mu 
 
     if leg2d:
@@ -1929,7 +1930,7 @@ def calculate_likelihood(ypred, data, sigma):
 
 
 def set_likelihood(data, mask_fit, psf_tri, stars_tri,
-                   norm='brightness', z_norm=None,
+                   norm='brightness', 
                    n_spline=2, n_cutoff=4, theta_cutoff=1200,
                    image_base=None, psf_range=[None,None],
                    leg2d=False, fit_sigma=True, fit_frac=False, 
@@ -1954,6 +1955,11 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
     stars = stars_tri.copy()
     psf = psf_tri.copy()
     
+    image_size = mask_fit.shape[0]
+    yy, xx = np.mgrid[:image_size, :image_size]
+    
+    z_norm = stars.z_norm.copy()
+    
     pixel_scale = psf.pixel_scale
     bkg = stars.BKG
     
@@ -1975,8 +1981,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 #         fit_sigma =True
     
     # 1st-order Legendre Polynomial
-    cen = psf.cen
-    image_size = psf.image_size
+    cen = ((image_size-1)/2., (image_size-1)/2.)
     x_grid = y_grid = np.linspace(0,image_size-1, image_size)
     H10 = leggrid2d((x_grid-cen[1])/image_size,
                     (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
@@ -2008,7 +2013,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 # I varies with sky background
                 stars.z_norm = z_norm + (bkg - mu)
 
-            image_tri = draw_func(psf, stars, psf_range=psf_range,
+            image_tri = draw_func(psf, stars, xx, yy,
+                                  psf_range=psf_range,
                                   brightest_only=brightest_only,
                                   subtract_external=subtract_external,
                                   parallel=parallel, draw_real=draw_real)
@@ -2049,7 +2055,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                     # I varies with sky background
                     stars.z_norm = z_norm + (bkg - mu)
 
-                image_tri = draw_func(psf, stars, psf_range=psf_range,
+                image_tri = draw_func(psf, stars, xx, yy,
+                                      psf_range=psf_range,
                                       brightest_only=brightest_only,
                                       parallel=parallel, draw_real=draw_real)
                 image_tri = image_tri + image_base + mu 
@@ -2090,7 +2097,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                     # I varies with sky background
                     stars.z_norm = z_norm + (bkg - mu)
 
-                image_tri = draw_func(psf, stars,
+                image_tri = draw_func(psf, stars, xx, yy,
                                       psf_range=psf_range,
                                       psf_scale=pixel_scale, 
                                       brightest_only=brightest_only,
@@ -2138,7 +2145,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                     # I varies with sky background
                     stars.z_norm = z_norm + (bkg - mu)
 
-                image_tri = draw_func(psf, stars,
+                image_tri = draw_func(psf, stars, xx, yy,
                                       psf_range=psf_range,
                                       psf_scale=pixel_scale, 
                                       brightest_only=brightest_only, 
@@ -2179,7 +2186,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 psf.update(param_update)
 
-                image_tri = draw_proposal(draw_func, v, psf, stars, image_base,
+                image_tri = draw_proposal(draw_func, v, psf, stars, xx, yy, image_base,
                                           leg2d=leg2d, H10=H10, H01=H01, K=K,
                                           psf_range=psf_range, psf_scale=pixel_scale,
                                           brightest_only=brightest_only,

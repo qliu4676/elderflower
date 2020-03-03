@@ -47,7 +47,6 @@ class Container:
     def set_likelihood(self, Y, mask_fit,
                        psf_tri, stars_tri,
                        norm='brightness',
-                       z_norm=None,
                        psf_range=[None, None],
                        image_base=None):
         """ Setup likelihood function for fitting """
@@ -66,7 +65,7 @@ class Container:
                                  leg2d=self.leg2d,
                                  fit_sigma=self.fit_sigma,
                                  fit_frac=self.fit_frac,
-                                 norm=norm, z_norm=z_norm,
+                                 norm=norm,
                                  brightest_only=self.brightest_only,
                                  parallel=self.parallel, 
                                  draw_real=self.draw_real)

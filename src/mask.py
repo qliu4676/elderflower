@@ -35,7 +35,7 @@ class Mask:
         return "A Mask Class"
 
     def __repr__(self):
-        return f"{self.__class__.__name__} for {self.Image.__repr__()}"
+        return f"{self.__class__.__name__} for {repr(self.Image)}"
 
     
     @property

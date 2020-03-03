@@ -539,7 +539,6 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
     from astropy.stats import bootstrap
     from .sampler import get_params_fit
     
-    image_size = image_size
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac

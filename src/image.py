@@ -1,12 +1,15 @@
 import os
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
 
 from astropy import wcs
 from astropy.io import fits
 from astropy.utils import lazyproperty
 
 from .utils import crop_image
+from .plotting import AsinhNorm
+
 
 class ImageButler:
     """ A Image Butler """
@@ -100,6 +103,8 @@ class Image(ImageButler):
         
         
 class ImageList(ImageButler):
+    """ A ImageList Class """
+    
     def __init__(self, hdu_path, image_bounds0_list,
                  pixel_scale=2.5, pad=100, verbose=False):
         
@@ -118,9 +123,16 @@ class ImageList(ImageButler):
         
         super().__init__(hdu_path, pixel_scale, pad, verbose)
         
-        self.images = [Image(hdu_path, image_bounds0, pixel_scale, pad, verbose)
+        self.Images = [Image(hdu_path, image_bounds0, pixel_scale, pad, verbose)
                        for image_bounds0 in np.atleast_2d(image_bounds0_list)]
+        self.N_Image = len(self.Images)
+    
+    
+    @lazyproperty
+    def images(self):
+        return np.array([Image.image for Image in self.Images])
 
+    
     def assign_star_props(self,
                           tables_faint,
                           tables_res_Rnorm,
@@ -132,15 +144,35 @@ class ImageList(ImageButler):
         
         stars0, stars_all = [], []
         
-        for image, tab_f, tab_res in zip(self.images,
+        for Image, tab_f, tab_res in zip(self.Images,
                                          tables_faint,
                                          tables_res_Rnorm):
-            s0, sa = assign_star_props(tab_f, tab_res, image,
+            s0, sa = assign_star_props(tab_f, tab_res, Image,
                                        *args, **kwargs)
             stars0 += [s0]
             stars_all += [sa]
 
         return stars0, stars_all
+    
+    
+    def make_base_image(self, psf_star, stars_all, psf_size=64, vmax=30, draw=True):
+        from .modeling import make_base_image
+        
+        image_base = np.zeros_like(self.images)
+        
+        for i, (Image, stars) in enumerate(zip(self.Images, stars_all)):
+        # Make sky background and draw dim stars
+            image_base[i] = make_base_image(Image.image_size, stars,
+                                            psf_star, self.pad, psf_size, verbose=self.verbose)
+            
+            if draw:
+                #display
+                plt.imshow(image_base[i], vmin=0, vmax=vmax, norm=AsinhNorm(a=0.1))
+                plt.colorbar()
+                plt.show()
+            
+        self.image_base= image_base
+            
     
     def make_mask(self, stars_list, dir_measure='../output/Measure',
                   by='radius',  r_core=None, r_out=None,
@@ -155,9 +187,9 @@ class ImageList(ImageButler):
         
         masks = []
         
-        for image, stars in zip(self.images,
+        for Image, stars in zip(self.Images,
                                 stars_list):
-            mask = Mask(image, stars)
+            mask = Mask(Image, stars)
 
             # Deep Mask
             # seg_base = "./Measure-PS/Seg_PS_X%dY%d.fits" %(patch_Xmin0, patch_Ymin0)
@@ -172,23 +204,41 @@ class ImageList(ImageButler):
 
             masks += [mask]
                 
-        self.masks = masks
+        self.Masks = masks
         
         self.stars = [mask.stars_new for mask in masks]
     
     
     @property
     def mask_fit(self):
-        return [getattr(mask, 'mask_comb', mask.mask_deep) for mask in self.masks]
+        return [getattr(mask, 'mask_comb', mask.mask_deep) for mask in self.Masks]
         
     @property
     def data_fit(self):
         
-        data_fit = []
-        
-        for image, mask in zip(self.images, self.mask_fit):
-            Y = image.image[~mask].copy().ravel()
-            data_fit += [Y]
-            
+        data_fit = [image[~mask].copy().ravel()
+                    for (image, mask) in zip(self.images, self.mask_fit)]
+
         return data_fit
+        
+        
+    def estimate_bkg(self):
+        from astropy.stats import sigma_clip
+        
+        self.mu_est = np.zeros(len(self.Images))
+        self.std_est = np.zeros(len(self.Images))
+        
+        for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fit)):
+        
+            Y_sky = sigma_clip(Image.image[~mask], sigma=3)
+            
+            mu_patch, std_patch = np.mean(Y_sky), np.std(Y_sky)
+            
+            self.mu_est[i] = mu_patch
+            self.std_est[i] = std_patch
+            
+            print(repr(Image))
+            print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
+            
+
 
