@@ -1676,7 +1676,9 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
 def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
                        brightest_only=False, draw_real=True, leg2d=False):
-
+    
+    yy, xx = np.mgrid[:image_size, :image_size]
+    
     noise_fit = make_noise_image(image_size, psf_fit.bkg_std, verbose=False)
     
     if norm=='brightness':
@@ -1684,7 +1686,7 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     elif norm=='flux':
         draw_func = generate_image_by_flux
     
-    image_fit = draw_func(psf_fit, stars,
+    image_fit = draw_func(psf_fit, stars, xx, yy,
                           psf_range=[900,1800], psf_scale=psf_fit.pixel_scale,
                           brightest_only=brightest_only, draw_real=draw_real)
 
