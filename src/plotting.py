@@ -280,11 +280,11 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     plt.xlabel('r [pix]', fontsize=14)
 
     
-def plot_PSF_model_galsim(psf, contrast=None, figsize=(7,6), save=False, save_dir='.'):
+def plot_PSF_model_galsim(psf, image_size=800, contrast=None,
+                          figsize=(7,6), save=False, save_dir='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     from .utils import Intensity2SB, cal_profile_1d
     
-    image_size = psf.image_size
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac
@@ -470,7 +470,7 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
         plt.close()
         
 def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
-                       r_core=None, vmin=None, vmax=None, cmap='gnuplot2',
+                       r_core=None, vmin=None, vmax=None, cmap='gnuplot2', norm=None,
                        save=False, save_dir=".", suffix=""):
     """ Compare data and fit in 2D """
     
@@ -480,16 +480,18 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
         vmin = np.median(image_fit[~mask_fit]) - 1
     if vmax is None:
         vmax = vmin + 150
+        
+    if norm is None: norm = LogNorm()
     
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
     
-    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
+    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)    
+    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)    
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=30, norm=AsinhNorm(a=0.1), cmap=cmap)    
+    im = ax3.imshow(image_star, vmin=0, vmax=50, norm=AsinhNorm(a=0.1), cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
@@ -530,14 +532,14 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
 def plot_fit_PSF1D(results, psf, n_spline=2,
                    n_bootstrap=500, truth=None,  
                    Amp_max=None, r_core=None,
-                   n_out=4, theta_out=1200,
+                   n_out=4, theta_out=1200, image_size=800,
                    save=False, save_dir="./",
                    suffix='', figsize=(7,6)):
 
     from astropy.stats import bootstrap
     from .sampler import get_params_fit
     
-    image_size = psf.image_size
+    image_size = image_size
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac

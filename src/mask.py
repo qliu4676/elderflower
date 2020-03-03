@@ -17,6 +17,7 @@ class Mask:
         stars : a Star object  
         
         """
+        self.Image = Image
         self.stars = stars
         self.image0 = Image.image0
         
@@ -29,7 +30,14 @@ class Mask:
         
         self.pad = Image.pad
         self.bkg = Image.bkg
-        
+    
+    def __str__(self):
+        return "A Mask Class"
+
+    def __repr__(self):
+        return f"{self.__class__.__name__} for {self.Image.__repr__()}"
+
+    
     @property
     def mask_base(self):
         mask_base0 = getattr(self, 'mask_base0', self.mask_deep0)
@@ -53,9 +61,9 @@ class Mask:
         return self.seg_deep0[pad:image_size+pad, pad:image_size+pad]
     
         
-    def make_mask_map_deep(self, by='radius', dir_measure=None, 
+    def make_mask_map_deep(self, dir_measure=None, by='radius', 
                            r_core=None, r_out=None, count=None,
-                           draw=True, save=False, save_dir='.', **kwargs):
+                           draw=True, save=False, save_dir='.', *args, **kwargs):
         """
         Make deep mask map of bright stars based on either of:
         (1) aperture (2) brightness
@@ -91,12 +99,14 @@ class Mask:
                 seg_base0 = fits.getdata(fname_seg_base)
                 self.seg_base0 = seg_base0
                 self.mask_base0 = seg_base0 > 0
+        else:
+            seg_base0 = None
         
         # S/N + Core mask
         mask_deep0, seg_deep0 = make_mask_map_dual(image0, stars, self.xx, self.yy,
                                                    by=by, pad=pad, seg_base=seg_base0,
                                                    r_core=r_core, r_out=r_out, count=count, 
-                                                   n_bright=stars.n_bright, **kwargs)
+                                                   n_bright=stars.n_bright, *args, **kwargs)
         self.mask_deep0 = mask_deep0
         self.seg_deep0 = seg_deep0
             
@@ -111,8 +121,8 @@ class Mask:
                           vmin=self.bkg, save=save, save_dir=save_dir)
             
             
-    def make_mask_strip(self, n_strip=24,
-                        wid_strip=16, dist_strip=500,
+    def make_mask_strip(self, n_strip=48,
+                        wid_strip=16, dist_strip=600,
                         wid_cross=10, dist_cross=72,
                         clean=True, draw=True, 
                         save=False, save_dir='.'):

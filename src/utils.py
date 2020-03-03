@@ -685,7 +685,10 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         
         plt.show()
         
-    return patch, seg_patch
+    if SE_seg_map is None:    
+        return patch
+    else:
+        return patch, seg_patch
 
 def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
     """ Query catalog in Vizier database with the given catalog name,
@@ -738,55 +741,62 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def read_measurement_tables(dir_name, image_bounds0, pad=100,
+def read_measurement_tables(dir_name, image_bounds0_list, 
                             band='G', obj_name='NGC5907',
-                            r_scale=12, mag_limit=[15,23]):
+                            pad=100, r_scale=12, mag_limit=[15,23]):
     """ Read measurement tables from the directory """
-    
-    patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
-        
-    image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
-                    patch_Xmax0-pad, patch_Ymax0-pad)
     
     # Magnitude name
     b_name = band.lower()
     mag_name = b_name+'MeanPSFMag' if 'PS' in dir_name else b_name+'mag'
     
-    # Read measurement for faint stars from catalog
-    # Faint star catalog name
-    fname_catalog = os.path.join(dir_name, "%s-%s-catalog_PS_%s_all.txt"%(obj_name, band, b_name))
+    tables_res_Rnorm = []
+    tables_faint = []
     
-    # Check if the file exist
-    if os.path.isfile(fname_catalog):
-        table_catalog = Table.read(fname_catalog, format="ascii")
-        mag_catalog = table_catalog[mag_name]
-    else:
-        sys.exit("Table %s does not exist. Exit."%fname_catalog)
-    
-    # stars fainter than magnitude limit (fixed as background)
-    table_faint = table_catalog[(mag_catalog>=mag_limit[0]) & (mag_catalog<mag_limit[1])]
-    table_faint = crop_catalog(table_faint,
-                               keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
-                               bounds=image_bounds)
-    # Read measurement for bright stars
-    # Catalog name
-    fname_res_Rnorm = os.path.join(dir_name, "%s-%s-norm_%dpix_%s%smag_X%dY%d.txt"\
-                                   %(obj_name, band, r_scale, b_name,
-                                     mag_limit[0], patch_Xmin0, patch_Ymin0))
-    # Check if the file exist
-    if os.path.isfile(fname_res_Rnorm):
-        table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
-    else:
-        sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
-    
-    # Crop the catalog
-    table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=image_bounds0)
-    
-    # Do not use flagged measurement
-    Iflag = table_res_Rnorm["Iflag"]
-    table_res_Rnorm = table_res_Rnorm[Iflag==0]    
-    
-    return table_faint, table_res_Rnorm
+    for image_bounds0 in np.atleast_2d(image_bounds0_list):
+        # Clipped bounds
+        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
+
+        image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
+                        patch_Xmax0-pad, patch_Ymax0-pad)
+
+        ## Read measurement for faint stars from catalog
+        # Faint star catalog name
+        fname_catalog = os.path.join(dir_name, "%s-%s-catalog_PS_%s_all.txt"%(obj_name, band, b_name))
+
+        # Check if the file exist
+        if os.path.isfile(fname_catalog):
+            table_catalog = Table.read(fname_catalog, format="ascii")
+            mag_catalog = table_catalog[mag_name]
+        else:
+            sys.exit("Table %s does not exist. Exit."%fname_catalog)
+
+        # stars fainter than magnitude limit (fixed as background)
+        table_faint = table_catalog[(mag_catalog>=mag_limit[0]) & (mag_catalog<mag_limit[1])]
+        table_faint = crop_catalog(table_faint,
+                                   keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
+                                   bounds=image_bounds)
+        tables_faint += [table_faint]  
+        
+        ## Read measurement for bright stars
+        # Catalog name
+        fname_res_Rnorm = os.path.join(dir_name, "%s-%s-norm_%dpix_%s%smag_X%dY%d.txt"\
+                                       %(obj_name, band, r_scale, b_name,
+                                         mag_limit[0], patch_Xmin0, patch_Ymin0))
+        # Check if the file exist
+        if os.path.isfile(fname_res_Rnorm):
+            table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
+        else:
+            sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
+
+        # Crop the catalog
+        table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=image_bounds0)
+
+        # Do not use flagged measurement
+        Iflag = table_res_Rnorm["Iflag"]
+        tables_res_Rnorm += [table_res_Rnorm[Iflag==0]]
+        
+    return tables_faint, tables_res_Rnorm
     
 
 def assign_star_props(table_faint, table_res_Rnorm, Image, 
@@ -824,9 +834,9 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     z_norm[z_norm<=0] = z_norm[z_norm>0].min()
 
     # Convert/printout thresholds
-    print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
+    Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
     if verbose:
-        Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
+        print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
         print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
         try:
             SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
@@ -842,13 +852,14 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
 
     # Bright stars in model
     stars_0 = Stars(star_pos2, Flux2, Flux_threshold=Flux_threshold,
-                   z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=True)
+                    z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
     stars_0 = stars_0.remove_outsider(image_size, d=[36, 12])
     
     if draw:
         stars_all.plot_flux_dist(label='All', color='plum')
         stars_0.plot_flux_dist(label='Model', color='orange', ZP=ZP,
                               save=save, save_dir=save_dir)
+        plt.show()
         
     return stars_0, stars_all
 
