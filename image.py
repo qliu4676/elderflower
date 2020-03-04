@@ -37,7 +37,7 @@ class ImageButler:
         with fits.open(hdu_path) as hdul:
             self.hdu_path = hdu_path
             if verbose: print("Read Image :", hdu_path)
-            self.data = hdul[0].data
+            self.full_image = hdul[0].data
             self.header = header = hdul[0].header
             self.wcs = wcs.WCS(header)
 
@@ -90,7 +90,7 @@ class Image(ImageButler):
         self.image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
                              patch_Xmax0-pad, patch_Ymax0-pad)
 
-        self.image0 = crop_image(self.data, image_bounds0, draw=False)
+        self.image0 = crop_image(self.full_image, image_bounds0, draw=False)
         
         # Cutout of data
         self.image = self.image0[pad:-pad,pad:-pad]
@@ -214,19 +214,22 @@ class ImageList(ImageButler):
     
     @property
     def mask_fit(self):
+        """ Masking for fit """
         return [getattr(mask, 'mask_comb', mask.mask_deep) for mask in self.Masks]
         
     @property
-    def data_fit(self):
-        
-        data_fit = [image[~mask].copy().ravel()
+    def data(self):
+        """ 1D array to be fit """
+        data = [image[~mask].copy().ravel()
                     for (image, mask) in zip(self.images, self.mask_fit)]
 
-        return data_fit
+        return data
         
         
     def estimate_bkg(self):
+        
         """ Estimate background level and std """
+        
         from astropy.stats import sigma_clip
         
         self.mu_est = np.zeros(len(self.Images))
@@ -234,9 +237,9 @@ class ImageList(ImageButler):
         
         for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fit)):
         
-            Y_sky = sigma_clip(Image.image[~mask], sigma=3)
+            data_sky = sigma_clip(Image.image[~mask], sigma=3)
             
-            mu_patch, std_patch = np.mean(Y_sky), np.std(Y_sky)
+            mu_patch, std_patch = np.mean(data_sky), np.std(data_sky)
             
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
@@ -257,6 +260,7 @@ class ImageList(ImageButler):
                       n_min=1,
                       theta_in=50,
                       theta_out=240):
+        """ Container for fit storing prior and likelihood function """
         
         from .container import Container
         
@@ -273,9 +277,18 @@ class ImageList(ImageButler):
                                 n_min=n_min, theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
-            container.set_likelihood(self.data_fit[i], self.mask_fit[i], psf, stars[i], 
+            container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i], 
                                      psf_range=[None, None], norm='brightness',
                                      image_base=self.image_base[i])
+            
+            # Set a few attributes to container for convenience
+            container.image = self.images[i]
+            
+            container.data = self.data[i]
+        
+            container.mask = self.Masks[i]
+
+            container.image_size = self.Images[i].image_size
             
             self.containers += [container]
 

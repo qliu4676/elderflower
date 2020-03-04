@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class Container:
-    """ A container storing the prior, the loglikelihood function and fitting setups.
+    """ A container storing the prior, the loglikelihood function and fitting data & setups.
         The container is to be passed to the sampler. """
     
     def __init__(self,
@@ -54,8 +54,7 @@ class Container:
         self.ndim = ndim
     
     def set_likelihood(self,
-                       data_fit,
-                       mask_fit,
+                       data, mask_fit,
                        psf, stars,
                        norm='brightness',
                        psf_range=[None, None],
@@ -68,7 +67,7 @@ class Container:
         
         self.image_base = image_base
         
-        loglike = set_likelihood(data_fit,
+        loglike = set_likelihood(data,
                                  mask_fit,
                                  psf, stars,
                                  norm=norm,
@@ -86,7 +85,9 @@ class Container:
         
         
 def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
+    
     """ Setup labels for cornerplot """
+    
     K = 0
     if fit_frac: K += 1
     if fit_sigma: K += 1
