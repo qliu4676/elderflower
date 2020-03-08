@@ -37,7 +37,7 @@ class ImageButler:
         with fits.open(hdu_path) as hdul:
             self.hdu_path = hdu_path
             if verbose: print("Read Image :", hdu_path)
-            self.data = hdul[0].data
+            self.full_image = hdul[0].data
             self.header = header = hdul[0].header
             self.wcs = wcs.WCS(header)
 
@@ -90,7 +90,7 @@ class Image(ImageButler):
         self.image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
                              patch_Xmax0-pad, patch_Ymax0-pad)
 
-        self.image0 = crop_image(self.data, image_bounds0, draw=False)
+        self.image0 = crop_image(self.full_image, image_bounds0, draw=False)
         
         # Cutout of data
         self.image = self.image0[pad:-pad,pad:-pad]
@@ -156,6 +156,9 @@ class ImageList(ImageButler):
     
     
     def make_base_image(self, psf_star, stars_all, psf_size=64, vmax=30, draw=True):
+        
+        """ Make basement image with fixed PSF and stars """
+        
         from .modeling import make_base_image
         
         image_base = np.zeros_like(self.images)
@@ -211,18 +214,22 @@ class ImageList(ImageButler):
     
     @property
     def mask_fit(self):
+        """ Masking for fit """
         return [getattr(mask, 'mask_comb', mask.mask_deep) for mask in self.Masks]
         
     @property
-    def data_fit(self):
-        
-        data_fit = [image[~mask].copy().ravel()
+    def data(self):
+        """ 1D array to be fit """
+        data = [image[~mask].copy().ravel()
                     for (image, mask) in zip(self.images, self.mask_fit)]
 
-        return data_fit
+        return data
         
         
     def estimate_bkg(self):
+        
+        """ Estimate background level and std """
+        
         from astropy.stats import sigma_clip
         
         self.mu_est = np.zeros(len(self.Images))
@@ -230,15 +237,61 @@ class ImageList(ImageButler):
         
         for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fit)):
         
-            Y_sky = sigma_clip(Image.image[~mask], sigma=3)
+            data_sky = sigma_clip(Image.image[~mask], sigma=3)
             
-            mu_patch, std_patch = np.mean(Y_sky), np.std(Y_sky)
+            mu_patch, std_patch = np.mean(data_sky), np.std(data_sky)
             
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
             
             print(repr(Image))
             print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
+            
+    def set_container(self,
+                      psf, stars,
+                      n_est=3.2,
+                      n_spline=2,
+                      leg2d=False,
+                      fit_sigma=True,
+                      fit_frac=False,
+                      brightest_only=False,
+                      parallel=False,
+                      draw_real=True,
+                      n_min=1,
+                      theta_in=50,
+                      theta_out=240):
+        """ Container for fit storing prior and likelihood function """
+        
+        from .container import Container
+        
+        self.containers = []
+        
+        for i in range(self.N_Image):
+            
+            container = Container(n_spline, leg2d, 
+                                  fit_sigma, fit_frac,
+                                  brightest_only,
+                                  parallel, draw_real)
+            # Set Priors
+            container.set_prior(n_est, self.bkg, self.std_est[i],
+                                n_min=n_min, theta_in=theta_in, theta_out=theta_out)
+
+            # Set Likelihood
+            container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i], 
+                                     psf_range=[None, None], norm='brightness',
+                                     image_base=self.image_base[i])
+            
+            # Set a few attributes to container for convenience
+            container.image = self.images[i]
+            
+            container.data = self.data[i]
+        
+            container.mask = self.Masks[i]
+
+            container.image_size = self.Images[i].image_size
+            
+            self.containers += [container]
+
             
 
 

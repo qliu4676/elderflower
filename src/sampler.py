@@ -9,6 +9,8 @@ import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 
+from .plotting import colorbar
+
 class DynamicNestedSampler:
 
     def __init__(self, container,
@@ -137,6 +139,7 @@ class DynamicNestedSampler:
         from .modeling import generate_image_fit
         
         ct = self.container
+        image_size = ct.image_size
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
                                             n_spline=ct.n_spline,
@@ -146,29 +149,52 @@ class DynamicNestedSampler:
                                             n_out=n_out,
                                             theta_out=theta_out)
         
-        image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars,
-                                                            norm=norm, leg2d=ct.leg2d,
-                                                            brightest_only=ct.brightest_only,
-                                                            draw_real=ct.draw_real)
+        self.bkg_fit = psf_fit.bkg
+        self.bkg_std_fit = psf_fit.bkg_std
+        
+        image_star, noise_image, bkg_image = generate_image_fit(psf_fit, stars, image_size,
+                                                                norm=norm, leg2d=ct.leg2d,
+                                                                brightest_only=ct.brightest_only,
+                                                                draw_real=ct.draw_real)
         image_base = ct.image_base
             
-        image_fit = image_star + image_base + bkg_fit
+        image_fit = image_star + image_base + bkg_image
         
+        # Information after fitting
         self.image_fit = image_fit
         self.image_star = image_star
-        self.bkg_fit = bkg_fit
-        self.noise_fit = noise_fit
+        self.bkg_image = bkg_image
+        self.noise_image = noise_image
         
         return psf_fit, params
+    
+    def calculate_reduced_chi2(self):
         
-    def draw_comparison_2D(self, image, mask, **kwargs):
+        """Calculate reduced Chi^2"""
+        
+        from .utils import calculate_reduced_chi2
+        
+        ct = self.container
+        mask_fit = getattr(ct.mask, 'mask_comb', ct.mask.mask_deep)
+        data = ct.data
+        
+        data_pred = (self.image_fit[~mask_fit]).ravel(),
+        
+        calculate_reduced_chi2(data_pred, data, self.bkg_std_fit)
+        
+    def draw_comparison_2D(self, **kwargs):
         from .plotting import draw_comparison_2D
+        
+        ct = self.container
+        image = ct.image
+        mask = ct.mask
+        
         draw_comparison_2D(self.image_fit, image, mask, self.image_star,
-                           self.noise_fit, **kwargs)
+                           self.noise_image, **kwargs)
         
     def draw_background(self, save=False, save_dir='.', suffix=''):
         plt.figure()
-        im = plt.imshow(self.bkg_fit); colorbar(im)
+        im = plt.imshow(self.bkg_image); colorbar(im)
         if save:
             plt.savefig(os.path.join(save_dir,'Legendre2D%s.png'%(suffix)), dpi=80)
         else:

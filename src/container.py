@@ -3,14 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class Container:
-    """ A container storing the prior, the loglikelihood function and fitting setups.
+    """ A container storing the prior, the loglikelihood function and fitting data & setups.
         The container is to be passed to the sampler. """
     
     def __init__(self,
                  n_spline=2,
+                 leg2d=False,
                  fit_sigma=True,
                  fit_frac=False,
-                 leg2d=False,
                  brightest_only=False,
                  parallel=False,
                  draw_real=True):
@@ -23,6 +23,15 @@ class Container:
         self.brightest_only = brightest_only
         self.parallel = parallel
         self.draw_real = draw_real
+        
+    def __str__(self):
+        return "A Container Class"
+
+    def __repr__(self):
+        if hasattr(self, 'ndim'):
+            return f"{self.__class__.__name__} p={self.ndim}"
+        else:
+            return f"{self.__class__.__name__}"
         
     def set_prior(self, n_est, mu_est, std_est,
                   n_min=1, theta_in=50, theta_out=240):
@@ -44,8 +53,9 @@ class Container:
         ndim = len(labels)
         self.ndim = ndim
     
-    def set_likelihood(self, Y, mask_fit,
-                       psf_tri, stars_tri,
+    def set_likelihood(self,
+                       data, mask_fit,
+                       psf, stars,
                        norm='brightness',
                        psf_range=[None, None],
                        image_base=None):
@@ -57,15 +67,16 @@ class Container:
         
         self.image_base = image_base
         
-        loglike = set_likelihood(Y, mask_fit,
-                                 psf_tri, stars_tri,
+        loglike = set_likelihood(data,
+                                 mask_fit,
+                                 psf, stars,
+                                 norm=norm,
                                  psf_range=psf_range,
                                  image_base=image_base,
                                  n_spline=self.n_spline,
                                  leg2d=self.leg2d,
                                  fit_sigma=self.fit_sigma,
                                  fit_frac=self.fit_frac,
-                                 norm=norm,
                                  brightest_only=self.brightest_only,
                                  parallel=self.parallel, 
                                  draw_real=self.draw_real)
@@ -74,7 +85,9 @@ class Container:
         
         
 def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
+    
     """ Setup labels for cornerplot """
+    
     K = 0
     if fit_frac: K += 1
     if fit_sigma: K += 1

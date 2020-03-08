@@ -1711,7 +1711,7 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.25, theta_in=50, theta_out=240, 
+              n_min=1, d_n0=0.3, theta_in=50, theta_out=240, 
               std_poi=None, leg2d=False,
               fit_sigma=True, fit_frac=False, **kwargs):
     
