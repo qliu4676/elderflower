@@ -1576,7 +1576,7 @@ def make_psf_from_fit(fit_res, psf, image_size=600, n_out=4, theta_out=1200, n_s
     
     return psf_fit, params
 
-def cal_reduced_chi2(fit, data, uncertainty, dof=5):
+def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
 #     uncertainty = 10**params[-1]
     chi2_reduced = np.sum((fit-data)**2/uncertainty**2)/(len(data)-dof)
     print("Reduced Chi^2: %.5f"%chi2_reduced)

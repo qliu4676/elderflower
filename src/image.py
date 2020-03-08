@@ -180,7 +180,7 @@ class ImageList(ImageButler):
     def make_mask(self, stars_list, dir_measure='../output/Measure',
                   by='radius',  r_core=None, r_out=None,
                   sn_thre=2.5, n_dilation=5, count=None,
-                  n_strip=48, wid_strip=16, dist_strip=800,
+                  n_strip=48, wid_strip=16, dist_strip=None,
                   wid_cross=10, dist_cross=72, clean=True,
                   draw=True, save=False, save_dir='../output/pic'):
         
@@ -194,16 +194,19 @@ class ImageList(ImageButler):
                                 stars_list):
             mask = Mask(Image, stars)
 
-            # Deep Mask
-            # seg_base = "./Measure-PS/Seg_PS_X%dY%d.fits" %(patch_Xmin0, patch_Ymin0)
-            mask.make_mask_map_deep(dir_measure, by, 
-                                    r_core, r_out, count,
+            # Primary SN threshold mask
+            mask.make_mask_map_deep(dir_measure, by, r_core, r_out, count,
                                     draw=draw, save=save, save_dir=save_dir)
-
-            # Strip + Cross mask
-            mask.make_mask_strip(n_strip, wid_strip, dist_strip,
-                                 wid_cross, dist_cross, clean=clean,
-                                 draw=draw, save=save, save_dir=save_dir)
+            
+            if stars.n_verybright > 0:
+                # Supplementary Strip + Cross mask
+                
+                if dist_strip is None:
+                    dist_strip = Image.image_size    
+                    
+                mask.make_mask_strip(n_strip, wid_strip, dist_strip,
+                                     wid_cross, dist_cross, clean=clean,
+                                     draw=draw, save=save, save_dir=save_dir)
 
             masks += [mask]
                 
@@ -283,11 +286,8 @@ class ImageList(ImageButler):
             
             # Set a few attributes to container for convenience
             container.image = self.images[i]
-            
             container.data = self.data[i]
-        
             container.mask = self.Masks[i]
-
             container.image_size = self.Images[i].image_size
             
             self.containers += [container]
