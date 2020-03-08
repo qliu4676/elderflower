@@ -37,14 +37,13 @@ weights, etc. and diagnostic plots will be saved.
 
 import sys
 import getopt
-from src.plotting import *
+from src.task import Run_PSF_Fitting
 
 def main(argv):
     # Image Parameter (default)
     band = "G"                
     pixel_scale = 2.5  # arcsec/pixel
     image_bounds0 = [3100, 1400, 4100, 2400]
-    # image_bounds0 = [1800, 2400, 2800, 3400]
     
     # Fitting Setup (default)
     n_cpu = 4
@@ -99,7 +98,6 @@ def main(argv):
     hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
     dir_name = './fit-real'
     dir_measure = './Measure'
-    dir_data = '/home/qliu/Desktop/PSF/data'
                 
     for opt, arg in optlists:
         if opt in ("-I", "--IMAGE"):
@@ -131,8 +129,6 @@ def main(argv):
             dir_name = arg
         elif opt in ("--DIR_MEASURE"):
             dir_measure = arg 
-        elif opt in ("--DIR_DATA"):
-            dir_data = arg
             
     if '-L' in opts: leg2d = True
     if '-F' in opts: fit_frac = True
@@ -152,240 +148,19 @@ def main(argv):
         check_save_path(dir_name, make_new=False)
     
     # Run Fitting!
-    ds = Run_Fitting(hdu_path, image_bounds0, n_spline, band,
-                     r_scale=r_scale, mag_threshold=mag_threshold, 
-                     mask_type=mask_type, SB_fit_thre=SB_fit_thre,
-                     r_core=r_core, r_out=r_out, leg2d=leg2d,
-                     pixel_scale=pixel_scale, n_cpu=n_cpu,
-                     wid_strip=wid_strip, n_strip=n_strip,
-                     brightest_only=brightest_only, draw_real=draw_real,
-                     parallel=parallel, print_progress=print_progress, 
-                     draw=draw, dir_measure=dir_measure, dir_data=dir_data,
-                     save=save, dir_name=dir_name)
+    ds = Run_PSF_Fitting(hdu_path, image_bounds0, n_spline, band,
+                         r_scale=r_scale, mag_threshold=mag_threshold, 
+                         mask_type=mask_type, SB_fit_thre=SB_fit_thre,
+                         r_core=r_core, r_out=r_out, leg2d=leg2d,
+                         pixel_scale=pixel_scale, n_cpu=n_cpu,
+                         wid_strip=wid_strip, n_strip=n_strip,
+                         brightest_only=brightest_only, draw_real=draw_real,
+                         parallel=parallel, print_progress=print_progress, 
+                         draw=draw, dir_measure=dir_measure,
+                         save=save, dir_name=dir_name)
 
     return opts
 
-    
-def Run_Fitting(hdu_path, image_bounds0,
-                n_spline=2, band="G",
-                r_scale=12, mag_threshold=[14,11], 
-                mask_type='radius', SB_fit_thre=24.5,
-                r_core=24, r_out=None,
-                fit_frac=False, leg2d=False,
-                pad=100, pixel_scale=2.5, 
-                wid_strip=24, n_strip=48, 
-                n_cpu=None, parallel=False, 
-                brightest_only=True, draw_real=True,
-                draw=True, print_progress=True,
-                save=False, dir_name='./',
-                dir_measure='./Measure', dir_data='./data'):
-    
-    ############################################
-    # Setup PSF
-    ############################################
-    from src.modeling import PSF_Model
-    
-    image_size = (image_bounds0[2] - image_bounds0[0]) - 2 * pad
-    
-    # PSF Parameters (some from fitting stacked PSF)
-    frac = 0.3                  # fraction of aureole
-    beta = 10                   # moffat beta, in arcsec
-    fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
-
-    n0 = 3.2                    # estimated true power index
-    theta_0 = 5.                # radius at which power law is flattened, in arcsec (arbitrary)
-
-    n_s = np.array([n0, 4])                 # power index
-    theta_s = np.array([theta_0, 1200])     # transition radius in arcsec
-    
-    if n_spline == 1:
-        # Single-power PSF
-        params_pow = {"fwhm":fwhm, "beta":beta,
-                      "frac":frac, "n":n0, 'theta_0':theta_0}
-        psf = PSF_Model(params=params_pow, aureole_model='power')
-        
-    else:
-        # Multi-power PSF
-        params_mpow = {"fwhm":fwhm, "beta":beta,
-                       "frac":frac, "n_s":n_s, 'theta_s':theta_s}
-        psf = PSF_Model(params=params_mpow, aureole_model='multi-power')
-
-    # Build grid of image for drawing
-    psf.make_grid(image_size, pixel_scale=pixel_scale)
-
-    # Generate core and aureole PSF
-    psf_c = psf.generate_core()
-    psf_e, psf_size = psf.generate_aureole(contrast=1e6, psf_range=image_size)
-    psf_star = psf.psf_star
-    
-    # Make a deep copy
-    psf_tri = psf.copy()
-
-    ############################################
-    # Read Image and Table
-    ############################################
-    from src.image import Image
-    DF_Image = Image(os.path.join(dir_data,
-                                  "coadd_Sloan%s_NGC_5907.fits"%band),
-                     image_bounds0)
-
-    from src.utils import read_measurement_tables
-    table_faint, table_res_Rnorm = read_measurement_tables(dir_measure, image_bounds0)
-    
-    ############################################
-    # Setup Stars
-    ############################################    
-    from src.utils import assign_star_props
-    stars_0, stars_all = assign_star_props(table_faint, table_res_Rnorm, DF_Image, 
-                                           mag_threshold=mag_threshold,
-                                           r_scale=r_scale, verbose=True,
-                                           draw=True, save=save, save_dir=dir_name)
-    
-    ############################################
-    # Setup Image
-    ############################################
-    from src.modeling import make_base_image
-    # Make fixed background of dim stars
-    image_base = make_base_image(image_size, stars_all, psf_base=psf_star,
-                                 psf_size=64, pad=pad, verbose=True)
-
-    image = DF_Image.image
-
-    ############################################
-    # Make Mask
-    ############################################
-    from src.utils import SB2Intensity
-    from src.mask import Mask
-    
-    mask = Mask(DF_Image, stars0)
-
-    if mask_type=='brightness':
-        count = SB2Intensity(SB_fit_thre, DF_Image.bkg,
-                             DF_Image.ZP, pixel_sDF_Image.pixel_scalecale)[0]
-    else:
-        count = None
-    
-    # Primary combined mask
-    mask.make_mask_map_deep(by=mask_type, dir_measure='./Measure-PS/',
-                            r_core=r_core, r_out=None,
-                            sn_thre=2.5, n_dilation=5, draw=True)
-    
-    # Supplementary mask
-    if stars_0.n_verybright > 0:
-        # S/N + Strip + Cross mask
-        mask.make_mask_strip(wid_strip=wid_strip, n_strip=n_strip,
-                             dist_strip=image_size, dist_cross=72,
-                             clean=True, draw=draw_real,
-                             save=save, save_dir=dir_name)
-        stars_b = mask.stars_new
-        mask_fit = mask.mask_comb
-        
-    else:
-        # S/N mask only
-        stars_b = stars_0
-        mask_fit = mask.mask_deep
-        
-    # Make stars for fit. Choose if only use brightest stars
-    if brightest_only:
-        stars = stars_b.use_verybright()
-    else:
-        stars = stars_b # for fit
-
-    z_norm_stars = stars.z_norm.copy()
-    stars_tri = stars.copy()
-
-    ############################################
-    # Estimates
-    ############################################
-    from src.utils import compute_poisson_noise
-    from astropy.stats import sigma_clip
-    
-    image = DF_Image.image
-    
-    Y = image[~mask_fit].copy().ravel()
-    
-    # Compute Sky Poisson Noise
-    std_poi = compute_poisson_noise(Y, header=header)
-    
-    # Sigma-clipped sky
-    Y_sky = sigma_clip(image[~mask.mask_base], sigma=3)
-    
-    # Estimated mu and sigma used as prior
-    mu_patch, std_patch = np.mean(Y_sky), np.std(Y_sky)
-    print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
-
-    ############################################
-    # Setup Priors and Likelihood Models for Fitting
-    ############################################
-    from container import Container
-
-    container = Container(n_spline=2, leg2d=False,
-                          fit_sigma=True, fit_frac=False,
-                          brightest_only=False,
-                          parallel=False, draw_real=True)
-    # Set Priors
-    container.set_prior(n0, DF_Image.bkg, std_patch,
-                        n_min=1, theta_in=50, theta_out=240)
-
-    # Set Likelihood
-    container.set_likelihood(Y, mask_fit, psf_tri, stars_tri, 
-                             psf_range=[None, None], 
-                             norm='brightness', z_norm=z_norm_stars,
-                             image_base=image_base)
-    
-    ndim = container.ndim
-    
-    ############################################
-    # Run Sampling
-    ############################################
-    from src.sampler import DynamicNestedSampler
-    
-    ds = DynamicNestedSampler(container, sample='auto', n_cpu=n_cpu)
-    
-    ds.run_fitting(nlive_init=ndim*10, nlive_batch=2*ndim+2,
-                   maxbatch=2, print_progress=print_progress)
-    
-    if save:
-        fit_info = {'n_spline':n_spline, 'image_size':image_size,
-                    'image_bounds0':image_bounds0, 'leg2d':leg2d,
-                    'r_core':r_core, 'r_scale':r_scale}
-        
-        method = str(n_spline)+'p'
-        fname='NGC5907-%s-fit_best_X%dY%d_%s'\
-                    %(band, image_bounds0[0], image_bounds0[1], method)
-        if leg2d: fname+='l'
-        if brightest_only: fname += 'b'
-            
-        ds.save_results(fname+'.res', fit_info, save_dir=dir_name)
-        
-    ############################################
-    # Plot Results
-    ############################################
-    from src.utils import cal_reduced_chi2
-    
-    ds.cornerplot(figsize=(18, 16),
-                  save=save, save_dir=dir_name, suffix='_'+method)
-    
-    # Plot recovered PSF
-    ds.plot_fit_PSF1D(psf, n_bootstrap=800, r_core=r_core, leg2d=leg2d,
-                      save=save, save_dir=dir_name, suffix='_'+method)
-    
-    # Recovered PSF
-    psf_fit, params = ds.generate_fit(psf, stars, image_base,
-                                      brightest_only=brightest_only,
-                                      leg2d=leg2d, n_out=4, theta_out=1200)
-    
-    # Calculate Chi^2
-    cal_reduced_chi2((ds.image_fit[~mask_fit]).ravel(), Y, params)
-    
-    # Draw compaison
-    ds.draw_comparison_2D(image, mask, vmin=mu-psf_fit.bkg_std, vmax=mu+25*psf_fit.bkg_std,
-                          save=save, save_dir=dir_name, suffix='_'+method)
-    
-    if leg2d:
-        ds.draw_background(save=save, save_dir=dir_name, suffix='_'+method)
-
-    return ds
     
 if __name__ == "__main__":
     main(sys.argv[1:])
