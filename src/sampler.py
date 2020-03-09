@@ -146,7 +146,7 @@ class DynamicNestedSampler:
                                             leg2d=ct.leg2d, 
                                             fit_sigma=ct.fit_sigma,
                                             fit_frac=ct.fit_frac,
-                                            n_out=n_out\,
+                                            n_out=n_out,
                                             theta_out=theta_out)
         
         self.bkg_fit = psf_fit.bkg

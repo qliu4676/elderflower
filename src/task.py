@@ -1,34 +1,35 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import numpy as np
 
 def Run_PSF_Fitting(hdu_path, image_bounds0,
                     n_spline=2, band="G",
                     r_scale=12, mag_threshold=[14,11], 
                     mask_type='radius', SB_fit_thre=24.5,
                     r_core=24, r_out=None,
-                    fit_frac=False, leg2d=False,
+                    fit_sigma=True, fit_frac=False, leg2d=False,
                     pad=100, pixel_scale=2.5, 
                     wid_strip=24, n_strip=48, 
                     n_cpu=None, parallel=False, 
-                    brightest_only=True, draw_real=True,
+                    brightest_only=False, draw_real=True,
                     draw=True, print_progress=True,
                     save=False, dir_name='./',
-                    dir_measure='./Measure'):
+                    dir_measure='../output/Measure-PS'):
     
     ############################################
     # Read Image and Table
     ############################################
-    from src.image import ImageList
+    from .image import ImageList
     DF_Images = ImageList(hdu_path, image_bounds0, pixel_scale, pad)
     
-    from src.utils import read_measurement_tables
+    from .utils import read_measurement_tables
     tables_faint, tables_res_Rnorm = read_measurement_tables(dir_measure,
                                                              image_bounds0)
     
     ############################################
     # Setup PSF
     ############################################
-    from src.modeling import PSF_Model
+    from .modeling import PSF_Model
     
     # PSF Parameters (some from fitting stacked PSF)
     frac = 0.3                  # fraction of aureole
@@ -60,9 +61,6 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e6, psf_range=1000)
 
-    # Galsim 2D model averaged in 1D
-    psf.plot_PSF_model_galsim()
-
     # Deep copy
     psf_tri = psf.copy()
     
@@ -75,14 +73,14 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
                                                      tables_res_Rnorm, 
                                                      r_scale=r_scale,
                                                      mag_threshold=mag_threshold,
-                                                     verbose=True, draw=True,
+                                                     verbose=True, draw=False,
                                                      save=save, save_dir=dir_name)
     
     ############################################
     # Setup Basement Image
     ############################################
     # Make fixed background of dim stars
-    DF_Images.make_base_image(psf.psf_star, stars_all)
+    DF_Images.make_base_image(psf.psf_star, stars_all, draw=False)
     
     ############################################
     # Masking
@@ -105,7 +103,7 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
 
     # Collect stars for fit. Choose if only use brightest stars
     if brightest_only:
-        stars = DF_Images.stars.use_verybright()
+        stars = [s.use_verybright() for s in DF_Images.stars]
     else:
         stars = DF_Images.stars # for fit
 
@@ -133,6 +131,8 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     ############################################
     # Run Sampling
     ############################################
+    from .sampler import DynamicNestedSampler
+    
     dsamplers = []
     
     for i in range(DF_Images.N_Image):
@@ -162,12 +162,14 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
         ############################################
         # Plot Results
         ############################################
-
+        from .plotting import AsinhNorm
+        method = str(n_spline)+'p'
+        
         ds.cornerplot(figsize=(18, 16),
                       save=save, save_dir=dir_name, suffix='_'+method)
 
         # Plot recovered PSF
-        ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core, leg2d=leg2d,
+        ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
                           save=save, save_dir=dir_name, suffix='_'+method)
 
         # Recovered 1D PSF
