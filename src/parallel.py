@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Utilities that assist in computation
-Created on Tue Nov  3 21:14:25 2015
+Submodule for paralle computation
+from https://github.com/pycroscopy/pyUSID
 @author: Suhas Somnath, Chris Smith
 """
-import joblib
+
 import numpy as np
+
+import joblib
 from multiprocessing import cpu_count
 from psutil import virtual_memory as vm
 

@@ -1,0 +1,6 @@
+README.md
+setup.py
+psffit.egg-info/PKG-INFO
+psffit.egg-info/SOURCES.txt
+psffit.egg-info/dependency_links.txt
+psffit.egg-info/top_level.txt

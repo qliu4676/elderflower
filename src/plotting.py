@@ -1,8 +1,14 @@
 import os
 import numpy as np
 
-from matplotlib import rcParams
+try: 
+    import seaborn as sns
+except ImportError: 
+    seaborn_plot = None
+
 import matplotlib.pyplot as plt
+
+from matplotlib import rcParams
 plt.rcParams['image.origin'] = 'lower'
 plt.rcParams['image.cmap'] = 'gnuplot2'
 plt.rcParams["font.serif"] = "Times New Roman"
@@ -27,7 +33,6 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 from astropy.stats import mad_std
 
-from photutils import CircularAperture
 
 ### Plotting Helpers ###
 
@@ -216,12 +221,14 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
         
 def Fit_background_distribution(image, mask_deep):
     # Check background, fit with gaussian and exp-gaussian distribution
-    import seaborn as sns
     from scipy import stats
     
     plt.figure(figsize=(6,4))
     z_sky = image[~mask_deep]
-    sns.distplot(z_sky, label='Data', hist_kws={'alpha':0.3})
+    if seaborn_plot:
+        sns.distplot(z_sky, label='Data', hist_kws={'alpha':0.3})
+    else:
+        plt.hist(z_sky, label='Data', alpha=0.3)
 
     mu_fit, std_fit = stats.norm.fit(z_sky)
     print(mu_fit, std_fit)
@@ -358,7 +365,11 @@ def plot_flux_dist(Flux, Flux_thresholds, ZP=None,
                 color='seagreen', alpha=0.15, zorder=0)
     plt.axvspan(np.log10(F_verybright), 9,
                 color='steelblue', alpha=0.15, zorder=0)
-    sns.distplot(np.log10(Flux), kde=False, **kwargs)
+    
+    if seaborn_plot:
+        sns.distplot(np.log10(Flux), kde=False, **kwargs)
+    else:
+        plt.hist(np.log10(Flux), alpha=0.5)
     
     plt.yscale('log')
     plt.xlabel('Estimated log Flux$_{tot}$ / Mag', fontsize=15)

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from . import task
+
 from . import utils
 from . import modeling
 
@@ -15,4 +17,4 @@ from . import parallel
 from . import API_PS1_DR2
 
 
-__version__ = "0.0.1"
+__version__ = "0.1"

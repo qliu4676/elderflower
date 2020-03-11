@@ -1,0 +1,12 @@
+Metadata-Version: 1.2
+Name: psffit
+Version: 0.1
+Summary: 2D PSF Modeling
+Home-page: https://github.com/NGC4676/PSF_Modeling
+Author: Q. Liu
+Author-email: qliu@astro.utoronto.ca
+License: UNKNOWN
+Description: UNKNOWN
+Keywords: astronomy PSF bayesian fitting
+Platform: UNKNOWN
+Requires-Python: >=3.5
