@@ -18,7 +18,8 @@ from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
-
+from photutils.segmentation import SegmentationImage
+    
 from .plotting import LogNorm, AsinhNorm, colorbar
 
 ### Baisc Funcs ###
@@ -1005,7 +1006,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec,
+                        pixel_scale=2.5, mag_thre=15, sep=2.5*u.arcsec,
                         verbose=True):
     """
     Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
@@ -1014,12 +1015,22 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     Parameters
     ----------
     wcs_data : wcs of data
+    
     SE_catalog : SE source catalog
+    
     image_bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
     
-    radius : radius (in astropy unit) of search to PS-1 catalog. If not given, use the half diagonal length of the region.
-    clean_catalog : whether to clean the matched catalog. The PS-1 catalog contains duplicate items on a single source with different measurements. If True, duplicate items of bright sources will be cleaned by removing those with large coordinate errors and pick the items with most detections in that band (default True).
+    radius : radius (in astropy unit) of search to PS-1 catalog. 
+            If not given, use the half diagonal length of the region.
+            
+    clean_catalog : whether to clean the matched catalog. (default True)
+            The PS-1 catalog contains duplicate items on a single source with different
+            measurements. If True, duplicate items of bright sources will be cleaned by 
+            removing those with large coordinate errors and pick the items with most 
+            detections in that band .
+            
     mag_thre : magnitude threshould defining bright stars.
+    
     sep : maximum separation (in astropy unit) for crossmatch with SE.
     
     Returns
@@ -1053,7 +1064,8 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
         constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':23}
 
         # strip blanks and weed out blank and commented-out values
-        columns = """raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,gMeanPSFMag,gMeanPSFMagErr,gFlags,rMeanPSFMag,rMeanPSFMagErr,rFlags""".split(',')
+        columns = """raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,
+                    gMeanPSFMag,gMeanPSFMagErr,gFlags,rMeanPSFMag,rMeanPSFMagErr,rFlags""".split(',')
         columns = [x.strip() for x in columns]
         columns = [x for x in columns if x and not x.startswith('#')]
         results = ps1cone(ra, dec, radius.value, release='dr2', columns=columns, **constraints)
@@ -1101,32 +1113,37 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
             
             row_duplicate = np.array([], dtype=int)
             
-            # Use the measurement using empirical criteria
+            # Use the measurement following some criteria
             for i in inds_c[counts>1]:
                 obj_dup = Cat_crop[idxcatalog][idxc==i]
 #                 obj_dup.pprint(max_lines=-1, max_width=-1)
                 
                 # Coordinate error of detection
-                err_coord = np.sqrt(obj_dup["raMeanErr"]**2 + obj_dup["decMeanErr"]**2)
+                err2_coord = obj_dup["raMeanErr"]**2 + \
+                            obj_dup["decMeanErr"]**2
                 
-                # Use the detection with PSF mag err
-                has_err_mag = obj_dup[mag_name+'Err'] > 0   
+                # Use the detection with the best astrometry
+                min_e2_coord = np.nanmin(err2_coord)
+                good = (err2_coord == min_e2_coord)
                 
-                # Use the detection > 0
-                n_det = obj_dup['n'+band]
-                has_n_det = n_det > 0
+#                 # Use the detection with PSF mag err
+#                 has_err_mag = obj_dup[mag_name+'Err'] > 0   
                 
-                # Use photometry not from tycho in measurement
-                use_tycho_phot =  extract_bool_bitflags(obj_dup[band+'Flags'], 7)
+#                 # Use the detection > 0
+#                 n_det = obj_dup['n'+band]
+#                 has_n_det = n_det > 0
                 
-                good_phot = has_err_mag & has_n_det & (~use_tycho_phot)  
+#                 # Use photometry not from tycho in measurement
+#                 use_tycho_phot =  extract_bool_bitflags(obj_dup[band+'Flags'], 7)
+                
+#                 good = has_err_mag & has_n_det & (~use_tycho_phot)  
                     
-                # Remove rows
-                for ID in obj_dup[~good_phot]['ID'+'_'+c_name]:
+                # Add rows to be removed
+                for ID in obj_dup[~good]['ID'+'_'+c_name]:
                     k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
                     row_duplicate = np.append(row_duplicate, k)
                 
-                obj_dup = obj_dup[good_phot]
+                obj_dup = obj_dup[good]
                 
                 if len(obj_dup)<=1:
                     continue
@@ -1136,10 +1153,11 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
                 for ID in obj_dup[mag>min(mag)]['ID'+'_'+c_name]:
                     k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
                     row_duplicate = np.append(row_duplicate, k)
-                    
-            Cat_crop.remove_rows(np.unique(row_duplicate))
-#             Cat_crop = Cat_crop[Cat_crop['n'+band]>0]
             
+            # Remove rows
+            Cat_crop.remove_rows(np.unique(row_duplicate))
+            
+            # Subset catalog containing bright stars
             Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_thre]
         
         # Merge Catalog
@@ -1165,6 +1183,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     # Sort matched catalog by matched magnitude
     tab_target.sort(mag_name)
     tab_target_all.sort(mag_name)
+    
     if verbose:
         print("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
               %(mag_name, np.nanmin(tab_target_all[mag_name]),
@@ -1236,6 +1255,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     estimate_radius : a function turns magnitude into log R
     
     """
+    
     
     print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)"%(degree, K))
 
