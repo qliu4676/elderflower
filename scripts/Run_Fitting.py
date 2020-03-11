@@ -43,7 +43,6 @@ def main(argv):
     # Image Parameter (default)
     band = "G"                
     pixel_scale = 2.5  # arcsec/pixel
-    image_bounds0 = [3100, 1400, 4100, 2400]
     
     # Fitting Setup (default)
     n_cpu = 4
@@ -94,11 +93,15 @@ def main(argv):
             else:
                 sys.exit("Filter Not Available.")
     
-    # Default File Path
-    hdu_path = "./data/coadd_Sloan%s_NGC_5907.fits"%band
-    dir_name = './fit-real'
-    dir_measure = './Measure'
+    # Work Path
+    work_dir = "/home/qliu/Desktop/PSF"
+    
+    # Default Input/Output Path
+    hdu_path = os.path.join(work_dir, "data/coadd_Sloan%s_NGC_5907.fits"%band)
+    dir_name = os.path.join(work_dir, 'output/fit')
+    dir_measure = os.path.join(work_dir, 'output/Measure')
                 
+    # Handling Options    
     for opt, arg in optlists:
         if opt in ("-I", "--IMAGE"):
             hdu_path = arg
@@ -128,7 +131,10 @@ def main(argv):
         elif opt in ("--DIR_NAME"):
             dir_name = arg
         elif opt in ("--DIR_MEASURE"):
-            dir_measure = arg 
+            dir_measure = arg
+            
+    if 'image_bounds0' not in locals():
+        sys.exit("Image Bounds Required.")
             
     if '-L' in opts: leg2d = True
     if '-F' in opts: fit_frac = True
@@ -147,7 +153,7 @@ def main(argv):
     if save:
         check_save_path(dir_name, make_new=False)
     
-    # Run Fitting!
+    # Run Fitting~!
     ds = Run_PSF_Fitting(hdu_path, image_bounds0, n_spline, band,
                          r_scale=r_scale, mag_threshold=mag_threshold, 
                          mask_type=mask_type, SB_fit_thre=SB_fit_thre,
