@@ -6,7 +6,9 @@ Home-page: https://github.com/NGC4676/PSF_Modeling
 Author: Qing Liu
 Author-email: qliu@astro.utoronto.ca
 License: UNKNOWN
-Description: UNKNOWN
+Description: # PSF_Modeling
+        Wide-Angle PSF Modeling for Dragonfly
+        
 Keywords: astronomy PSF Bayesian fitting
 Platform: UNKNOWN
 Requires-Python: >=3.5

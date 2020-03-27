@@ -7,15 +7,15 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.utils import lazyproperty
 
-from .utils import crop_image, find_keyword_header
+from .utils import crop_image
 from .plotting import AsinhNorm
 
 
 class ImageButler:
     """ A Image Butler """
     
-    def __init__(self, hdu_path, obj_name='', band='G',
-                 pixel_scale=2.5, ZP=None, pad=100, verbose=True):
+    def __init__(self, hdu_path, obj_name='', 
+                 pixel_scale=2.5, pad=100, verbose=True):
         """ 
         
         Parameters
@@ -25,12 +25,8 @@ class ImageButler:
             path of hdu data
         obj_name : str
             object name
-        band : str
-            filter name
         pixel_scale : float
             pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
@@ -52,15 +48,19 @@ class ImageButler:
             self.header = header = hdul[0].header
             self.wcs = wcs.WCS(header)
 
-        # Read global background model zero point and pixel scale from header
-    
-        self.bkg = find_keyword_header(header, "BACKVAL")
-        
-        if ZP is None:
-            self.ZP = find_keyword_header(header, "ZP")
-        else:
-            self.ZP = ZP
+        # Background level and Zero Point
+        try:
+            bkg, ZP = np.array([header["BACKVAL"], header["ZP"]]).astype(float)
+            if verbose:
+                print("BACKVAL: %.2f , ZP: %.2f , PIXSCALE: %.2f\n" %(bkg, ZP, pixel_scale))
 
+        except KeyError:
+            print("BKG / ZP / PIXSCALE missing in header --->")
+            ZP = np.float(input("Input the value of ZP :"))
+            bkg = np.float(input("Input the value of background :"))
+            
+        self.ZP = ZP
+        self.bkg = bkg
         
     def __str__(self):
         return "An ImageButler Class"
@@ -72,9 +72,8 @@ class ImageButler:
 class Image(ImageButler):
     """ A Image Class """
         
-    def __init__(self, hdu_path, image_bounds0,
-                 obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, pad=100, verbose=True):
+    def __init__(self, hdu_path, image_bounds0, obj_name='', 
+                 pixel_scale=2.5, pad=100, verbose=True):
         """ 
         
         Parameters
@@ -86,19 +85,14 @@ class Image(ImageButler):
             boundary of region to be fit
         obj_name : str
             object name
-        band : str
-            filter name
         pixel_scale : float
             pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
         """
         
-        super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, pad, verbose)
+        super().__init__(hdu_path,pixel_scale, pad, verbose)
         
         self.image_bounds0 = image_bounds0
         
@@ -113,8 +107,7 @@ class Image(ImageButler):
         self.image0 = crop_image(self.full_image, image_bounds0, draw=False)
         
         # Cutout of data
-        self.image = self.image0[pad:self.image_size-pad,
-                                 pad:self.image_size-pad]
+        self.image = self.image0[pad:-pad,pad:-pad]
         
     def __str__(self):
         return "An Image Class"
@@ -126,9 +119,8 @@ class Image(ImageButler):
 class ImageList(ImageButler):
     """ A ImageList Class """
     
-    def __init__(self, hdu_path, image_bounds0_list,
-                 obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, pad=100, verbose=False):
+    def __init__(self, hdu_path, image_bounds0_list, obj_name='',
+                 pixel_scale=2.5, pad=100, verbose=False):
         
         """ 
         
@@ -141,23 +133,16 @@ class ImageList(ImageButler):
             list of boundaries of regions to be fit (Nx4)
         obj_name : str
             object name
-        band : str
-            filter name
         pixel_scale : float
             pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
         """
         
-        super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, pad, verbose)
+        super().__init__(hdu_path, pixel_scale, pad, verbose)
         
-        self.Images = [Image(hdu_path, image_bounds0,
-                             obj_name, band, pixel_scale,
-                             ZP, pad, verbose)
+        self.Images = [Image(hdu_path, image_bounds0, pixel_scale, pad, verbose)
                        for image_bounds0 in np.atleast_2d(image_bounds0_list)]
         self.N_Image = len(self.Images)
     
@@ -327,5 +312,7 @@ class ImageList(ImageButler):
             container.image_size = self.Images[i].image_size
             
             self.containers += [container]
+
+            
 
 

@@ -1,5 +1,17 @@
 README.md
 setup.py
+psffit/API_PS1_DR2.py
+psffit/__init__.py
+psffit/cirrus.py
+psffit/container.py
+psffit/image.py
+psffit/mask.py
+psffit/modeling.py
+psffit/parallel.py
+psffit/plotting.py
+psffit/sampler.py
+psffit/task.py
+psffit/utils.py
 psffit.egg-info/PKG-INFO
 psffit.egg-info/SOURCES.txt
 psffit.egg-info/dependency_links.txt

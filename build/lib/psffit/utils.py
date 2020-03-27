@@ -572,9 +572,9 @@ def measure_Rnorm_all(table, image_bound,
 
     Xmin, Ymin = image_bound[:2]
     
-    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X%sY%s.txt'\
+    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%s%dmag_X%sY%s.txt'\
                                     %(obj_name, r_scale, mag_name[0], mag_thre, Xmin, Ymin))
-    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X%sY%s'\
+    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%s%dmag_X%sY%s'\
                                   %(obj_name, mag_name[0], mag_thre, Xmin, Ymin))
     if read:
         table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
@@ -624,23 +624,6 @@ def check_save_path(dir_name, make_new=True, verbose=True):
     if verbose: print("Results will be saved in %s\n"%dir_name)
     
 
-def find_keyword_header(header, keyword):
-    """ Search keyword value in header (converting to float).
-        Input a value by user if not found. """
-    try:
-        val = np.float(header[keyword])
-     
-    except KeyError:
-        print("%s missing in header --->"%keyword)
-        
-        try:
-            val = np.float(input("Input a value of %s :"%keyword))
-        except ValueError:
-            sys.exit("Invalid %s values!"%keyword) 
-            
-    return val
-    
-    
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
     Xmin, Ymin, Xmax, Ymax = bounds
     A, B = keys
@@ -653,7 +636,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
         return cat[crop]
 
 def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
-               sub_bounds=None, origin=0, color="w", draw=False):
+               sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
     from matplotlib import patches  
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -760,7 +743,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     return cat_match
 
 def read_measurement_tables(dir_name, image_bounds0_list, 
-                            obj_name='', band='G',
+                            band='G', obj_name='NGC5907',
                             pad=100, r_scale=12, mag_limit=[15,23]):
     """ Read measurement tables from the directory """
     
@@ -780,7 +763,7 @@ def read_measurement_tables(dir_name, image_bounds0_list,
 
         ## Read measurement for faint stars from catalog
         # Faint star catalog name
-        fname_catalog = os.path.join(dir_name, "%s-catalog_PS_%s_all.txt"%(obj_name, b_name))
+        fname_catalog = os.path.join(dir_name, "%s-%s-catalog_PS_%s_all.txt"%(obj_name, band, b_name))
 
         # Check if the file exist
         if os.path.isfile(fname_catalog):
@@ -798,8 +781,8 @@ def read_measurement_tables(dir_name, image_bounds0_list,
         
         ## Read measurement for bright stars
         # Catalog name
-        fname_res_Rnorm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X%dY%d.txt"\
-                                       %(obj_name, r_scale, b_name,
+        fname_res_Rnorm = os.path.join(dir_name, "%s-%s-norm_%dpix_%s%smag_X%dY%d.txt"\
+                                       %(obj_name, band, r_scale, b_name,
                                          mag_limit[0], patch_Xmin0, patch_Ymin0))
         # Check if the file exist
         if os.path.isfile(fname_res_Rnorm):
@@ -818,7 +801,7 @@ def read_measurement_tables(dir_name, image_bounds0_list,
     
 
 def assign_star_props(table_faint, table_res_Rnorm, Image, 
-                      r_scale=12, mag_threshold=[14,11],
+                      r_scale=12, mag_threshold=np.array([14,11]),
                       psf=None, keys='Imed', verbose=True, 
                       draw=True, save=False, save_dir='./'):
     """ Assign position and flux for faint and bright stars from tables. """
@@ -852,7 +835,7 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     z_norm[z_norm<=0] = z_norm[z_norm>0].min()
 
     # Convert/printout thresholds
-    Flux_threshold = 10**((np.array(mag_threshold) - ZP) / (-2.5))
+    Flux_threshold = 10**((mag_threshold - ZP) / (-2.5))
     if verbose:
         print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
         print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
@@ -1252,7 +1235,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           mag_range=[13, 22], K=2, degree=3, draw=True):
+                           mag_range=[13, 20], K=2, degree=3, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
@@ -1324,7 +1307,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 
 def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
-                           mag_name='rmag', cat_name='PS', obj_name='', band='G',
+                           mag_name='rmag', cat_name='PS', obj_name='',
                            draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
@@ -1377,9 +1360,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
-        
-        b_name = band.lower()
-        file_name = os.path.join(dir_name, "%s-segm_%smag_catalog_X%dY%d.fits" %(obj_name, b_name, Xmin, Ymin))
+        file_name = os.path.join(dir_name, "%s-segm_catalog_X%dY%d.fits" %(obj_name,Xmin, Ymin))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         

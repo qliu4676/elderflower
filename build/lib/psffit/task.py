@@ -4,14 +4,17 @@ import os
 import sys
 import numpy as np
 
-def Match_Mask_Measure(hdu_path, image_bounds,
-                       seg_map, SE_catalog,
+def Match_Mask_Measure(hdu_path,
+                       image_bounds,
+                       seg_map,
+                       SE_catalog,
                        weight_map=None,
-                       obj_name='', band="G",
-                       pixel_scale=2.5,
-                       ZP=None, field_pad=500,
-                       r_scale=12, mag_thre=15,
-                       draw=True, save=True,
+                       obj_name='',
+                       band="G",
+                       r_scale=12,
+                       mag_thre=15,
+                       draw=True,
+                       save=True,
                        use_PS1_DR2=False,
                        dir_name='../output/Measure'):
     
@@ -19,13 +22,13 @@ def Match_Mask_Measure(hdu_path, image_bounds,
           %(r_scale, mag_thre))
     
     b_name = band.lower()
+    mag_name = b_name + 'mag'
     image_bounds = np.atleast_2d(image_bounds)
     
     ##################################################
     # Read and Display
     ##################################################
     from .utils import crop_image, crop_catalog
-    from .utils import find_keyword_header
     from astropy.stats import mad_std
     from astropy.table import Table
     from astropy.io import fits
@@ -49,28 +52,32 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         weight_edge = fits.getdata(weight_map)
     else:
         weight_edge = np.ones_like(data)
-     
+
     # Read global background model zero point and pixel scale from header
-    
-    bkg = find_keyword_header(header, "BACKVAL")
-    if ZP is None:
-        ZP = find_keyword_header(header, "ZP")
-    
-    # Estimate of background fluctuation (just for plot)
-    std = mad_std(data[(seg_map==0) & (weight_edge>0.5)]) 
-   
-    # Short summary
-    print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
-    
+    try:
+        BKG, ZP, pix_scale = np.array([header["BACKVAL"], header["ZP"],
+                                       header["PIXSCALE"]]).astype(float)
+        
+        std = mad_std(data[(seg_map==0) & (weight_edge>0.5)]) 
+        print("BACKVAL: %.2f , stddev: %.2f , ZP: %.2f , PIXSCALE: %.2f\n"\
+              %(BKG, std, ZP, pix_scale))
+
+    except KeyError:
+        print("BKG / ZP / PIXSCALE missing in header --->")
+        try:
+            ZP = np.float(input("Input a value of ZP :"))
+            BKG = np.float(input("Manually set a value of background :"))
+            std = np.float(input("Manually set a value of background RMS :"))
+            data += BKG
+        except ValueError:
+            sys.exit("Invalid keywords values!") 
         
     # Convert SE measured flux into mag
     flux = SE_cat_full["FLUX_AUTO"]
     mag = -2.5 * np.ma.log10(flux).filled(flux[flux>0].min()) + ZP
     SE_cat_full["MAG_AUTO"] = np.around(mag, 5)
     
-    field_bounds = [field_pad, field_pad,
-                    data.shape[1]-field_pad,
-                    data.shape[0]-field_pad]
+    field_bounds = [600, 600, data.shape[1]-600, data.shape[0]-600]
     
     if not use_PS1_DR2:
         print("Match field %r with catalog\n"%field_bounds)
@@ -92,9 +99,8 @@ def Match_Mask_Measure(hdu_path, image_bounds,
     if use_PS1_DR2:
         tab_target, tab_target_full, catalog_star = \
                                 cross_match_PS1_DR2(wcs_data, SE_cat_full, image_bounds,
-                                                    mag_thre=mag_thre, band=b_name)        
+                                                    mag_thre=mag_thre, band='g')        
     else:
-        mag_name = b_name+'mag'
         tab_target, tab_target_full, catalog_star = \
                                 cross_match(wcs_data, SE_cat_full, field_bounds,
                                             mag_thre=mag_thre, mag_name=mag_name)
@@ -112,7 +118,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
     # Save matched table and catalog
     if save:
         tab_target_name = os.path.join(dir_name,
-                                       '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_thre))
+                                       '%s-catalog_match_%s%dmag.txt'%(obj_name, b_name, mag_thre))
         
         tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
         
@@ -136,7 +142,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
     
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
-                                             mag_name=mag_name_cat, mag_range=[13,22],
+                                             mag_name=mag_name_cat, mag_range=[13,20],
                                              K=2.5, degree=3, draw=draw)
     
     for image_bound in image_bounds:
@@ -155,7 +161,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
 
         # Make segmentation map from catalog based on SE seg map of one band
         seg_map_cat = make_segm_from_catalog(catalog_star_patch, image_bound, estimate_radius,
-                                             mag_name=mag_name, cat_name='PS', obj_name=obj_name, band=band,
+                                             mag_name=mag_name, cat_name='PS', obj_name=obj_name,
                                              draw=draw, save=save, dir_name=dir_name)
 
         # Measure average intensity (source+background) at e_scale
@@ -169,18 +175,18 @@ def Match_Mask_Measure(hdu_path, image_bounds,
                                                      read=False, save=save, dir_name=dir_name)
         
         plot_bright_star_profile(tab_target_patch, tab_res_Rnorm, res_thumb,
-                                 bkg_sky=bkg, std_sky=std, ZP=ZP,
+                                 bkg_sky=BKG, std_sky=std, ZP=ZP,
                                  pixel_scale=pixel_scale)
         
         
         
 def Run_PSF_Fitting(hdu_path, image_bounds0,
-                    n_spline=2, obj_name='', band="G", 
-                    pixel_scale=2.5, ZP=None, pad=100,  
+                    n_spline=2, band="G",
                     r_scale=12, mag_threshold=[14,11], 
                     mask_type='radius', SB_fit_thre=24.5,
                     r_core=24, r_out=None,
                     fit_sigma=True, fit_frac=False, leg2d=False,
+                    pad=100, pixel_scale=2.5, 
                     wid_strip=24, n_strip=48, 
                     n_cpu=None, parallel=False, 
                     brightest_only=False, draw_real=True,
@@ -192,18 +198,11 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     # Read Image and Table
     ############################################
     from .image import ImageList
-    DF_Images = ImageList(hdu_path, image_bounds0,
-                          obj_name, band,
-                          pixel_scale, ZP, pad)
+    DF_Images = ImageList(hdu_path, image_bounds0, pixel_scale, pad)
     
     from .utils import read_measurement_tables
-    tables_faint, tables_res_Rnorm = \
-                    read_measurement_tables(dir_measure,
-                                            image_bounds0,
-                                            obj_name=obj_name,
-                                            band=band,
-                                            pad=pad,
-                                            r_scale=r_scale)
+    tables_faint, tables_res_Rnorm = read_measurement_tables(dir_measure,
+                                                             image_bounds0)
     
     ############################################
     # Setup PSF
@@ -246,7 +245,7 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     ############################################
     # Setup Stars
     ############################################    
-    from .utils import assign_star_props
+    from src.utils import assign_star_props
     
     stars_0, stars_all = DF_Images.assign_star_props(tables_faint,
                                                      tables_res_Rnorm, 
@@ -254,8 +253,6 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
                                                      mag_threshold=mag_threshold,
                                                      verbose=True, draw=False,
                                                      save=save, save_dir=dir_name)
-    
-    #breakpoint()
     
     ############################################
     # Setup Basement Image
@@ -266,10 +263,10 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     ############################################
     # Masking
     ############################################
-    from .mask import Mask
+    from src.mask import Mask
     
     if mask_type=='brightness':
-        from .utils import SB2Intensity
+        from src.utils import SB2Intensity
         count = SB2Intensity(SB_fit_thre, DF_Images.bkg,
                              DF_Images.ZP, DF_Image.pixel_scale)[0]
     else:
@@ -291,9 +288,6 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     # Copy stars
     stars_tri = stars.copy()
 
-    proceed = input('Is the Mask Reasonable?[y/n]')
-    if proceed == 'n': sys.exit("Reset the Mask.")
-    
     ############################################
     # Estimate Background
     ############################################

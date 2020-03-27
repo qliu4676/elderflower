@@ -165,7 +165,6 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     """ Visualize mask map w/ strips """
     
     from matplotlib import patches
-    from photutils import CircularAperture
     
     star_pos_A = stars.star_pos_verybright + pad
     star_pos_B = stars.star_pos_medbright + pad

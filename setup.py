@@ -1,15 +1,18 @@
 import os
 from setuptools import setup, find_packages
 
-abspath = os.path.abspath(path.dirname(__file__))
+abspath = os.path.abspath(os.path.dirname(__file__))
 
 with open(os.path.join(abspath, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = []
-if os.path.isfile(requirementPath):
-    with open(os.path.join(abspath, 'requirements.txt')) as f:
-        install_requires = f.read().splitlines()
+
+#requirementPath = os.path.join(abspath, 'requirements.txt')
+
+#if os.path.isfile(requirementPath):
+#    with open(requirementPath) as f:
+#        install_requires = f.read().splitlines()
 
 
 setup(
@@ -30,7 +33,7 @@ setup(
 
     keywords='astronomy PSF Bayesian fitting',
 
-    packages=find_packages("psffit"),
+    packages=find_packages(),
 
     python_requires='>=3.5',
 
