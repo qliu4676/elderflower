@@ -1307,7 +1307,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 
 def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
-                           mag_name='rmag', cat_name='PS',
+                           mag_name='rmag', cat_name='PS', obj_name='',
                            draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
@@ -1360,7 +1360,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
-        file_name = os.path.join(dir_name, "Segm_catalog_X%dY%d.fits" %(Xmin, Ymin))
+        file_name = os.path.join(dir_name, "%s-segm_catalog_X%dY%d.fits" %(obj_name,Xmin, Ymin))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         

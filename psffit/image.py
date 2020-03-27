@@ -14,19 +14,26 @@ from .plotting import AsinhNorm
 class ImageButler:
     """ A Image Butler """
     
-    def __init__(self, hdu_path, pixel_scale=2.5, pad=100, verbose=True):
+    def __init__(self, hdu_path, obj_name='', 
+                 pixel_scale=2.5, pad=100, verbose=True):
         """ 
         
         Parameters
         ----------
         
-        hdu_path: path of hdu data
-        pixel_scale: pixel scale in arcsec/pixel
-        pad : padding size of the image for fitting (default: 100)
+        hdu_path : str
+            path of hdu data
+        obj_name : str
+            object name
+        pixel_scale : float
+            pixel scale in arcsec/pixel
+        pad : int
+            padding size of the image for fitting (default: 100)
         
         """
         
         self.verbose = verbose
+        self.obj_name=obj_name
         self.pixel_scale = pixel_scale
         self.pad = pad
         
@@ -65,16 +72,23 @@ class ImageButler:
 class Image(ImageButler):
     """ A Image Class """
         
-    def __init__(self, hdu_path, image_bounds0, pixel_scale=2.5, pad=100, verbose=True):
+    def __init__(self, hdu_path, image_bounds0, obj_name='', 
+                 pixel_scale=2.5, pad=100, verbose=True):
         """ 
         
         Parameters
         ----------
         
-        hdu_path: path of hdu data
-        image_bounds0: boundary of region to be fit [X min, Y min, X max, Y max]
-        pixel_scale: pixel scale in arcsec/pixel
-        pad : padding size of the image for fitting (default: 100)
+        hdu_path : str
+            path of hdu data
+        image_bounds0 : list [X min, Y min, X max, Y max]
+            boundary of region to be fit
+        obj_name : str
+            object name
+        pixel_scale : float
+            pixel scale in arcsec/pixel
+        pad : int
+            padding size of the image for fitting (default: 100)
         
         """
         
@@ -105,19 +119,24 @@ class Image(ImageButler):
 class ImageList(ImageButler):
     """ A ImageList Class """
     
-    def __init__(self, hdu_path, image_bounds0_list,
+    def __init__(self, hdu_path, image_bounds0_list, obj_name='',
                  pixel_scale=2.5, pad=100, verbose=False):
         
         """ 
         
         Parameters
         ----------
-        
-        hdu_path: path of hdu data
-        image_bounds0_list: list of boundaries of regions to be fit (Nx4)
-                            [X min, Y min, X max, Y max]
-        pixel_scale: pixel scale in arcsec/pixel
-        pad : padding size of the image for fitting (default: 100)
+    
+        hdu_path : str
+            path of hdu data
+        image_bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
+            list of boundaries of regions to be fit (Nx4)
+        obj_name : str
+            object name
+        pixel_scale : float
+            pixel scale in arcsec/pixel
+        pad : int
+            padding size of the image for fitting (default: 100)
         
         """
         
@@ -195,7 +214,9 @@ class ImageList(ImageButler):
             mask = Mask(Image, stars)
 
             # Primary SN threshold mask
-            mask.make_mask_map_deep(dir_measure, by, r_core, r_out, count,
+            mask.make_mask_map_deep(dir_measure, by,
+                                    r_core, r_out, count,
+                                    obj_name=self.obj_name,
                                     draw=draw, save=save, save_dir=save_dir)
             
             if stars.n_verybright > 0:

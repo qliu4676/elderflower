@@ -3,10 +3,12 @@ import time
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+
 from scipy import stats
 from scipy.integrate import quad
 from scipy.spatial import distance
 from scipy.special import gamma as Gamma
+
 from astropy import units as u
 from astropy.io import fits, ascii
 from astropy.modeling import models
@@ -19,10 +21,19 @@ from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
 from functools import partial, lru_cache
-from .parallel import parallel_compute
+
+try: 
+    from .parallel import parallel_compute
+    parallel_enabled = True
+    
+except ImportError:
+    import warnings
+    warnings.warn("Joblib / psutil / multiprocessing / mpi4py is not installed. Parallelization is not enabled.")
+    parallel_enabled = False
 
 try:
     from numba import njit
+    
 except ImportError:
     def njit(*args, **kwargs):
         def dummy_decorator(func):
@@ -1371,7 +1382,7 @@ def make_truth_image(psf, stars, image_size, contrast=1e6,
     func_aureole_2d_s = psf.draw_aureole2D_in_real(star_pos_A, frac * Flux_A)
 
     # option for drawing in parallel
-    if not parallel:
+    if (not parallel) | (parallel_enabled=False) :
         if verbose: 
             print("Rendering bright stars in serial...")
         image_real = np.sum([f2d(xx,yy) + p2d(xx,yy) 
@@ -1463,7 +1474,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
         
         psf_star = (1-frac) * psf_c + frac * psf_e               
 
-        if not parallel:
+        if (not parallel) | (parallel_enabled=False):
             # Draw in serial
             for k in range(stars.n_medbright):
                 draw_star(k,
@@ -1603,7 +1614,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         # Draw medium bright stars with galsim in Fourier space
         psf_star = (1-frac) * psf_c + frac * psf_e               
             
-        if not parallel:
+        if (not parallel) | (parallel_enabled=False):
             # Draw in serial
             for k in range(stars.n_medbright):
                 draw_star(k,

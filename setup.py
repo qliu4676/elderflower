@@ -1,10 +1,15 @@
+import os
 from setuptools import setup, find_packages
-from os import path
 
-abspath = path.abspath(path.dirname(__file__))
+abspath = os.path.abspath(path.dirname(__file__))
 
-with open(path.join(abspath, 'README.md'), encoding='utf-8') as f:
+with open(os.path.join(abspath, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
+
+install_requires = []
+if os.path.isfile(requirementPath):
+    with open(os.path.join(abspath, 'requirements.txt')) as f:
+        install_requires = f.read().splitlines()
 
 
 setup(
@@ -15,6 +20,8 @@ setup(
 
     description='2D PSF Modeling', 
 
+    long_description=long_description,
+
     url='https://github.com/NGC4676/PSF_Modeling', 
 
     author='Qing Liu',  
@@ -23,10 +30,10 @@ setup(
 
     keywords='astronomy PSF Bayesian fitting',
 
-    package_dir={'': 'src'},
-
-    packages=find_packages('src'),
+    packages=find_packages("psffit"),
 
     python_requires='>=3.5',
+
+    install_requires=install_requires,
 
 )

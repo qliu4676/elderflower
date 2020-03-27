@@ -9,6 +9,7 @@ def Match_Mask_Measure(hdu_path,
                        seg_map,
                        SE_catalog,
                        weight_map=None,
+                       obj_name='',
                        band="G",
                        r_scale=12,
                        mag_thre=15,
@@ -22,7 +23,6 @@ def Match_Mask_Measure(hdu_path,
     
     b_name = band.lower()
     mag_name = b_name + 'mag'
-    obj_name = 'NGC5907-' + band
     image_bounds = np.atleast_2d(image_bounds)
     
     ##################################################
@@ -64,10 +64,13 @@ def Match_Mask_Measure(hdu_path,
 
     except KeyError:
         print("BKG / ZP / PIXSCALE missing in header --->")
-        ZP = np.float(input("Input a value of ZP :"))
-        BKG = np.float(input("Manually set a value of background :"))
-        std = np.float(input("Manually set a value of background RMS :"))
-        data += BKG
+        try:
+            ZP = np.float(input("Input a value of ZP :"))
+            BKG = np.float(input("Manually set a value of background :"))
+            std = np.float(input("Manually set a value of background RMS :"))
+            data += BKG
+        except ValueError:
+            sys.exit("Invalid keywords values!") 
         
     # Convert SE measured flux into mag
     flux = SE_cat_full["FLUX_AUTO"]
@@ -158,7 +161,7 @@ def Match_Mask_Measure(hdu_path,
 
         # Make segmentation map from catalog based on SE seg map of one band
         seg_map_cat = make_segm_from_catalog(catalog_star_patch, image_bound, estimate_radius,
-                                             mag_name=mag_name, cat_name='PS',
+                                             mag_name=mag_name, cat_name='PS', obj_name=obj_name,
                                              draw=draw, save=save, dir_name=dir_name)
 
         # Measure average intensity (source+background) at e_scale

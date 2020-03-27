@@ -1,6 +1,12 @@
 import os
 import time
 import numpy as np
+
+try:
+    import dill as pickle
+except ImportError
+    import pickle
+    
 import matplotlib.pyplot as plt
 
 import multiprocess as mp
@@ -248,14 +254,13 @@ def get_params_fit(results, return_sample=False):
         return pmed, pmean, pcov
 
 def save_nested_fitting_result(res, filename='fit.res'):
-    import dill
     with open(filename,'wb') as file:
-        dill.dump(res, file)
+        pickle.dump(res, file)
         
 def load_nested_fitting_result(filename='fit.res'):        
-    import dill
     with open(filename, "rb") as file:
-        res = dill.load(file)
+        res = pickle.load(file)
+        
     return res
 
     
