@@ -367,11 +367,11 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     
     # define thumbnail size
     fwhm =  max(star_cat[id]["FWHM_IMAGE"], seeing)
-    win_size = int( n_win * min(max(fwhm,2), 8))
+    win_size = int(n_win * min(max(fwhm,2), 8))
     
     # calculate boundary
-    X_min, X_max = X_c - win_size, X_c + win_size
-    Y_min, Y_max = Y_c - win_size, Y_c + win_size
+    X_min, X_max = max(1, X_c - win_size), min(data.shape[1], X_c + win_size)
+    Y_min, Y_max = max(1, Y_c - win_size), min(data.shape[0], Y_c + win_size)
     x_min, y_min = coord_Im2Array(X_min, Y_min, origin)
     x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
     
@@ -383,13 +383,14 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
         print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
         print("X_min, X_max, Y_min, Y_max: ", X_min, X_max, Y_min, Y_max)
     
-    # crop
+    # crop image and segment map
     img_thumb = data[x_min:x_max, y_min:y_max].copy()
     if seg_map is None:
         seg_thumb = None
+        mask_thumb = np.zeros_like(data, dtype=bool)
     else:
         seg_thumb = seg_map[x_min:x_max, y_min:y_max]
-    mask_thumb = (seg_thumb!=0)    
+        mask_thumb = (seg_thumb!=0) # mask sources by 1
     
     # the center position is converted from world with wcs
     X_cen, Y_cen = wcs.wcs_world2pix(star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"], origin)
@@ -398,7 +399,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=2.5, n_win=25, n_dilation=3,
+                 seeing=2.5, sn_thre=2.5, n_win=25, n_dilation=1,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
@@ -434,9 +435,9 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
                                        nlevels=64, contrast=0.005)
     else:
         segm_deblend = SegmentationImage(seg_thumb)
-
+        
     # the target star is at the center of the thumbnail
-    star_lab = segm_deblend.data[img_thumb.shape[0]//2, img_thumb.shape[1]//2]
+    star_lab = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
     star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
         
     # dilation
@@ -463,8 +464,25 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
 
 
 def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=False):
-    """ Return 3 sigma-clipped mean, med and std of ring r=R (half-width=wid) for image.
-        Note the output norm is not background subtracted. masked region is 1."""
+    """ Compute (3 sigma-clipped) normalization using an annulus.
+    Note the output values of normalization contain background.
+    
+    Paramters
+    ----------
+    image : input image for measurement
+    mask_field : mask map with nearby sources masked as 1.
+    cen : center of target
+    R : radius of annulus
+    wid : half-width of annulus
+        
+    Returns
+    -------
+    I_mean: mean value in the annulus
+    I_med : median value in the annulus
+    I_std : std value in the annulus
+    I_flag : 0 good / 1 bad (available pixles < 5)
+    
+    """
     
     annulus_ma = CircularAnnulus([cen], R-wid, R+wid).to_mask()[0]      
     mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
@@ -480,32 +498,37 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     if len(image[mask_clean]) < 5:
         return [np.nan] * 3 + [1]
     
-#     z = 10**sigma_clip(np.log10(image[mask_clean]), sigma=3, maxiters=10)
-#     I_mean, I_med, I_std = np.mean(z), np.median(z.compressed()), np.std(z)
-    
     z = sigma_clip(np.log10(image[mask_clean]), sigma=2, maxiters=5)
     I_mean, I_med, I_std = 10**np.mean(z), 10**np.median(z.compressed()), np.std(10**z)
 
     if display:
         z = 10**z
         fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask_clean * image, cmap="gray", vmin=I_med-5*I_std, vmax=I_med+5*I_std)
-        ax2.hist(sigma_clip(z))
+        ax1.imshow(mask_clean, cmap="gray", alpha=0.7)
+        ax1.imshow(image, vmin=image.min(), vmax=I_med+50*I_std,
+                   cmap='viridis', norm=AsinhNorm(), alpha=0.7)
+        ax1.plot(cen[0], cen[1], 'r*', ms=10)
         
+        ax2.hist(sigma_clip(z),alpha=0.7)
+        
+        # Label mean value
         plt.axvline(I_mean, color='k')
-        plt.text(0.4, 0.9, "%.1f"%I_mean, color='orange', transform=ax2.transAxes)
+        plt.text(0.5, 0.9, "%.1f"%I_mean, color='darkorange', ha='center', transform=ax2.transAxes)
+        
+        # Label 20% / 80% quantiles
         I_20 = np.quantile(z.compressed(), 0.2)
         I_80 = np.quantile(z.compressed(), 0.8)
-        plt.axvline(I_20, color='k', ls="--")
-        plt.axvline(I_80, color='k', ls="--")
-        plt.text(0.1, 0.9, "%.1f"%I_20, color='orange', transform=ax2.transAxes)
-        plt.text(0.8, 0.9, "%.1f"%I_80, color='orange', transform=ax2.transAxes)
-    
+        for I, x_txt in zip([I_20, I_80], [0.2, 0.8]):
+            plt.axvline(I, color='k', ls="--")
+            plt.text(x_txt, 0.9, "%.1f"%I, color='orange',
+                     ha='center', transform=ax2.transAxes)
+        
     return I_mean, I_med, I_std, 0
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=12, wid=0.5, return_full=False, verbose=True):
+                        R=12, wid=1, return_full=False,
+                        display=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
     
@@ -525,7 +548,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         res_thumb[num] = {"image":img, "mask":ma, "bkg":bkg, "center":cen}
         
         # Measure the mean, med and std of intensity at R
-        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R, wid=wid)
+        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R, wid=wid, display=display)
         
         if (Iflag==1) & verbose: print ("Errorenous measurement: #", num)
         
@@ -538,10 +561,10 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 
 def measure_Rnorm_all(table, image_bound,
                       wcs_data, image, seg_map=None, 
-                      r_scale=12, width=0.5, mag_thre=15,
+                      r_scale=12, width=1, mag_thre=15,
                       mag_name='rmag_PS', read=False,
-                      save=True, obj_name="",
-                      dir_name='.', verbose=True):
+                      obj_name="", save=True, dir_name='.',
+                      display=False, verbose=True):
     """
     Measure normalization at r_scale for bright stars in table.
     If seg_map is not given, source detection will be run.
@@ -583,7 +606,8 @@ def measure_Rnorm_all(table, image_bound,
     else:
         tab = table[table[mag_name]<mag_thre]
         res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                   R=r_scale, wid=width, return_full=True, verbose=verbose)
+                                                   R=r_scale, wid=width,
+                                                   return_full=True, display=display, verbose=verbose)
         
         
         keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', mag_name] \
@@ -653,7 +677,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
         return cat[crop]
 
 def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
-               sub_bounds=None, origin=0, color="w", draw=False):
+               sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
     from matplotlib import patches  
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -1614,6 +1638,7 @@ def make_psf_from_fit(fit_res, psf, image_size=600, n_out=4, theta_out=1200, n_s
     _, _ = psf_fit.generate_aureole(psf_range=image_size)
     
     return psf_fit, params
+
 
 def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
 #     uncertainty = 10**params[-1]

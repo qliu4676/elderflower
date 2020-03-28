@@ -36,6 +36,8 @@ from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 from astropy.stats import mad_std
 
+from photutils import CircularAperture
+
 
 ### Plotting Helpers ###
 
@@ -101,7 +103,6 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     """ Visualize mask map """
     
     from matplotlib import patches
-    from photutils import CircularAperture
     
     mu = np.nanmedian(image)
     std = mad_std(image)
@@ -165,7 +166,6 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     """ Visualize mask map w/ strips """
     
     from matplotlib import patches
-    from photutils import CircularAperture
     
     star_pos_A = stars.star_pos_verybright + pad
     star_pos_B = stars.star_pos_medbright + pad

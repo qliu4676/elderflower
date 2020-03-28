@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 def Match_Mask_Measure(hdu_path, image_bounds,
-                       seg_map, SE_catalog,
+                       SE_segmap, SE_catalog,
                        weight_map=None,
                        obj_name='', band="G",
                        pixel_scale=2.5,
@@ -42,7 +42,11 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         wcs_data = wcs.WCS(header)
 
     # Read output from create_photometric_light_APASS 
-    seg_map = fits.getdata(seg_map)
+    if os.path.isfile(SE_segmap):
+        seg_map = fits.getdata(SE_segmap)
+    else:
+        seg_map = None
+        
     SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
     
     if weight_map is not None:
@@ -57,7 +61,10 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         ZP = find_keyword_header(header, "ZP")
     
     # Estimate of background fluctuation (just for plot)
-    std = mad_std(data[(seg_map==0) & (weight_edge>0.5)]) 
+    if seg_map is not None:
+        std = mad_std(data[(seg_map==0) & (weight_edge>0.5)]) 
+    else:
+        std = mad_std(data)
    
     # Short summary
     print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
