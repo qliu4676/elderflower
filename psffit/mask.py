@@ -20,6 +20,8 @@ class Mask:
         self.Image = Image
         self.stars = stars
         self.image0 = Image.image0
+        self.shape = Image.image0.shape
+        self.pixel_scale = Image.pixel_scale
         
         self.image_bounds0 = Image.image_bounds0
         self.image_size = Image.image_size
@@ -60,6 +62,69 @@ class Mask:
         image_size, pad = self.image_size, self.pad
         return self.seg_deep0[pad:image_size+pad, pad:image_size+pad]
     
+    @property
+    def mask_comb(self):
+        image_size, pad = self.image_size, self.pad
+        return self.mask_comb0[pad:image_size+pad, pad:image_size+pad]
+    
+    @property
+    def seg_comb(self):
+        image_size, pad = self.image_size, self.pad
+        return self.seg_comb0[pad:image_size+pad, pad:image_size+pad]
+    
+    
+    def make_mask_object(self, obj_name='', k=3):
+        """ Make mask of objects w/ ellip apertures given shape parameters 
+        Parameters
+        ----------
+        obj_name : object name
+        k : float, enlargement factor
+        
+        Notes
+        -----
+        if {obj_name}_maskobj.fits exists, use as mask
+        otherwise find {obj_name}_shape.txt and make new masl
+        the txt should record following parameters in rows:
+            pos : turple or array or turples
+                position(s) (x,y) of apertures
+            a_ang : float or 1d array
+                semi-major axis length(s) in arcsec
+            b_ang : float or 1d array
+                semi-minor axis length(s) in arcsec
+            PA_ang : float or 1d array
+                patch angle (ccw from north) in degree
+
+        """
+        
+        file_obj = '%s_maskobj.fits'%obj_name
+        
+        if os.path.isfile(file_obj):
+            print("Read mask map of objects: ",
+                  os.path.abspath(file_obj))
+            self.mask_obj0 = fits.getdata(file_obj).astype(bool)
+            
+        else:
+            file_obj = '%s_shape.txt'%obj_name
+            print("Read shape parameters of objects: ",
+                  os.path.abspath(file_obj))
+        
+            if os.path.isfile(file_obj):
+
+                # read shape parameters from file
+                par = np.atleast_2d(np.loadtxt(file_obj_pars))
+
+                pos = par[:,:1]
+                a_ang, b_ang, PA_ang = par[:,2], par[:,3], par[:,4]
+
+                # make mask map
+                mask_obj0 = make_mask_aperture(pos, a_ang, b_ang, 
+                                               PA_ang, self.shape,
+                                               k, self.pixel_scale)
+
+                self.mask_obj0 = mask_obj0
+
+            else:
+                self.mask_obj0 = np.zeros_like(shape)
         
     def make_mask_map_deep(self, dir_measure=None, by='radius', 
                            r_core=None, r_out=None, count=None,
@@ -113,6 +178,12 @@ class Mask:
                                                    by=by, pad=pad, seg_base=seg_base0,
                                                    r_core=r_core, r_out=r_out, count=count, 
                                                    n_bright=stars.n_bright, *args, **kwargs)
+        
+        # combine with object mask
+        mask_obj0 = self.mask_obj0
+        mask_deep0 = mask_deep0 & mask_obj0
+        seg_deep0[mask_obj0] = seg_deep0.max() + 1
+        
         self.mask_deep0 = mask_deep0
         self.seg_deep0 = seg_deep0
             
@@ -127,11 +198,11 @@ class Mask:
                           vmin=self.bkg, save=save, save_dir=save_dir)
             
             
-    def make_mask_strip(self, n_strip=48,
-                        wid_strip=16, dist_strip=600,
-                        wid_cross=10, dist_cross=72,
-                        clean=True, draw=True, 
-                        save=False, save_dir='.'):
+    def make_mask_advanced(self, n_strip=48,
+                           wid_strip=16, dist_strip=600,
+                           wid_cross=10, dist_cross=72,
+                           clean=True, draw=True, 
+                           save=False, save_dir='.'):
         
         """
         Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
@@ -167,18 +238,19 @@ class Mask:
                                                       wid_strip=wid_strip, dist_strip=dist_strip,
                                                       wid_cross=wid_cross, dist_cross=dist_cross)
 
+        # combine strips
         mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
         mask_cross_all = ~np.logical_or.reduce(mask_cross_s)
         
         seg_deep0 = self.seg_deep0
         
+        # combine deep, crosses and strips
         seg_comb0 = seg_deep0.copy()
         ma_extra = (mask_strip_all|~mask_cross_all) & (seg_deep0==0)
         seg_comb0[ma_extra] = seg_deep0.max()-2
         mask_comb0 = (seg_comb0!=0)
         
-        self.mask_comb = mask_comb0[pad:image_size+pad, pad:image_size+pad]
-        self.seg_comb = seg_comb0[pad:image_size+pad, pad:image_size+pad]
+        # assign attribute
         self.mask_comb0 = mask_comb0
         self.seg_comb0 = seg_comb0
         
@@ -207,7 +279,10 @@ class Mask:
                                 ma_example=[mask_strip_s[0], mask_cross_s[0]],
                                 vmin=self.bkg, save=save, save_dir=save_dir)
             
-def make_mask_map(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
+            
+# Make mask maps
+
+def make_mask_detection(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
     """ Make mask map with S/N > sn_thre """
     from photutils import detect_sources, deblend_sources
     from skimage import morphology
@@ -227,6 +302,62 @@ def make_mask_map(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
     
     return mask_deep, segmap
 
+
+def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
+                       k=3, pixel_scale=2.5):
+    
+    """ Make mask map with elliptical apertures.
+    
+    Parameters
+    ----------
+    Pos : turple or array or turples
+        position(s) (x,y) of apertures
+    A_ang : float or 1d array
+        semi-major axis length(s) in arcsec
+    B_ang : float or 1d array
+        semi-minor axis length(s) in arcsec
+    PA_ang : float or 1d array
+        patch angle (counter-clockwise from north) in degree
+    shape : image shape
+    k : float, enlargement factor
+    pixel_scale : pixel scale in arcsec/pixel
+    
+    Returns
+    ----------
+    mask : 2d array mask map (masked area = 1)
+    
+    """
+    
+    from photutils import EllipticalAperture
+    
+    mask = np.zeros(shape, dtype=bool)
+    
+    # shape properties of apertures
+    aper_props = np.atleast_2d(np.array([Pos, A_ang, B_ang, PA_ang]).T)
+    
+    for pos, a_ang, b_ang, pa_ang in aper_props:
+        
+        # convert angular to pixel unit
+        a_pix = a_ang / pixel_scale
+        b_pix = b_ang / pixel_scale
+
+        # correct PA to theta in photutils (from +x axis)
+        theta =  np.mod(pa_ang+90, 360) * np.pi/180
+
+        pos = (shape[1]-1)/2., (shape[0]-1)/2.
+
+        # make elliptical aperture
+        aper = EllipticalAperture(pos, k*a_pix, k*b_pix, theta)
+
+        # convert aperture to mask
+        ma_aper = aper.to_mask(method='center')
+        ma = ma_aper.to_image(shape).astype(bool)
+        
+        mask[ma] = Trye
+    
+    return mask
+
+
 def make_mask_map_core(image, star_pos, r_core=12):
     """ Make stars out to r_core """
 
@@ -243,6 +374,7 @@ def make_mask_map_core(image, star_pos, r_core=12):
     segmap = mask_deep.astype(int).copy()
     
     return mask_deep, segmap
+
 
 def make_mask_map_dual(image, stars,
                        xx=None, yy=None, by='radius', 
@@ -354,6 +486,7 @@ def make_mask_map_dual(image, stars,
     mask_deep = (segmap!=0)
     
     return mask_deep, segmap
+
 
 def make_mask_strip(stars, xx, yy, pad=0, n_strip=24,
                     wid_strip=16, dist_strip=500,

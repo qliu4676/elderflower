@@ -1262,7 +1262,11 @@ def C_mpow1Dto2D(n_s, theta_s):
 
 def get_center_offset(pos):
 # Shift center for the purpose of accuracy (by default galsim round to integer!)
+    # original
     x_pos, y_pos = pos + 1
+    # test on Mar 28
+    x_pos, y_pos = pos
+    
     x_nominal = x_pos + 0.5
     y_nominal = y_pos + 0.5
     ix_nominal = int(math.floor(x_nominal+0.5))

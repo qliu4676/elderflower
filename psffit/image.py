@@ -104,13 +104,13 @@ class Image(ImageButler):
         
         patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
         
-        self.image_size = (patch_Xmax0 - patch_Xmin0) - 2 * pad
+        self.image_size = min((patch_Xmax0 - patch_Xmin0) - 2 * pad, (patch_Ymax0 - patch_Ymin0) - 2 * pad)
         
         # Crop image
         self.image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
                              patch_Xmax0-pad, patch_Ymax0-pad)
 
-        self.image0 = crop_image(self.full_image, image_bounds0, draw=False)
+        self.image0 = crop_image(self.full_image, image_bounds0, origin=0, draw=False)
         
         # Cutout of data
         self.image = self.image0[pad:self.image_size-pad,
@@ -227,6 +227,12 @@ class ImageList(ImageButler):
         for Image, stars in zip(self.Images,
                                 stars_list):
             mask = Mask(Image, stars)
+            
+            # Mask objects by given shape parameters
+            mask.make_mask_object(self.obj_name)
+            mask.mask_obj0 = crop_image(mask.mask_obj0,
+                                        Image.image_bounds0,
+                                        origin=0, draw=False)
 
             # Primary SN threshold mask
             mask.make_mask_map_deep(dir_measure, by,
@@ -240,9 +246,10 @@ class ImageList(ImageButler):
                 if dist_strip is None:
                     dist_strip = Image.image_size    
                     
-                mask.make_mask_strip(n_strip, wid_strip, dist_strip,
-                                     wid_cross, dist_cross, clean=clean,
-                                     draw=draw, save=save, save_dir=save_dir)
+                mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
+                                        wid_cross, dist_cross, 
+                                        clean=clean, draw=draw,
+                                        save=save, save_dir=save_dir)
 
             masks += [mask]
                 

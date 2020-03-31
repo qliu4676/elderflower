@@ -496,17 +496,23 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
     if vmax is None:
         vmax = vmin + 150
         
-    if norm is None: norm = LogNorm()
+    if norm is None:
+        norm1 = LogNorm()
+        norm2 = LogNorm()
+    else:
+        from copy import deepcopy
+        norm1 = norm
+        norm2 = deepcopy(norm1)
     
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
     
-    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)    
+    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)    
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=50, norm=AsinhNorm(a=0.1), cmap=cmap)    
+    im = ax3.imshow(image_star, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-data)/data
@@ -520,11 +526,11 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
 #     ax4.set_title("Chi. [(I$_f$ - I$_0$)/$\sigma_0$]", fontsize=15); colorbar(im)
     
     residual = (data-image_star)
-    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
+    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     
     residual[mask_fit] = 0
-    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=LogNorm(), cmap=cmap)
+    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
     ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
     
     if r_core is not None:

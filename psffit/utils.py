@@ -198,7 +198,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     if back is None:     
         back = np.ones_like(img) * sky_mean
     if cen is None:
-        cen = (img.shape[0]-1)/2., (img.shape[1]-1)/2.
+        cen = (img.shape[1]-1)/2., (img.shape[0]-1)/2.
         
     yy, xx = np.indices((img.shape))
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)

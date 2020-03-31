@@ -86,8 +86,9 @@ def Match_Mask_Measure(hdu_path, image_bounds,
     [print("%r"%b) for b in image_bounds.tolist()]
     
     # Display field_bounds and sub-regions to be matched
-    _, _ = crop_image(data, field_bounds, seg_map,
-                      weight_map=weight_edge, sub_bounds=image_bounds, draw=draw)
+    patch, seg_patch = crop_image(data, field_bounds, seg_map,
+                      weight_map=weight_edge, sub_bounds=image_bounds, origin=0, draw=draw)
+    
 
     ##################################################
     # Crossmatch with Star Catalog (across the field)
@@ -371,7 +372,7 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
         ds.calculate_reduced_chi2()
 
         # Draw 2D compaison
-        ds.draw_comparison_2D(r_core=r_core, norm=AsinhNorm(),
+        ds.draw_comparison_2D(r_core=r_core, norm=AsinhNorm(a=0.01),
                               vmin=DF_Images.bkg-2, vmax=DF_Images.bkg+50, 
                               save=save, save_dir=dir_name, suffix='_'+method)
 
