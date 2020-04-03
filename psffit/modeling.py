@@ -1807,7 +1807,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         return prior_tf_mof
     
     else:
-        Prior_n = stats.truncnorm(a=-2, b=2., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
+        Prior_n = stats.truncnorm(a=-3, b=3., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
         Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
         
         if n_spline == 1:
@@ -1828,7 +1828,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                 v = u.copy()
     #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
                 v[0] = Prior_n.ppf(u[0])    # n0 : N (n +/- d_n0)
-                v[1] = u[1] * (v[0]- 0.5 - n_min) + n_min        # n1 : n_min - n0-0.5
+                v[1] = u[1] * (v[0]- d_n0 - n_min) + n_min        # n1 : n_min - (n0-d_n0)
                 v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
 
                 v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu

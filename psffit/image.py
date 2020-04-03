@@ -37,7 +37,8 @@ class ImageButler:
         """
         
         self.verbose = verbose
-        self.obj_name=obj_name
+        self.obj_name = obj_name
+        self.band = band
         self.pixel_scale = pixel_scale
         self.pad = pad
         
@@ -229,7 +230,8 @@ class ImageList(ImageButler):
             mask = Mask(Image, stars)
             
             # Mask objects by given shape parameters
-            mask.make_mask_object(self.obj_name)
+            obj_b_name = self.obj_name+'-'+self.band.lower()
+            mask.make_mask_object(obj_b_name)
             mask.mask_obj0 = crop_image(mask.mask_obj0,
                                         Image.image_bounds0,
                                         origin=0, draw=False)
@@ -238,6 +240,7 @@ class ImageList(ImageButler):
             mask.make_mask_map_deep(dir_measure, by,
                                     r_core, r_out, count,
                                     obj_name=self.obj_name,
+                                    band=self.band, 
                                     draw=draw, save=save, save_dir=save_dir)
             
             if stars.n_verybright > 0:

@@ -27,8 +27,8 @@ rcParams.update({'ytick.major.width': '1.'})
 rcParams.update({'ytick.minor.pad': '5.0'})
 rcParams.update({'ytick.minor.size': '4'})
 rcParams.update({'ytick.minor.width': '0.8'})
-rcParams.update({'axes.labelsize': 14})
-rcParams.update({'font.size': 14})
+rcParams.update({'axes.labelsize': 16})
+rcParams.update({'font.size': 16})
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 

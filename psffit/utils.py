@@ -1148,8 +1148,10 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
             # Clean duplicate items in the catalog
             c_bright = SkyCoord(tab_match_bright['X_WORLD'],
                                 tab_match_bright['Y_WORLD'], unit=u.deg)
-            c_catalog = SkyCoord(Cat_crop['raMean'], Cat_crop['decMean'], unit=u.deg)
-            idxc, idxcatalog, d2d, d3d = c_catalog.search_around_sky(c_bright, sep)
+            c_catalog = SkyCoord(Cat_crop['raMean'],
+                                 Cat_crop['decMean'], unit=u.deg)
+            idxc, idxcatalog, d2d, d3d = \
+                        c_catalog.search_around_sky(c_bright, sep)
             inds_c, counts = np.unique(idxc, return_counts=True)
             
             row_duplicate = np.array([], dtype=int)
@@ -1157,15 +1159,24 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
             # Use the measurement following some criteria
             for i in inds_c[counts>1]:
                 obj_dup = Cat_crop[idxcatalog][idxc==i]
-#                 obj_dup.pprint(max_lines=-1, max_width=-1)
+                obj_dup['sep'] = d2d[idxc==i]
+                #obj_dup.pprint(max_lines=-1, max_width=-1)
                 
-                # Coordinate error of detection
-                err2_coord = obj_dup["raMeanErr"]**2 + \
-                            obj_dup["decMeanErr"]**2
+                # Use the detection with mag
+                mag_obj_dup = obj_dup[mag_name]
+                obj_dup = obj_dup[~np.isnan(mag_obj_dup)]
+                                
+                # Use the closest match
+                good = (obj_dup['sep'] == min(obj_dup['sep']))
                 
-                # Use the detection with the best astrometry
-                min_e2_coord = np.nanmin(err2_coord)
-                good = (err2_coord == min_e2_coord)
+### Extra Criteria             
+#                 # Coordinate error of detection
+#                 err2_coord = obj_dup["raMeanErr"]**2 + \
+#                             obj_dup["decMeanErr"]**2
+                
+#                 # Use the detection with the best astrometry
+#                 min_e2_coord = np.nanmin(err2_coord)
+#                 good = (err2_coord == min_e2_coord)
                 
 #                 # Use the detection with PSF mag err
 #                 has_err_mag = obj_dup[mag_name+'Err'] > 0   
@@ -1177,7 +1188,8 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
 #                 # Use photometry not from tycho in measurement
 #                 use_tycho_phot =  extract_bool_bitflags(obj_dup[band+'Flags'], 7)
                 
-#                 good = has_err_mag & has_n_det & (~use_tycho_phot)  
+#                 good = has_err_mag & has_n_det & (~use_tycho_phot)
+###
                     
                 # Add rows to be removed
                 for ID in obj_dup[~good]['ID'+'_'+c_name]:

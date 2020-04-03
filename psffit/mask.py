@@ -73,7 +73,8 @@ class Mask:
         return self.seg_comb0[pad:image_size+pad, pad:image_size+pad]
     
     
-    def make_mask_object(self, obj_name='', k=3):
+    def make_mask_object(self, obj_name='',
+                         band='', k=3):
         """ Make mask of objects w/ ellip apertures given shape parameters 
         Parameters
         ----------
@@ -101,6 +102,7 @@ class Mask:
         if os.path.isfile(file_obj):
             print("Read mask map of objects: ",
                   os.path.abspath(file_obj))
+            # read existed mask map
             self.mask_obj0 = fits.getdata(file_obj).astype(bool)
             
         else:
@@ -116,7 +118,7 @@ class Mask:
                 pos = par[:,:1]
                 a_ang, b_ang, PA_ang = par[:,2], par[:,3], par[:,4]
 
-                # make mask map
+                # make mask map with parameters
                 mask_obj0 = make_mask_aperture(pos, a_ang, b_ang, 
                                                PA_ang, self.shape,
                                                k, self.pixel_scale)
@@ -124,7 +126,8 @@ class Mask:
                 self.mask_obj0 = mask_obj0
 
             else:
-                self.mask_obj0 = np.zeros_like(shape)
+                # no mask
+                self.mask_obj0 = np.zeros_like(self.shape)
         
     def make_mask_map_deep(self, dir_measure=None, by='radius', 
                            r_core=None, r_out=None, count=None,
@@ -330,7 +333,7 @@ def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
     
     from photutils import EllipticalAperture
     
-    mask = np.zeros(shape, dtype=bool)
+    mask = np.zeros(shape)
     
     # shape properties of apertures
     aper_props = np.atleast_2d(np.array([Pos, A_ang, B_ang, PA_ang]).T)
@@ -353,7 +356,7 @@ def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
         ma_aper = aper.to_mask(method='center')
         ma = ma_aper.to_image(shape).astype(bool)
         
-        mask[ma] = Trye
+        mask[ma] = 1.0
     
     return mask
 
