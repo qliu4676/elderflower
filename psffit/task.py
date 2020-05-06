@@ -102,8 +102,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
     if use_PS1_DR2:
         # Give 3 attempts in matching PS1 DR2 via MAST.
         # This could fail if the FoV is too large.
-        n_attempts = 0
-        while n_attempts < 3:
+        for attempt in range(3):
             try:
                 tab_target, tab_target_full, catalog_star = \
                             cross_match_PS1_DR2(wcs_data,
@@ -111,13 +110,11 @@ def Match_Mask_Measure(hdu_path, image_bounds,
                                                 image_bounds,
                                                 mag_thre=mag_thre,
                                                 band=b_name) 
-                break
-                
             except HTTPError:
-                attempts += 1
                 print('Gateway Time-out. Try Again.')
-                
-        if n_attempts>=3:
+            else:
+                break
+        else:
             sys.exit('504 Server Error: 3 Failed Attempts. Exit.')
             
     else:

@@ -1299,6 +1299,7 @@ def get_stamp_bounds(k, star_pos, Flux, psf_star, psf_size, full_image, pixel_sc
     
     return stamp, bounds
 
+
 ############################################
 # Functions for making mock images
 ############################################

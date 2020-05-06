@@ -71,9 +71,6 @@ def counter(i, number):
     if np.mod((i+1), number//4) == 0:
         print("completed: %d/%d"%(i+1, number))
 
-# deprecated
-def round_good_fft0(x):
-    return min(2**math.ceil(math.log2(x)), 3 * 2**math.floor(math.log2(x)-1))
 
 def round_good_fft(x):
     # Rounded PSF size to 2^k or 3*2^k
