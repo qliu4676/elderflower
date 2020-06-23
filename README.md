@@ -1,6 +1,6 @@
-# Minister
+# ELDERFLOWER
 
-**M**odelling W**I**de-A**N**gle Po**I**nt **S**pread Func**T**ion in Low Surfac**E** B**R**ightness
+Mod**E**lLing Wi**DE** Sp**R**ead **F**unction in **LOW** Surfac**E** B**R**ightnes
 
 A Wide-Angle PSF Modeling tool for low-surface brightness imaging with Dragonfly that utilizes [Galsim](https://github.com/GalSim-developers/GalSim) and [Dynesty](https://github.com/joshspeagle/dynesty).
 
@@ -8,7 +8,7 @@ A Wide-Angle PSF Modeling tool for low-surface brightness imaging with Dragonfly
 ---
 ```bash
   cd <install directory>
-  git clone https://github.com/NGC4676/minister.git
+  git clone https://github.com/NGC4676/elderflower.git
   cd minister
   pip install -e .
   ```
