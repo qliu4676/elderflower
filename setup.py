@@ -17,21 +17,21 @@ install_requires = []
 
 setup(
 
-    name='psffit', 
+    name='elderflower', 
 
     version='0.1.0',  
 
-    description='2D PSF Modeling', 
+    description='Wide-angle PSF modeling for low surface brightness imaging', 
 
     long_description=long_description,
 
-    url='https://github.com/NGC4676/PSF_Modeling', 
+    url='https://github.com/NGC4676/elderflower', 
 
     author='Qing Liu',  
 
     author_email='qliu@astro.utoronto.ca',  
 
-    keywords='astronomy PSF Bayesian fitting',
+    keywords='astronomy PSF fitting LSB',
 
     packages=find_packages(),
 
