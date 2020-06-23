@@ -1,0 +1,26 @@
+Metadata-Version: 1.2
+Name: elderflower
+Version: 0.1.0
+Summary: Wide-angle PSF modeling for low surface brightness imaging
+Home-page: https://github.com/NGC4676/elderflower
+Author: Qing Liu
+Author-email: qliu@astro.utoronto.ca
+License: UNKNOWN
+Description: # elderflower
+        
+        **ELDERFLOWER** (Mod**E**l**L**ing Wi**DE** Sp**R**ead **F**unction in **LOW** Surfac**E** B**R**ightnes)
+        
+        A Wide-Angle PSF Modeling tool for low-surface brightness imaging with Dragonfly that utilizes [Galsim](https://github.com/GalSim-developers/GalSim) and [Dynesty](https://github.com/joshspeagle/dynesty).
+        
+        ### Installation
+        ---
+        ```bash
+          cd <install directory>
+          git clone https://github.com/NGC4676/elderflower.git
+          cd minister
+          pip install -e .
+          ```
+        
+Keywords: astronomy PSF fitting LSB
+Platform: UNKNOWN
+Requires-Python: >=3.5
