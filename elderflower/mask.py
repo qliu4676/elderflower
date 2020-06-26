@@ -23,7 +23,7 @@ class Mask:
         self.shape = Image.image0.shape
         self.pixel_scale = Image.pixel_scale
         
-        self.image_bounds0 = Image.image_bounds0
+        self.bounds0 = Image.bounds0
         self.image_size = Image.image_size
         self.pad = Image.pad
         
@@ -103,15 +103,14 @@ class Mask:
             print("Read mask map of objects: ",
                   os.path.abspath(file_obj))
             # read existed mask map
-            self.mask_obj0 = fits.getdata(file_obj).astype(bool)
+            self.mask_obj_field = fits.getdata(file_obj).astype(bool)
             
         else:
             file_obj = '%s_shape.txt'%obj_name
-            print("Read shape parameters of objects: ",
-                  os.path.abspath(file_obj))
-        
+            
             if os.path.isfile(file_obj):
-
+                print("Read shape parameters of objects: ",
+                os.path.abspath(file_obj))
                 # read shape parameters from file
                 par = np.atleast_2d(np.loadtxt(file_obj_pars))
 
@@ -119,15 +118,10 @@ class Mask:
                 a_ang, b_ang, PA_ang = par[:,2], par[:,3], par[:,4]
 
                 # make mask map with parameters
-                mask_obj0 = make_mask_aperture(pos, a_ang, b_ang, 
-                                               PA_ang, self.shape,
-                                               k, self.pixel_scale)
-
-                self.mask_obj0 = mask_obj0
-
-            else:
-                # no mask
-                self.mask_obj0 = np.zeros_like(self.shape)
+                self.mask_obj_field = make_mask_aperture(pos, a_ang, b_ang,
+                                                        PA_ang, self.shape,
+                                                        k, self.pixel_scale)
+                
         
     def make_mask_map_deep(self, dir_measure=None, by='radius', 
                            r_core=None, r_out=None, count=None,
@@ -160,7 +154,7 @@ class Mask:
         mag_name = band.lower() + 'mag'
         
         if dir_measure is not None:
-            patch_Xmin0, patch_Ymin0, _, _ = self.image_bounds0
+            patch_Xmin0, patch_Ymin0, _, _ = self.bounds0
             fname_seg_base = os.path.join(dir_measure,
                                           "%s-segm_%s_catalog_X%dY%d.fits"%(obj_name, mag_name, patch_Xmin0, patch_Ymin0))
             print("Read mask map built from catalog: ", fname_seg_base)
@@ -209,7 +203,7 @@ class Mask:
         
         """
         Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
-        Note: make_mask_map_deep() should be run first.
+        Note: make_mask_map_deep() need to be run first.
         
         Parameters
         ----------

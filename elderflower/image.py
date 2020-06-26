@@ -73,7 +73,7 @@ class ImageButler:
 class Image(ImageButler):
     """ A Image Class """
         
-    def __init__(self, hdu_path, image_bounds0,
+    def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=2.5,
                  ZP=None, pad=100, verbose=True):
         """ 
@@ -83,7 +83,7 @@ class Image(ImageButler):
         
         hdu_path : str
             path of hdu data
-        image_bounds0 : list [X min, Y min, X max, Y max]
+        bounds0 : list [X min, Y min, X max, Y max]
             boundary of region to be fit
         obj_name : str
             object name
@@ -101,33 +101,35 @@ class Image(ImageButler):
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, ZP, pad, verbose)
         
-        self.image_bounds0 = image_bounds0
+        self.bounds0 = bounds0
         
-        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
+        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
         
-        self.image_size = min((patch_Xmax0 - patch_Xmin0) - 2 * pad, (patch_Ymax0 - patch_Ymin0) - 2 * pad)
+        self.image_size0 = min((patch_Xmax0 - patch_Xmin0), (patch_Ymax0 - patch_Ymin0))
+        self.image_size0 = image_size0
+        self.image_size = self.image_size0 - 2 * pad
         
         # Crop image
-        self.image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
-                             patch_Xmax0-pad, patch_Ymax0-pad)
+        self.bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
+                        patch_Xmax0-pad, patch_Ymax0-pad)
 
-        self.image0 = crop_image(self.full_image, image_bounds0, origin=0, draw=False)
+        self.image0 = crop_image(self.full_image, bounds0, origin=0, draw=False)
         
         # Cutout of data
-        self.image = self.image0[pad:self.image_size-pad,
-                                 pad:self.image_size-pad]
+        self.image = self.image0[pad:image_size0-pad,
+                                 pad:image_size0-pad]
         
     def __str__(self):
         return "An Image Class"
 
     def __repr__(self):
-        return ''.join([f"{self.__class__.__name__}", str(self.image_bounds0)])
+        return ''.join([f"{self.__class__.__name__}", str(self.bounds0)])
         
         
 class ImageList(ImageButler):
     """ A ImageList Class """
     
-    def __init__(self, hdu_path, image_bounds0_list,
+    def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=2.5,
                  ZP=None, pad=100, verbose=False):
         
@@ -138,7 +140,7 @@ class ImageList(ImageButler):
     
         hdu_path : str
             path of hdu data
-        image_bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
+        bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
             list of boundaries of regions to be fit (Nx4)
         obj_name : str
             object name
@@ -156,10 +158,10 @@ class ImageList(ImageButler):
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, ZP, pad, verbose)
         
-        self.Images = [Image(hdu_path, image_bounds0,
+        self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
                              ZP, pad, verbose)
-                       for image_bounds0 in np.atleast_2d(image_bounds0_list)]
+                       for bounds0 in np.atleast_2d(bounds0_list)]
         self.N_Image = len(self.Images)
     
     
@@ -229,12 +231,17 @@ class ImageList(ImageButler):
                                 stars_list):
             mask = Mask(Image, stars)
             
-            # Mask objects by given shape parameters
+            # Mask the main object by given shape parameters or read a map
             obj_b_name = self.obj_name+'-'+self.band.lower()
             mask.make_mask_object(obj_b_name)
-            mask.mask_obj0 = crop_image(mask.mask_obj0,
-                                        Image.image_bounds0,
-                                        origin=0, draw=False)
+            
+            # crop the full mask map into smaller one
+            if hasattr(mask, 'mask_obj_field'):
+                mask.mask_obj0 = crop_image(mask.mask_obj_field,
+                                            Image.bounds0,
+                                            origin=0, draw=False)
+            else:
+                mask.mask_obj0 = np.zeros(mask.shape, dtype=bool)
 
             # Primary SN threshold mask
             mask.make_mask_map_deep(dir_measure, by,

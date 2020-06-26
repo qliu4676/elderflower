@@ -5,7 +5,7 @@ import sys
 import numpy as np
 from urllib.error import HTTPError
 
-def Match_Mask_Measure(hdu_path, image_bounds,
+def Match_Mask_Measure(hdu_path, bounds_list,
                        SE_segmap, SE_catalog,
                        weight_map=None,
                        obj_name='', band="G",
@@ -20,7 +20,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
             as normalization of fitting\n"""%(r_scale, mag_thre))
     
     b_name = band.lower()
-    image_bounds = np.atleast_2d(image_bounds)
+    bounds_list = np.atleast_2d(bounds_list)
     
     ##################################################
     # Read and Display
@@ -84,12 +84,12 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         print("Match field %r with catalog\n"%field_bounds)
     
     print("Measure Sky Patch (X min, Y min, X max, Y max) :")
-    [print("%r"%b) for b in image_bounds.tolist()]
+    [print("%r"%b) for b in bounds_list.tolist()]
     
     # Display field_bounds and sub-regions to be matched
     patch, seg_patch = crop_image(data, field_bounds, seg_map,
                                   weight_map=weight_edge,
-                                  sub_bounds=image_bounds,
+                                  sub_bounds=bounds_list,
                                   origin=0, draw=draw)
     
 
@@ -108,7 +108,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
                 tab_target, tab_target_full, catalog_star = \
                             cross_match_PS1_DR2(wcs_data,
                                                 SE_cat_full,
-                                                image_bounds,
+                                                bounds_list,
                                                 mag_thre=mag_thre,
                                                 band=b_name) 
             except HTTPError:
@@ -172,27 +172,27 @@ def Match_Mask_Measure(hdu_path, image_bounds,
                                              mag_range=[13,22], K=2.5,
                                              degree=3, draw=draw)
     
-    for image_bound in image_bounds:
+    for bounds in bounds_list:
         
         # Crop the star catalog and matched SE catalog
-        patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = image_bound
+        patch_Xmin, patch_Ymin, patch_Xmax, patch_Ymax = bounds
                                          
         # Catalog bound slightly wider than the region
-        cat_bound = (patch_Xmin-50, patch_Ymin-50,
+        cat_bounds = (patch_Xmin-50, patch_Ymin-50,
                      patch_Xmax+50, patch_Ymax+50)
 
-        catalog_star_patch = crop_catalog(catalog_star, cat_bound,
+        catalog_star_patch = crop_catalog(catalog_star, cat_bounds,
                                           sortby=mag_name,
                                           keys=("X_IMAGE"+'_PS',
                                                 "Y_IMAGE"+'_PS'))
         
-        tab_target_patch = crop_catalog(tab_target, cat_bound,
+        tab_target_patch = crop_catalog(tab_target, cat_bounds,
                                         sortby=mag_name_cat,
                                         keys=("X_IMAGE", "Y_IMAGE"))
 
         # Make segmentation map from catalog based on SE seg map of one band
         seg_map_cat = make_segm_from_catalog(catalog_star_patch,
-                                             image_bound,
+                                             bounds,
                                              estimate_radius,
                                              mag_name=mag_name,
                                              cat_name='PS',
@@ -203,10 +203,10 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         # Measure average intensity (source+background) at e_scale
         print("""Measure intensity at R = %d
                 for catalog stars %s < %.1f in %r:"""\
-              %(r_scale, mag_name, mag_thre, image_bound))
+              %(r_scale, mag_name, mag_thre, bounds))
         
         tab_res_Rnorm, res_thumb = \
-                measure_Rnorm_all(tab_target_patch, image_bound,
+                measure_Rnorm_all(tab_target_patch, bounds,
                                   wcs_data, data, seg_map,
                                   mag_thre=mag_thre,
                                   r_scale=r_scale, width=1, 
@@ -221,7 +221,7 @@ def Match_Mask_Measure(hdu_path, image_bounds,
         
         
         
-def Run_PSF_Fitting(hdu_path, image_bounds0,
+def Run_PSF_Fitting(hdu_path, bounds0,
                     n_spline=2, obj_name='', band="G", 
                     pixel_scale=2.5, ZP=None, pad=100,  
                     r_scale=12, mag_threshold=[14,11], 
@@ -239,14 +239,14 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     # Read Image and Table
     ############################################
     from .image import ImageList
-    DF_Images = ImageList(hdu_path, image_bounds0,
+    DF_Images = ImageList(hdu_path, bounds0,
                           obj_name, band,
                           pixel_scale, ZP, pad)
     
     from .utils import read_measurement_tables
     tables_faint, tables_res_Rnorm = \
                 read_measurement_tables(dir_measure,
-                                        image_bounds0,
+                                        bounds0,
                                         obj_name=obj_name,
                                         band=band,
                                         pad=pad,
@@ -387,12 +387,12 @@ def Run_PSF_Fitting(hdu_path, image_bounds0,
     
 #         if save:
 #             fit_info = {'n_spline':n_spline, 'image_size':image_size,
-#                         'image_bounds0':image_bounds0, 'leg2d':leg2d,
+#                         'bounds0':bounds0, 'leg2d':leg2d,
 #                         'r_core':r_core, 'r_scale':r_scale}
 
 #             method = str(n_spline)+'p'
 #             fname='NGC5907-%s-fit_best_X%dY%d_%s'\
-#                         %(band, image_bounds0[0], image_bounds0[1], method)
+#                         %(band, bounds0[0], bounds0[1], method)
 #             if leg2d: fname+='l'
 #             if brightest_only: fname += 'b'
 

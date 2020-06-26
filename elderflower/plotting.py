@@ -77,7 +77,7 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args
     cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
     cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
     
-    cmap = cb.get_cmap()
+    cmap = cb.mappable.get_cmap()
     cmap.set_bad(color=color_nan, alpha=0.3)
     
     return cb

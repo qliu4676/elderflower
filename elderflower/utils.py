@@ -556,7 +556,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
     
     return res_Rnorm, res_thumb
 
-def measure_Rnorm_all(table, image_bound,
+def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
                       r_scale=12, width=1, mag_thre=15,
                       mag_name='rmag_PS', read=False,
@@ -569,7 +569,7 @@ def measure_Rnorm_all(table, image_bound,
     Parameters
     ----------
     table : table containing list of sources
-    image_bound : 1X4 1d array defining the bound of region
+    bounds : 1X4 1d array defining the bound of region
     wcs_data : wcs
     image : image data
     
@@ -590,7 +590,7 @@ def measure_Rnorm_all(table, image_bound,
         
     """
 
-    Xmin, Ymin = image_bound[:2]
+    Xmin, Ymin = bounds[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X%sY%s.txt'\
                                     %(obj_name, r_scale, mag_name[0], mag_thre, Xmin, Ymin))
@@ -780,7 +780,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def read_measurement_tables(dir_name, image_bounds0_list, 
+def read_measurement_tables(dir_name, bounds0_list,
                             obj_name='', band='G',
                             pad=100, r_scale=12, mag_limit=[15,23]):
     """ Read measurement tables from the directory """
@@ -792,11 +792,11 @@ def read_measurement_tables(dir_name, image_bounds0_list,
     tables_res_Rnorm = []
     tables_faint = []
     
-    for image_bounds0 in np.atleast_2d(image_bounds0_list):
+    for bounds0 in np.atleast_2d(bounds0_list):
         # Clipped bounds
-        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = image_bounds0
+        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
 
-        image_bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
+        bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
                         patch_Xmax0-pad, patch_Ymax0-pad)
 
         ## Read measurement for faint stars from catalog
@@ -814,7 +814,7 @@ def read_measurement_tables(dir_name, image_bounds0_list,
         table_faint = table_catalog[(mag_catalog>=mag_limit[0]) & (mag_catalog<mag_limit[1])]
         table_faint = crop_catalog(table_faint,
                                    keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
-                                   bounds=image_bounds)
+                                   bounds=bounds)
         tables_faint += [table_faint]  
         
         ## Read measurement for bright stars
@@ -829,7 +829,7 @@ def read_measurement_tables(dir_name, image_bounds0_list,
             sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
 
         # Crop the catalog
-        table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=image_bounds0)
+        table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=bounds0)
 
         # Do not use flagged measurement
         Iflag = table_res_Rnorm["Iflag"]
@@ -851,7 +851,7 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     sky_mean = Image.bkg
     image_size = Image.image_size
     
-    pos_ref = (Image.image_bounds[0], Image.image_bounds[1])
+    pos_ref = (Image.bounds[0], Image.bounds[1])
     
     try:
         ma = table_faint['FLUX_AUTO'].data.mask
@@ -1042,7 +1042,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     
     return tab_target, tab_target_all, Cat_crop
 
-def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
+def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
                         band='g', radius=None, clean_catalog=True,
                         pixel_scale=2.5, mag_thre=15, sep=2.5*u.arcsec,
                         verbose=True):
@@ -1056,7 +1056,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     
     SE_catalog : SE source catalog
     
-    image_bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
+    bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
     
     radius : radius (in astropy unit) of search to PS-1 catalog. 
             If not given, use the half diagonal length of the region.
@@ -1086,7 +1086,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     mag_name = band + 'MeanPSFMag'
     c_name = 'PS'
     
-    for j, bounds in enumerate(np.atleast_2d(image_bounds)):
+    for j, bounds in enumerate(np.atleast_2d(bounds)):
         cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
         coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
         ra, dec = coord_cen.ra.value, coord_cen.dec.value
@@ -1356,7 +1356,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     return estimate_radius
 
 
-def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
+def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                            mag_name='rmag', cat_name='PS', obj_name='', band='G',
                            draw=True, save=False, dir_name='./Measure'):
     """
@@ -1365,7 +1365,7 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
     Parameters
     ----------
     catalog_star : star catalog
-    image_bound : 1X4 1d array defining bounds of region
+    bounds : 1X4 1d array defining bounds of region
     estimate_radius : function of turning magnitude into log R
     
     mag_name : magnitude column name in catalog_star
@@ -1386,13 +1386,13 @@ def make_segm_from_catalog(catalog_star, image_bound, estimate_radius,
     print("\nMake segmentation map based on catalog %s %s: %d stars"%(cat_name, mag_name, len(catalog)))
     
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
-    Xmin, Ymin = image_bound[:2]
+    Xmin, Ymin = bounds[:2]
 
     apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
              for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
                                      catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
     
-    image_size = image_bound[2] - image_bound[0]
+    image_size = bounds[2] - bounds[0]
     seg_map_catalog = np.zeros((image_size, image_size))
     
     # Segmentation k sorted by mag of source catalog
