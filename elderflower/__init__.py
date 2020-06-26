@@ -12,7 +12,7 @@ from . import container
 
 from . import plotting
 from . import parallel
-from . import API_PS1_DR2
+from . import panstarrs
 
 
 __version__ = "0.0.1"

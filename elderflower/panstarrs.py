@@ -1,4 +1,7 @@
-### API From http://ps1images.stsci.edu/ps1_dr2_api.html
+"""
+API for querying PANSTARRS
+From http://ps1images.stsci.edu/ps1_dr2_api.html
+"""
 
 from astropy.io import ascii
 from astropy.table import Table

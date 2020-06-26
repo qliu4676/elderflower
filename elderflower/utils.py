@@ -1080,7 +1080,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, image_bounds,
     """
     from astropy.table import join, vstack
     from astropy.nddata.bitmask import interpret_bit_flags
-    from .API_PS1_DR2 import ps1cone
+    from .panstarrs import ps1cone
     
     band = band.lower()
     mag_name = band + 'MeanPSFMag'

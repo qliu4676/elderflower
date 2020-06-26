@@ -3,6 +3,7 @@
 import os
 import sys
 import numpy as np
+from urllib.error import HTTPError
 
 def Match_Mask_Measure(hdu_path, image_bounds,
                        SE_segmap, SE_catalog,
