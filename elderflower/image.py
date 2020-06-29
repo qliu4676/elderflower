@@ -105,9 +105,9 @@ class Image(ImageButler):
         
         patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
         
-        self.image_size0 = min((patch_Xmax0 - patch_Xmin0), (patch_Ymax0 - patch_Ymin0))
+        image_size0 = min((patch_Xmax0 - patch_Xmin0), (patch_Ymax0 - patch_Ymin0))
         self.image_size0 = image_size0
-        self.image_size = self.image_size0 - 2 * pad
+        self.image_size = image_size0 - 2 * pad
         
         # Crop image
         self.bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
