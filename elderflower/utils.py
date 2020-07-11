@@ -5,6 +5,7 @@ import math
 import time
 import numpy as np
 from scipy import stats
+from scipy.optimize import curve_fit
 
 import matplotlib.pyplot as plt
 
@@ -170,6 +171,59 @@ def source_detection(data, sn=2, b_size=120,
 
     return data_ma, segm_sm
 
+
+def flattened_linear(x, k, x0, y0):
+    """ A linear function flattened at (x0,y0) of 1d array """
+    return np.array(list(map(lambda x:k*x + (y0-k*x0) if x>=x0 else y0, x)))
+
+def identify_bright_galaxy(SE_catalog, mag_limit=15, saturated_mag=13, draw=True):
+    """ Empirically pick out bright galaxies in the SE_catalog.
+        The catalog need contain following columns:
+        'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
+    
+    bright = SE_catalog['MAG_AUTO'] < mag_limit
+    x_data = SE_catalog[bright]['MAG_AUTO']
+    y_data = SE_catalog[bright]['MU_MAX']
+    
+    MU_saturate = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
+    MAG_saturate = saturated_mag # guess of saturated MAG_AUTO
+    
+    # Fit a broken linear
+    popt, pcov = curve_fit(flattened_linear, x_data, y_data,
+                           p0=(1, MAG_saturate, MU_saturate))
+    
+    x_test = np.linspace(x_data.min(),mag_limit+1)
+    clip = np.zeros_like(x_data, dtype='bool')
+
+    # Iterative sigma clip
+    for i in range(3):
+        if draw: plt.plot(x_test, flattened_linear(x_test, *popt), lw=2, ls='--')
+        x_clip, y_clip = x_data[~clip], y_data[~clip]
+        popt, pcov = curve_fit(flattened_linear, x_clip, y_clip, p0=(1, 13, 18))
+
+        # compute residual
+        res = y_data - flattened_linear(x_data, *popt)
+        std = mad_std(dev)
+        clip = res**2 > (5*std)**2
+        
+    if draw:
+        plt.scatter(x_data[~clip], y_data[~clip], c='b', s=20, alpha=0.1)
+        plt.scatter(x_data[clip], y_data[clip], fc='none', ec='orange', lw=2, s=20, alpha=0.5)
+        plt.plot(x_test, flattened_linear(x_test, *popt), color='r')
+        plt.xlim(saturated_mag-2, mag_limit+1)
+        plt.ylim(MU_saturate+3, MU_saturate-0.5)
+        plt.xlabel('MAG_AUTO')
+        plt.ylabel('MU_MAX')
+    
+    # residual for all stars
+    res_all = SE_catalog['MU_MAX'] - flattened_linear(SE_catalog['MAG_AUTO'], *popt)
+    outlier = res_all**2 > (5*std)**2
+    
+    # identify bright galaxies
+    is_gal = ((SE_catalog['ELLIPTICITY']>0.7)|(SE_catalog['CLASS_STAR']<0.5)) & bright & outlier
+    
+    return SE_catalog[is_gal]
+    
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
     
