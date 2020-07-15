@@ -1710,10 +1710,11 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     
     if leg2d:
         x_grid = y_grid = np.linspace(0, image_size-1, image_size)
-        H10 = leggrid2d((x_grid-psf_fit.cen[1])/image_size,
-                        (y_grid-psf_fit.cen[0])/image_size, c=[[0,1],[0,0]])
-        H01 = leggrid2d((x_grid-psf_fit.cen[1])/image_size,
-                        (y_grid-psf_fit.cen[0])/image_size, c=[[0,0],[1,0]])
+        cen = (image_size-1)/2., (image_size-1)/2.
+        H10 = leggrid2d((x_grid-cen[1])/image_size,
+                        (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
+        H01 = leggrid2d((x_grid-cen[1])/image_size,
+                        (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
 
         bkg_fit += psf_fit.A10 * H10 + psf_fit.A01 * H01
     
