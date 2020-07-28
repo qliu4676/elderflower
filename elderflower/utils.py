@@ -203,7 +203,7 @@ def identify_bright_galaxy(SE_catalog, mag_limit=15, saturated_mag=13, draw=True
 
         # compute residual
         res = y_data - flattened_linear(x_data, *popt)
-        std = mad_std(dev)
+        std = mad_std(res)
         clip = res**2 > (5*std)**2
         
     if draw:
@@ -212,8 +212,8 @@ def identify_bright_galaxy(SE_catalog, mag_limit=15, saturated_mag=13, draw=True
         plt.plot(x_test, flattened_linear(x_test, *popt), color='r')
         plt.xlim(saturated_mag-2, mag_limit+1)
         plt.ylim(MU_saturate+3, MU_saturate-0.5)
-        plt.xlabel('MAG_AUTO')
-        plt.ylabel('MU_MAX')
+        plt.xlabel(r'$\rm MAG\_AUTO$')
+        plt.ylabel(r'$\rm MU\_MAX$')
     
     # residual for all stars
     res_all = SE_catalog['MU_MAX'] - flattened_linear(SE_catalog['MAG_AUTO'], *popt)
@@ -612,7 +612,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 
 def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
-                      r_scale=12, width=1, mag_thre=15,
+                      r_scale=12, width=1, mag_limit=15,
                       mag_name='rmag_PS', read=False,
                       obj_name="", save=True, dir_name='.',
                       display=False, verbose=True):
@@ -631,7 +631,7 @@ def measure_Rnorm_all(table, bounds,
     r_scale : radius at which the flux scaling is measured (default: 10)
     width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
     mag_name : magnitude column name
-    mag_thre : magnitude threshold below which are measured
+    mag_limit : magnitude limit below which are measured
     read : whether to read existed outputs
     save : whether to save output table and thumbnails
     obj_name : object name used as prefix of saved output
@@ -647,15 +647,15 @@ def measure_Rnorm_all(table, bounds,
     Xmin, Ymin = bounds[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X%sY%s.txt'\
-                                    %(obj_name, r_scale, mag_name[0], mag_thre, Xmin, Ymin))
+                                    %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Ymin))
     res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X%sY%s'\
-                                  %(obj_name, mag_name[0], mag_thre, Xmin, Ymin))
+                                  %(obj_name, mag_name[0], mag_limit, Xmin, Ymin))
     if read:
         table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
         res_thumb = load_thumbs(res_thumb_name)
         
     else:
-        tab = table[table[mag_name]<mag_thre]
+        tab = table[table[mag_name]<mag_limit]
         res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
                                                    R=r_scale, wid=width,
                                                    return_full=True, display=display, verbose=verbose)
@@ -836,7 +836,8 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 
 def read_measurement_tables(dir_name, bounds0_list,
                             obj_name='', band='G',
-                            pad=100, r_scale=12, mag_limit=[15,23]):
+                            pad=100, r_scale=12,
+                            mag_limit=[15,23]):
     """ Read measurement tables from the directory """
     
     # Magnitude name
@@ -957,7 +958,7 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     return stars_0, stars_all
 
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
-                pixel_scale=2.5, mag_thre=15, sep=5*u.arcsec,
+                pixel_scale=2.5, mag_limit=15, sep=4*u.arcsec,
                 clean_catalog=True, mag_name='rmag',
                 catalog={'Pan-STARRS': 'II/349/ps1'},
                 columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
@@ -1019,7 +1020,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
         mag_cat = Cat_crop[m_name]
         
         # Screen out bright stars (mainly for cleaning duplicate source in catalog)
-        Cat_bright = Cat_crop[(np.less(mag_cat, mag_thre,
+        Cat_bright = Cat_crop[(np.less(mag_cat, mag_limit,
                                        where=~np.isnan(mag_cat))) & ~np.isnan(mag_cat)]
         mag_cat.mask[np.isnan(mag_cat)] = True
         
@@ -1050,7 +1051,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                     row_duplicate = np.append(row_duplicate, k)
             
             Cat_crop.remove_rows(np.unique(row_duplicate))
-            #Cat_bright = Cat_crop[mag_cat<mag_thre]
+            #Cat_bright = Cat_crop[mag_cat<mag_limit]
             
         for m_name in magnitude_name[cat_name]:
             mag = Cat_crop[m_name]
@@ -1098,7 +1099,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=2.5, mag_thre=15, sep=2.5*u.arcsec,
+                        pixel_scale=2.5, mag_limit=15, sep=2.5*u.arcsec,
                         verbose=True):
     """
     Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
@@ -1121,7 +1122,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
             removing those with large coordinate errors and pick the items with most 
             detections in that band .
             
-    mag_thre : magnitude threshould defining bright stars.
+    mag_limit : magnitude threshould defining bright stars.
     
     sep : maximum separation (in astropy unit) for crossmatch with SE.
     
@@ -1188,7 +1189,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         
         # Pick out bright stars
         mag_cat = Cat_crop[mag_name]
-        Cat_bright = Cat_crop[mag_cat<mag_thre]
+        Cat_bright = Cat_crop[mag_cat<mag_limit]
         
         if clean_catalog:
             # A first crossmatch with bright stars in catalog for cleaning
@@ -1262,7 +1263,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
             Cat_crop.remove_rows(np.unique(row_duplicate))
             
             # Subset catalog containing bright stars
-            Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_thre]
+            Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_limit]
         
         # Merge Catalog
         SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
@@ -1332,8 +1333,8 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
         plt.scatter(mag, d_mag_clip, s=6, alpha=0.3)
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
-        plt.xlabel("MAG_AUTO (SE)")
-        plt.ylabel("MAG_AUTO $-$ %s"%mag_name)
+        plt.xlabel(r"$\rm MAG\_AUTO} (SE)$")
+        plt.ylabel(r"$\rm MAG\_AUTO$ $-$ %s"%mag_name)
         plt.show()
         
     return np.around(CT,5)
@@ -1412,7 +1413,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                            mag_name='rmag', cat_name='PS', obj_name='', band='G',
-                           draw=True, save=False, dir_name='./Measure'):
+                           gal_cat=None, draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
     
@@ -1423,54 +1424,65 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     estimate_radius : function of turning magnitude into log R
     
     mag_name : magnitude column name in catalog_star
-    cat_name : suffix of star catalog used 
+    cat_name : suffix of star catalog used
+    gal_cat : (bright) galaxy-like catalog to mask
     draw : whether to draw the output segm map
     save : whether to save the segm map as fits
     dir_name : path of saving
     
     Returns
     ----------
-    seg_map_catalog : output segm map generated from catalog
+    seg_map : output segm map generated from catalog
     
     """
+    
+    image_size = bounds[2] - bounds[0]
+    Xmin, Ymin = bounds[:2]
+    X_key, Y_key = 'X_IMAGE'+'_'+cat_name, 'Y_IMAGE'+'_'+cat_name
+    
     try:
         catalog = catalog_star[~catalog_star[mag_name].mask]
     except AttributeError:
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
     print("\nMake segmentation map based on catalog %s %s: %d stars"%(cat_name, mag_name, len(catalog)))
     
+    # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
-    Xmin, Ymin = bounds[:2]
-
-    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
-             for (X_c,Y_c, r) in zip(catalog['X_IMAGE'+'_'+cat_name],
-                                     catalog['Y_IMAGE'+'_'+cat_name], R_est)] 
     
-    image_size = bounds[2] - bounds[0]
-    seg_map_catalog = np.zeros((image_size, image_size))
+    # Generate object apertures
+    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
+             for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], R_est)]
+    
+    # Further mask for bright extended sources
+    if gal_cat is not None:
+        for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], gal_cat['A_IMAGE']*3):
+            apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
+        
+    # Draw segment map generated from the catalog
+    seg_map = np.zeros((image_size, image_size))
     
     # Segmentation k sorted by mag of source catalog
     for (k, aper) in enumerate(apers):
         star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
         if star_ma is not None:
-            seg_map_catalog[star_ma.astype(bool)] = k+2
+            seg_map[star_ma.astype(bool)] = k+2
     if draw:
         from .plotting import make_rand_cmap
         plt.figure(figsize=(5,5))
-        plt.imshow(seg_map_catalog, vmin=1, cmap=make_rand_cmap(int(seg_map_catalog.max())))
+        plt.imshow(seg_map, vmin=1, cmap=make_rand_cmap(int(seg_map.max())))
         plt.show()
         
     # Save segmentation map built from catalog
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
-        hdu_seg = fits.PrimaryHDU(seg_map_catalog.astype(int))
+        hdu_seg = fits.PrimaryHDU(seg_map.astype(int))
         
         b_name = band.lower()
         file_name = os.path.join(dir_name, "%s-segm_%smag_catalog_X%dY%d.fits" %(obj_name, b_name, Xmin, Ymin))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         
-    return seg_map_catalog
+    return seg_map
 
 
 def save_thumbs(obj, filename):
@@ -1497,154 +1509,7 @@ def build_independent_priors(priors):
         return v
     return prior_transform    
 
-        
-# ###
-# class DynamicNestedSampler:
 
-#     def __init__(self,  loglike,  prior_transform, ndim,
-#                  sample='auto', bound='multi',
-#                  n_cpu=None, n_thread=None):
-        
-#         self.ndim = ndim
-
-#         if n_cpu is None:
-#             n_cpu = mp.cpu_count()
-            
-#         if n_thread is not None:
-#             n_thread = max(n_thread, n_cpu-1)
-        
-#         if n_cpu > 1:
-#             self.open_pool(n_cpu)
-#             self.use_pool = {'update_bound': False}
-#         else:
-#             self.pool = None
-#             self.use_pool = None
-            
-#         dsampler = dynesty.DynamicNestedSampler(loglike, prior_transform, ndim,
-#                                                 sample=sample, bound=bound,
-#                                                 pool=self.pool, queue_size=n_thread,
-#                                                 use_pool=self.use_pool)
-#         self.dsampler = dsampler
-        
-        
-#     def run_fitting(self, nlive_init=100,
-#                     maxiter=10000,
-#                     nlive_batch=50, maxbatch=2,
-#                     pfrac=0.8, close_pool=True,
-#                     print_progress=True):
-    
-#         print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
-#         start = time.time()
-   
-#         dlogz = 1e-3 * (nlive_init - 1) + 0.01
-        
-#         self.dsampler.run_nested(nlive_init=nlive_init, 
-#                                  nlive_batch=nlive_batch, 
-#                                  maxbatch=maxbatch,
-#                                  maxiter=maxiter,
-#                                  dlogz_init=dlogz, 
-#                                  wt_kwargs={'pfrac': pfrac},
-#                                  print_progress=print_progress) 
-        
-#         end = time.time()
-#         self.run_time = (end-start)
-        
-#         print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
-        
-#         if (self.pool is not None) & close_pool:
-#             self.close_pool()
-        
-#     def open_pool(self, n_cpu):
-#         print("\nOpening new pool: # of CPU used: %d"%(n_cpu - 1))
-#         self.pool = mp.Pool(processes=n_cpu - 1)
-#         self.pool.size = n_cpu - 1
-    
-#     def close_pool(self):
-#         print("\nPool Closed.")
-#         self.pool.close()
-#         self.pool.join()
-    
-#     @property
-#     def results(self):
-#         res = getattr(self.dsampler, 'results', {})
-#         return res
-    
-#     def get_params(self, return_sample=False):
-#         return get_params_fit(self.results, return_sample)
-    
-#     def save_results(self, filename, fit_info=None, save_dir='.'):
-#         res = {}
-#         if fit_info is not None:
-#             for key, val in fit_info.items():
-#                 res[key] = val
-
-#         res['run_time'] = self.run_time
-#         res['fit_res'] = self.results
-        
-#         fname = os.path.join(save_dir, filename)
-#         save_nested_fitting_result(res, fname)
-        
-#         self.res = res
-    
-#     def cornerplot(self, labels=None, truths=None, figsize=(16,15),
-#                    save=False, save_dir='.', suffix=''):
-#         from plotting import draw_cornerplot
-#         draw_cornerplot(self.results, self.ndim,
-#                         labels=labels, truths=truths, figsize=figsize,
-#                         save=save, save_dir=save_dir, suffix=suffix)
-        
-#     def cornerbound(self, prior_transform, labels=None, figsize=(10,10),
-#                     save=False, save_dir='.', suffix=''):
-#         fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
-#         fg, ax = dyplot.cornerbound(self.results, it=1000, labels=labels,
-#                                     prior_transform=prior_transform,
-#                                     show_live=True, fig=(fig, axes))
-#         if save:
-#             plt.savefig(os.path.join(save_dir, "Cornerbound%s.png"%suffix), dpi=120)
-#             plt.close()
-    
-#     def plot_fit_PSF1D(self, psf, **kwargs):
-#         from plotting import plot_fit_PSF1D
-#         plot_fit_PSF1D(self.results, psf, **kwargs)
-    
-#     def generate_fit(self, psf, stars, image_base,
-#                      brightest_only=False, draw_real=True, n_spline=2,
-#                      fit_sigma=True, fit_frac=False, leg2d=False, sigma=None,
-#                      norm='brightness', n_out=4, theta_out=1200):
-#         from utils import make_psf_from_fit
-#         from modeling import generate_image_fit
-        
-#         psf_fit, params = make_psf_from_fit(self.results, psf, leg2d=leg2d, 
-#                                             sigma=sigma, n_spline=n_spline,
-#                                             fit_sigma=fit_sigma, fit_frac=fit_frac,
-#                                             n_out=n_out, theta_out=theta_out)
-#         image_star, noise_fit, bkg_fit = generate_image_fit(psf_fit, stars, norm=norm,
-#                                                             brightest_only=brightest_only,
-#                                                             draw_real=draw_real, leg2d=leg2d)
-#         if image_base is None:
-#             image_base = np.zeros_like(image_star)
-#         image_fit = image_star + image_base + bkg_fit
-        
-#         self.image_fit = image_fit
-#         self.image_star = image_star
-#         self.bkg_fit = bkg_fit
-#         self.noise_fit = noise_fit
-        
-#         return psf_fit, params
-        
-#     def draw_comparison_2D(self, image, mask, **kwargs):
-#         from plotting import draw_comparison_2D
-#         draw_comparison_2D(self.image_fit, image, mask, self.image_star,
-#                            self.noise_fit, **kwargs)
-        
-#     def draw_background(self, save=False, save_dir='.', suffix=''):
-#         plt.figure()
-#         im = plt.imshow(self.bkg_fit); colorbar(im)
-#         if save:
-#             plt.savefig(os.path.join(save_dir,'Legendre2D%s.png'%(suffix)), dpi=80)
-#         else:
-#             plt.show()
-# ###
 
 ### Recostruct PSF from fit ###    
     

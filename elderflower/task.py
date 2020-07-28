@@ -11,13 +11,13 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                        obj_name='', band="G",
                        pixel_scale=2.5,
                        ZP=None, field_pad=500,
-                       r_scale=12, mag_thre=15,
+                       r_scale=12, mag_limit=15,
                        draw=True, save=True,
                        use_PS1_DR2=False,
                        dir_name='../output/Measure'):
     
     print("""Measure the intensity at R = %d for stars < %.1f
-            as normalization of fitting\n"""%(r_scale, mag_thre))
+            as normalization of fitting\n"""%(r_scale, mag_limit))
     
     b_name = band.lower()
     bounds_list = np.atleast_2d(bounds_list)
@@ -26,9 +26,10 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Read and Display
     ##################################################
     from .utils import crop_image, crop_catalog
-    from .utils import find_keyword_header
+    from .utils import find_keyword_header, check_save_path
     from astropy.stats import mad_std
-    from astropy.table import Table
+    from astropy.table import Table, setdiff
+    import astropy.units as u
     from astropy.io import fits
     from astropy import wcs
     
@@ -42,12 +43,11 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         header = hdul[0].header
         wcs_data = wcs.WCS(header)
 
-    # Read output from create_photometric_light_APASS 
+    # Read output from SExtractor detection
     if os.path.isfile(SE_segmap):
         seg_map = fits.getdata(SE_segmap)
     else:
         seg_map = None
-        
     SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
     
     if weight_map is not None:
@@ -69,7 +69,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
    
     # Short summary
     print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
-    
+
         
     # Convert SE measured flux into mag
     flux = SE_cat_full["FLUX_AUTO"]
@@ -92,14 +92,22 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                                   sub_bounds=bounds_list,
                                   origin=0, draw=draw)
     
+    # Crop parent SE catalog
+    SE_cat_field = crop_catalog(SE_cat_full, field_bounds)
 
     ##################################################
     # Crossmatch with Star Catalog (across the field)
     ##################################################
+    
+    from .utils import identify_bright_galaxy
     from .utils import cross_match_PS1_DR2, cross_match
     from .utils import calculate_color_term
+    
+    # Identify bright galaxies and enlarge their
+    gal_cat = identify_bright_galaxy(SE_cat_field)
+    SE_cat_obj = setdiff(SE_cat_field, gal_cat)
 
-    # Crossmatch with PANSTRRS at threshold of mag_thre mag
+    # Crossmatch with PANSTRRS mag < mag_limit
     if use_PS1_DR2:
         # Give 3 attempts in matching PS1 DR2 via MAST.
         # This could fail if the FoV is too large.
@@ -107,9 +115,9 @@ def Match_Mask_Measure(hdu_path, bounds_list,
             try:
                 tab_target, tab_target_full, catalog_star = \
                             cross_match_PS1_DR2(wcs_data,
-                                                SE_cat_full,
+                                                SE_cat_obj,
                                                 bounds_list,
-                                                mag_thre=mag_thre,
+                                                mag_limit=mag_limit,
                                                 band=b_name) 
             except HTTPError:
                 print('Gateway Time-out. Try Again.')
@@ -122,9 +130,10 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         mag_name = b_name+'mag'
         tab_target, tab_target_full, catalog_star = \
                             cross_match(wcs_data,
-                                        SE_cat_full,
+                                        SE_cat_obj,
                                         field_bounds,
-                                        mag_thre=mag_thre, 
+                                        sep=3*u.arcsec,
+                                        mag_limit=mag_limit,
                                         mag_name=mag_name)
         
 
@@ -141,8 +150,9 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     
     # Save matched table and catalog
     if save:
+        check_save_path(dir_name, make_new=False, verbose=False)
         tab_target_name = os.path.join(dir_name,
-       '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_thre))
+       '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_limit))
         
         tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
         
@@ -197,22 +207,25 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                                              mag_name=mag_name,
                                              cat_name='PS',
                                              obj_name=obj_name,
-                                             band=band, draw=draw,
-                                             save=save, dir_name=dir_name)
+                                             band=band,
+                                             gal_cat=gal_cat,
+                                             draw=draw,
+                                             save=save,
+                                             dir_name=dir_name)
 
         # Measure average intensity (source+background) at e_scale
         print("""Measure intensity at R = %d
                 for catalog stars %s < %.1f in %r:"""\
-              %(r_scale, mag_name, mag_thre, bounds))
+              %(r_scale, mag_name, mag_limit, bounds))
         
         tab_res_Rnorm, res_thumb = \
-                measure_Rnorm_all(tab_target_patch, bounds,
-                                  wcs_data, data, seg_map,
-                                  mag_thre=mag_thre,
-                                  r_scale=r_scale, width=1, 
-                                  obj_name=obj_name,
-                                  mag_name=mag_name_cat, 
-                                  save=save, dir_name=dir_name)
+                        measure_Rnorm_all(tab_target_patch, bounds,
+                                          wcs_data, data, seg_map,
+                                          mag_limit=mag_limit,
+                                          r_scale=r_scale, width=1,
+                                          obj_name=obj_name,
+                                          mag_name=mag_name_cat,
+                                          save=save, dir_name=dir_name)
         
         plot_bright_star_profile(tab_target_patch,
                                  tab_res_Rnorm, res_thumb,
@@ -224,7 +237,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
 def Run_PSF_Fitting(hdu_path, bounds0,
                     n_spline=2, obj_name='', band="G", 
                     pixel_scale=2.5, ZP=None, pad=100,  
-                    r_scale=12, mag_threshold=[14,11], 
+                    r_scale=12, mag_limit=[15,23],
+                    mag_threshold=[14,11],
                     mask_type='radius', SB_fit_thre=24.5,
                     r_core=24, r_out=None,
                     fit_sigma=True, fit_frac=False, leg2d=False,
@@ -248,9 +262,9 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                 read_measurement_tables(dir_measure,
                                         bounds0,
                                         obj_name=obj_name,
-                                        band=band,
-                                        pad=pad,
-                                        r_scale=r_scale)
+                                        band=band, pad=pad,
+                                        r_scale=r_scale,
+                                        mag_limit=mag_limit)
     
     ############################################
     # Setup PSF
@@ -301,12 +315,12 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     from .utils import assign_star_props
     
     stars_0, stars_all = \
-     DF_Images.assign_star_props(tables_faint,
-                                 tables_res_Rnorm, 
-                                 r_scale=r_scale,
-                                 mag_threshold=mag_threshold,
-                                 verbose=True, draw=False,
-                                 save=save, save_dir=dir_name)
+         DF_Images.assign_star_props(tables_faint,
+                                     tables_res_Rnorm,
+                                     r_scale=r_scale,
+                                     mag_threshold=mag_threshold,
+                                     verbose=True, draw=False,
+                                     save=save, save_dir=dir_name)
     
     #breakpoint()
     
