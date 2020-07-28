@@ -837,7 +837,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 def read_measurement_tables(dir_name, bounds0_list,
                             obj_name='', band='G',
                             pad=100, r_scale=12,
-                            mag_limit=[15,23]):
+                            mag_limit=15):
     """ Read measurement tables from the directory """
     
     # Magnitude name
@@ -865,8 +865,8 @@ def read_measurement_tables(dir_name, bounds0_list,
         else:
             sys.exit("Table %s does not exist. Exit."%fname_catalog)
 
-        # stars fainter than magnitude limit (fixed as background)
-        table_faint = table_catalog[(mag_catalog>=mag_limit[0]) & (mag_catalog<mag_limit[1])]
+        # stars fainter than magnitude limit (fixed as background), > 22 is ignored
+        table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
         table_faint = crop_catalog(table_faint,
                                    keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
                                    bounds=bounds)
@@ -876,7 +876,7 @@ def read_measurement_tables(dir_name, bounds0_list,
         # Catalog name
         fname_res_Rnorm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X%dY%d.txt"\
                                        %(obj_name, r_scale, b_name,
-                                         mag_limit[0], patch_Xmin0, patch_Ymin0))
+                                         mag_limit, patch_Xmin0, patch_Ymin0))
         # Check if the file exist
         if os.path.isfile(fname_res_Rnorm):
             table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
@@ -902,8 +902,8 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     from .modeling import Stars
     
     # Image attributes
-    ZP = Image.ZP
-    sky_mean = Image.bkg
+    ZP = Image.zp_val
+    sky_mean = Image.bkg_val
     image_size = Image.image_size
     
     pos_ref = (Image.bounds[0], Image.bounds[1])

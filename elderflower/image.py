@@ -15,7 +15,7 @@ class ImageButler:
     """ A Image Butler """
     
     def __init__(self, hdu_path, obj_name='', band='G',
-                 pixel_scale=2.5, ZP=None, pad=100, verbose=True):
+                 pixel_scale=2.5, ZP=None, bkg=None, pad=100, verbose=True):
         """ 
         
         Parameters
@@ -31,6 +31,8 @@ class ImageButler:
             pixel scale in arcsec/pixel
         ZP : float or None (default)
             zero point (if None, read from header)
+        bkg : float or None (default)
+            background (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
@@ -52,22 +54,26 @@ class ImageButler:
             self.full_image = hdul[0].data
             self.header = header = hdul[0].header
             self.wcs = wcs.WCS(header)
-
-        # Read global background model zero point and pixel scale from header
-    
-        self.bkg = find_keyword_header(header, "BACKVAL")
-        
-        if ZP is None:
-            self.ZP = find_keyword_header(header, "ZP")
-        else:
-            self.ZP = ZP
-
-        
+            
+        self.bkg = bkg
+        self.ZP = ZP
+            
     def __str__(self):
         return "An ImageButler Class"
 
     def __repr__(self):
         return f"{self.__class__.__name__} for {self.hdu_path}"
+    
+    @lazyproperty
+    def bkg_val(self):
+        # find background from header
+        return find_keyword_header(header, "BACKVAL") if self.bkg is None else self.bkg
+
+    
+    @lazyproperty
+    def zp_val(self):
+        # find zero point from header
+        return find_keyword_header(header, "ZP") if self.ZP is None else self.ZP
 
         
 class Image(ImageButler):
@@ -75,7 +81,7 @@ class Image(ImageButler):
         
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, pad=100, verbose=True):
+                 ZP=None, bkg=None, pad=100, verbose=True):
         """ 
         
         Parameters
@@ -93,13 +99,15 @@ class Image(ImageButler):
             pixel scale in arcsec/pixel
         ZP : float or None (default)
             zero point (if None, read from header)
+        bkg : float or None (default)
+            background (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
         """
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, pad, verbose)
+                         pixel_scale, ZP, bkg, pad, verbose)
         
         self.bounds0 = bounds0
         
@@ -131,7 +139,7 @@ class ImageList(ImageButler):
     
     def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, pad=100, verbose=False):
+                 ZP=None, bkg=None, pad=100, verbose=False):
         
         """ 
         
@@ -150,17 +158,19 @@ class ImageList(ImageButler):
             pixel scale in arcsec/pixel
         ZP : float or None (default)
             zero point (if None, read from header)
+        bkg : float or None (default)
+            background (if None, read from header)
         pad : int
             padding size of the image for fitting (default: 100)
         
         """
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, pad, verbose)
+                         pixel_scale, ZP, bkg, pad, verbose)
         
         self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
-                             ZP, pad, verbose)
+                             ZP, bkg, pad, verbose)
                        for bounds0 in np.atleast_2d(bounds0_list)]
         self.N_Image = len(self.Images)
     

@@ -10,7 +10,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                        weight_map=None,
                        obj_name='', band="G",
                        pixel_scale=2.5,
-                       ZP=None, field_pad=500,
+                       ZP=None,bkg=None,field_pad=500,
                        r_scale=12, mag_limit=15,
                        draw=True, save=True,
                        use_PS1_DR2=False,
@@ -55,9 +55,9 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     else:
         weight_edge = np.ones_like(data)
      
-    # Read global background model ZP and pixel scale from header
-    
-    bkg = find_keyword_header(header, "BACKVAL")
+    # Read global background model ZP from header
+    if bkg is None:
+        bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None:
         ZP = find_keyword_header(header, "ZP")
     
@@ -236,8 +236,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         
 def Run_PSF_Fitting(hdu_path, bounds0,
                     n_spline=2, obj_name='', band="G", 
-                    pixel_scale=2.5, ZP=None, pad=100,  
-                    r_scale=12, mag_limit=[15,23],
+                    pixel_scale=2.5, ZP=None, bkg=None, pad=100,
+                    r_scale=12, mag_limit=15,
                     mag_threshold=[14,11],
                     mask_type='radius', SB_fit_thre=24.5,
                     r_core=24, r_out=None,
@@ -255,7 +255,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     from .image import ImageList
     DF_Images = ImageList(hdu_path, bounds0,
                           obj_name, band,
-                          pixel_scale, ZP, pad)
+                          pixel_scale, ZP, bkg, pad)
     
     from .utils import read_measurement_tables
     tables_faint, tables_res_Rnorm = \
