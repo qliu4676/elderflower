@@ -5,13 +5,14 @@ import sys
 import numpy as np
 from urllib.error import HTTPError
 
+
 def Match_Mask_Measure(hdu_path, bounds_list,
                        SE_segmap, SE_catalog,
                        weight_map=None,
                        obj_name='', band="G",
                        pixel_scale=2.5,
                        ZP=None,bkg=None,field_pad=500,
-                       r_scale=12, mag_limit=15,
+                       r_scale=12, mag_limit=15, mag_saturate=13,
                        draw=True, save=True,
                        use_PS1_DR2=False,
                        dir_name='../output/Measure'):
@@ -28,7 +29,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     from .utils import crop_image, crop_catalog
     from .utils import find_keyword_header, check_save_path
     from astropy.stats import mad_std
-    from astropy.table import Table, setdiff
+    from astropy.table import Table, setdiff, join
     import astropy.units as u
     from astropy.io import fits
     from astropy import wcs
@@ -99,24 +100,26 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Crossmatch with Star Catalog (across the field)
     ##################################################
     
-    from .utils import identify_bright_galaxy
+    from .utils import identify_extended_source
     from .utils import cross_match_PS1_DR2, cross_match
     from .utils import calculate_color_term
+    from .utils import add_supplementary_SE_star
     
     # Identify bright galaxies and enlarge their
-    gal_cat = identify_bright_galaxy(SE_cat_field)
-    SE_cat_obj = setdiff(SE_cat_field, gal_cat)
+    extend_cat = identify_extended_source(SE_cat_field)
+    SE_cat_target = setdiff(SE_cat_field, extend_cat)
 
     # Crossmatch with PANSTRRS mag < mag_limit
     if use_PS1_DR2:
         # Give 3 attempts in matching PS1 DR2 via MAST.
         # This could fail if the FoV is too large.
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 tab_target, tab_target_full, catalog_star = \
                             cross_match_PS1_DR2(wcs_data,
-                                                SE_cat_obj,
+                                                SE_cat_target,
                                                 bounds_list,
+                                                sep=3*u.arcsec,
                                                 mag_limit=mag_limit,
                                                 band=b_name) 
             except HTTPError:
@@ -124,13 +127,13 @@ def Match_Mask_Measure(hdu_path, bounds_list,
             else:
                 break
         else:
-            sys.exit('504 Server Error: 3 Failed Attempts. Exit.')
+            sys.exit('504 Server Error: 4 Failed Attempts. Exit.')
             
     else:
         mag_name = b_name+'mag'
         tab_target, tab_target_full, catalog_star = \
                             cross_match(wcs_data,
-                                        SE_cat_obj,
+                                        SE_cat_target,
                                         field_bounds,
                                         sep=3*u.arcsec,
                                         mag_limit=mag_limit,
@@ -143,10 +146,14 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     else:
         mag_name_cat = mag_name+'_PS'
         
-    CT = calculate_color_term(tab_target_full,
+    CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
                               mag_name=mag_name_cat, draw=draw)
     
-    catalog_star["MAG_AUTO"] = catalog_star[mag_name] + CT
+    catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT #corrected mag
+    tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
+   
+    # Mannually add stars missed in the crossmatch or w/ weird mag to table
+    tab_target = add_supplementary_SE_star(tab_target, SE_cat_target, mag_saturate, draw=draw)
     
     # Save matched table and catalog
     if save:
@@ -154,21 +161,18 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         tab_target_name = os.path.join(dir_name,
        '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_limit))
         
-        tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
-        
         tab_target.write(tab_target_name,
                          overwrite=True, format='ascii')
 
         catalog_star_name = os.path.join(dir_name,
                  '%s-catalog_PS_%s_all.txt'%(obj_name, b_name))
         
-        catalog_star["FLUX_AUTO"] = 10**((catalog_star["MAG_AUTO"]-ZP)/(-2.5))
-        
         catalog_star.write(catalog_star_name, 
                            overwrite=True, format='ascii')
         
         print('Save PANSTARRS catalog & matched sources in %s'%dir_name)
-        
+    
+    
     ##################################################
     # Build Mask & Measure Scaling (in selected patch)
     ##################################################
@@ -179,8 +183,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
-                                             mag_range=[13,22], K=2.5,
-                                             degree=3, draw=draw)
+                                             mag_range=[mag_saturate,22], K=2.5,
+                                             degree=3, draw=False)
     
     for bounds in bounds_list:
         
@@ -208,7 +212,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                                              cat_name='PS',
                                              obj_name=obj_name,
                                              band=band,
-                                             gal_cat=gal_cat,
+                                             extend_cat=extend_cat,
                                              draw=draw,
                                              save=save,
                                              dir_name=dir_name)

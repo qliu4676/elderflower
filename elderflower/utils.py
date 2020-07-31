@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from astropy import wcs
 from astropy import units as u
 from astropy.io import fits, ascii
-from astropy.table import Table, Column
+from astropy.table import Table, Column, join
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
@@ -22,6 +22,10 @@ from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 from photutils.segmentation import SegmentationImage
     
 from .plotting import LogNorm, AsinhNorm, colorbar
+
+# default SE columns for cross_match
+SE_COLUMNS = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
+"MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "FLAGS"]
 
 ### Baisc Funcs ###
 
@@ -175,54 +179,84 @@ def source_detection(data, sn=2, b_size=120,
 def flattened_linear(x, k, x0, y0):
     """ A linear function flattened at (x0,y0) of 1d array """
     return np.array(list(map(lambda x:k*x + (y0-k*x0) if x>=x0 else y0, x)))
+    
+def piecewise_linear(x, k1, k2, x0, y0):
+    """ A piecewise linear function transitioned at (x0,y0) of 1d array """
+    return np.array(list(map(lambda x:k1*x + (y0-k1*x0) if x>=x0 else k2*x + (y0-k2*x0), x)))
 
-def identify_bright_galaxy(SE_catalog, mag_limit=15, saturated_mag=13, draw=True):
-    """ Empirically pick out bright galaxies in the SE_catalog.
+def iter_curve_fit(x_data, y_data, func, p0=None,
+                color=None, x_min=None, x_max=None,
+                x_lab='', y_lab='',c_lab='',
+                n_iter=3, k_std=5, draw=True):
+    """ Iterative curve_fit """
+    
+    if x_min is None: x_min = x_data.min()
+    if x_max is None: x_max = x_data.max()
+    x_test = np.linspace(x_min, x_max)
+    clip = np.zeros_like(x_data, dtype='bool')
+
+    popt, pcov = curve_fit(func, x_data, y_data, p0=p0)
+
+    # Iterative sigma clip
+    for i in range(n_iter):
+        if draw: plt.plot(x_test, func(x_test, *popt), color='gray', ls='--')
+        
+        x_clip, y_clip = x_data[~clip], y_data[~clip]
+        popt, pcov = curve_fit(func, x_clip, y_clip, p0=p0)
+
+        # compute residual and stddev
+        res = y_data - func(x_data, *popt)
+        std = mad_std(res)
+        clip = res**2 > (k_std*std)**2
+    
+    # clip function
+    clip_func = lambda x, y: (y - func(x, *popt))**2 > (k_std*std)**2
+    
+    if draw:
+        s = plt.scatter(x_data, y_data, c=color,
+                        s=5, cmap='viridis', alpha=0.4)
+        plt.scatter(x_data[clip], y_data[clip], lw=2, s=20,
+                    fc='none', ec='orange', alpha=0.7)
+        plt.plot(x_test, func(x_test, *popt), color='r')
+        
+        if color is not None: plt.colorbar(s, label=c_lab)
+        
+        plt.xlim(x_max, x_min)
+        plt.gca().invert_yaxis()
+        plt.xlabel(x_lab)
+        plt.ylabel(y_lab)
+        
+    return popt, clip_func
+    
+def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=True):
+    """ Empirically pick out (bright) extended sources in the SE_catalog.
         The catalog need contain following columns:
         'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
     
     bright = SE_catalog['MAG_AUTO'] < mag_limit
-    x_data = SE_catalog[bright]['MAG_AUTO']
-    y_data = SE_catalog[bright]['MU_MAX']
+    SE_bright = SE_catalog[bright]
+    x_data, y_data = SE_bright['MAG_AUTO'], SE_bright['MU_MAX']
     
     MU_saturate = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
-    MAG_saturate = saturated_mag # guess of saturated MAG_AUTO
+    MAG_saturate = mag_saturate # guess of saturated MAG_AUTO
     
-    # Fit a broken linear
-    popt, pcov = curve_fit(flattened_linear, x_data, y_data,
-                           p0=(1, MAG_saturate, MU_saturate))
-    
-    x_test = np.linspace(x_data.min(),mag_limit+1)
-    clip = np.zeros_like(x_data, dtype='bool')
+    # Fit a flattened linear
+    popt, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
+                                    p0=(1, MAG_saturate, MU_saturate),
+                                    x_max=mag_limit, c_lab='CLASS_STAR',
+                                    color=SE_bright['CLASS_STAR'],
+                                    x_lab='MAG_AUTO',y_lab='MU_MAX', draw=draw)
 
-    # Iterative sigma clip
-    for i in range(3):
-        if draw: plt.plot(x_test, flattened_linear(x_test, *popt), lw=2, ls='--')
-        x_clip, y_clip = x_data[~clip], y_data[~clip]
-        popt, pcov = curve_fit(flattened_linear, x_clip, y_clip, p0=(1, 13, 18))
-
-        # compute residual
-        res = y_data - flattened_linear(x_data, *popt)
-        std = mad_std(res)
-        clip = res**2 > (5*std)**2
-        
-    if draw:
-        plt.scatter(x_data[~clip], y_data[~clip], c='b', s=20, alpha=0.1)
-        plt.scatter(x_data[clip], y_data[clip], fc='none', ec='orange', lw=2, s=20, alpha=0.5)
-        plt.plot(x_test, flattened_linear(x_test, *popt), color='r')
-        plt.xlim(saturated_mag-2, mag_limit+1)
-        plt.ylim(MU_saturate+3, MU_saturate-0.5)
-        plt.xlabel(r'$\rm MAG\_AUTO$')
-        plt.ylabel(r'$\rm MU\_MAX$')
+    # pick outliers in the catalog
+    outlier = clip_func(SE_catalog['MAG_AUTO'], SE_catalog['MU_MAX'])
     
-    # residual for all stars
-    res_all = SE_catalog['MU_MAX'] - flattened_linear(SE_catalog['MAG_AUTO'], *popt)
-    outlier = res_all**2 > (5*std)**2
+    # identify bright extended sources by:
+    # (1) elliptical object or CLASS_STAR<0.5
+    # (2) brighter than mag_limit
+    # (3) lie out of MU_MAX vs MAG_AUTO relation
+    is_extend = ((SE_catalog['ELLIPTICITY']>0.7)|(SE_catalog['CLASS_STAR']<0.5)) & bright & outlier
     
-    # identify bright galaxies
-    is_gal = ((SE_catalog['ELLIPTICITY']>0.7)|(SE_catalog['CLASS_STAR']<0.5)) & bright & outlier
-    
-    return SE_catalog[is_gal]
+    return SE_catalog[is_extend]
     
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
@@ -751,11 +785,11 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         sky_std = max(mad_std(sky[sky>sky_mean]),5)
 
         fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, norm=AsinhNorm(a=0.01), cmap="viridis",
-                   vmin=sky_mean, vmax=sky_mean+5*sky_std, alpha=0.95)
+        plt.imshow(data, norm=AsinhNorm(a=0.1), cmap="gray_r",
+                   vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
         if weight_map is not None:
-            plt.imshow(data*weight_map, norm=AsinhNorm(a=0.01), cmap="viridis",
-                       vmin=sky_mean, vmax=sky_mean+5*sky_std, alpha=0.3)
+            plt.imshow(data*weight_map, norm=AsinhNorm(a=0.1), cmap="gray",
+                       vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
         
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
@@ -815,8 +849,6 @@ def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ200
 
 def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
-    
-    from astropy.table import join
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
 
@@ -908,15 +940,17 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     
     pos_ref = (Image.bounds[0], Image.bounds[1])
     
+    table_faint['FLUX_AUTO_corr'] = 10**((table_faint["MAG_AUTO_corr"]-ZP)/(-2.5))
+    
     try:
-        ma = table_faint['FLUX_AUTO'].data.mask
+        ma = table_faint['FLUX_AUTO_corr'].data.mask
     except AttributeError:
-        ma = np.isnan(table_faint['FLUX_AUTO'])
+        ma = np.isnan(table_faint['FLUX_AUTO_corr'])
 
     # Positions & Flux of faint stars from measured norm
     star_pos1 = np.vstack([table_faint['X_IMAGE_PS'].data[~ma],
                            table_faint['Y_IMAGE_PS'].data[~ma]]).T - pos_ref
-    Flux1 = np.array(table_faint['FLUX_AUTO'].data[~ma])
+    Flux1 = np.array(table_faint['FLUX_AUTO_corr'].data[~ma])
 
     # Positions & Flux (estimate) of bright stars from catalog
     star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE_PS'],
@@ -1059,9 +1093,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                 print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
 
         # Merge Catalog
-        SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
-                      "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "FLAGS"]
-        keep_columns = SE_columns + ["ID"+'_'+c_name] + magnitude_name[cat_name] + \
+        keep_columns = SE_COLUMNS + ["ID"+'_'+c_name] + magnitude_name[cat_name] + \
                                     ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
         tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,
                                   keep_columns=keep_columns)
@@ -1078,9 +1110,9 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
             tab_target_all = tab_match
             tab_target = tab_match_bright
         else:
-            tab_target_all = join(tab_target_all, tab_match, keys=SE_columns,
+            tab_target_all = join(tab_target_all, tab_match, keys=SE_COLUMNS,
                                  join_type='left', metadata_conflicts='silent')
-            tab_target = join(tab_target, tab_match_bright, keys=SE_columns,
+            tab_target = join(tab_target, tab_match_bright, keys=SE_COLUMNS,
                               join_type='left', metadata_conflicts='silent')
             
     # Sort matched catalog by SE MAG_AUTO
@@ -1300,6 +1332,52 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
     return tab_target, tab_target_all, catalog_star
         
 
+def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
+    """ Add unmatched bright (saturated) stars in SE_catatlogas to tab.
+        Magnitude is corrected by interpolation from other matched stars """
+    
+    print("Mannually add unmatched bright stars to the catalog.")
+    
+    # Empirical function to correct MAG_AUTO for saturation
+    # Fit a sigma-clipped piecewise linear
+    popt, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
+                                    piecewise_linear, x_max=15,
+                                    p0=(1, 2, mag_saturate, mag_saturate),
+                                    x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
+
+    # Empirical corrected magnitude
+    f_corr = lambda x: piecewise_linear(x, *popt)
+    mag_corr = f_corr(tab['MAG_AUTO'])
+    
+    # Remove rows with uncanny matched magnitude
+    loc_rm = np.where(abs(tab['MAG_AUTO_corr']-mag_corr)>2)
+    if draw: plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
+                         marker='s', s=40, fc='none', ec='lime'); plt.show()
+    tab.remove_rows(loc_rm[0])
+
+    # Below are new lines to add back supplementary (unmatched bright) stars
+    cond_sup = (SE_catatlog['MAG_AUTO']<mag_saturate) & (SE_catatlog['CLASS_STAR']>0.5)
+    SE_cat_bright = SE_catatlog[cond_sup]
+    num_SE_sup = np.setdiff1d(SE_cat_bright['NUMBER'], tab['NUMBER'])
+
+    # make a new table containing all unmatched bright stars
+    tab_sup = Table(dtype=SE_cat_bright.dtype)
+    for num in num_SE_sup:
+        row = SE_cat_bright[SE_cat_bright['NUMBER']==num][0]
+        tab_sup.add_row(row)
+    
+    # add corrected MAG_AUTO
+    tab_sup['MAG_AUTO_corr'] = f_corr(tab_sup['MAG_AUTO'])
+    tab_sup.add_columns([tab_sup['X_IMAGE'], tab_sup['Y_IMAGE']],
+                        names=['X_IMAGE_PS', 'Y_IMAGE_PS'])
+                        
+    # Join the two tables by common keys
+    keys = set(tab.colnames).intersection(tab_sup.colnames)
+    tab_join = join(tab, tab_sup, keys=keys, join_type='outer')
+    
+    return tab_join
+    
+    
 def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
     """
     Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
@@ -1333,8 +1411,9 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
         plt.scatter(mag, d_mag_clip, s=6, alpha=0.3)
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
-        plt.xlabel(r"$\rm MAG\_AUTO} (SE)$")
-        plt.ylabel(r"$\rm MAG\_AUTO$ $-$ %s"%mag_name)
+        plt.xlim(mag_range[0]-0.5, mag_range[1]+0.5)
+        plt.xlabel("MAG_AUTO (SE)")
+        plt.ylabel("MAG_AUTO - %s"%mag_name)
         plt.show()
         
     return np.around(CT,5)
@@ -1413,7 +1492,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                            mag_name='rmag', cat_name='PS', obj_name='', band='G',
-                           gal_cat=None, draw=True, save=False, dir_name='./Measure'):
+                           extend_cat=None, draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
     
@@ -1425,7 +1504,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     mag_name : magnitude column name in catalog_star
     cat_name : suffix of star catalog used
-    gal_cat : (bright) galaxy-like catalog to mask
+    extend_cat : (bright) extended source catalog to mask
     draw : whether to draw the output segm map
     save : whether to save the segm map as fits
     dir_name : path of saving
@@ -1444,7 +1523,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         catalog = catalog_star[~catalog_star[mag_name].mask]
     except AttributeError:
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
-    print("\nMake segmentation map based on catalog %s %s: %d stars"%(cat_name, mag_name, len(catalog)))
+    print("\nMake segmentation map based on catalog %s: %d stars"%(mag_name, len(catalog)))
     
     # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
@@ -1454,10 +1533,13 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
              for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], R_est)]
     
     # Further mask for bright extended sources
-    if gal_cat is not None:
-        for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], gal_cat['A_IMAGE']*3):
-            apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
-        
+    if extend_cat is not None:
+        if len(extend_cat)>0:
+            for (X_c,Y_c, r) in zip(extend_cat['X_IMAGE'],
+                                    extend_cat['Y_IMAGE'],
+                                    extend_cat['A_IMAGE']*3):
+                apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
+            
     # Draw segment map generated from the catalog
     seg_map = np.zeros((image_size, image_size))
     
