@@ -10,6 +10,7 @@ except ImportError:
     seaborn_plot = False
 
 import matplotlib.pyplot as plt
+plt.rcParams['text.usetex'] = False
 
 from matplotlib import rcParams
 plt.rcParams['image.origin'] = 'lower'

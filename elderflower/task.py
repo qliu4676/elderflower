@@ -12,7 +12,6 @@ import astropy.units as u
 
 def Match_Mask_Measure(hdu_path, bounds_list,
                        SE_segmap, SE_catalog,
-                       weight_map=None,
                        obj_name='', band="G",
                        pixel_scale=2.5,
                        ZP=None,bkg=None,field_pad=500,
@@ -52,11 +51,6 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         seg_map = fits.getdata(SE_segmap)
     else:
         seg_map = None
-    
-    if weight_map is not None:
-        weight_edge = fits.getdata(weight_map)
-    else:
-        weight_edge = np.ones_like(data)
      
     # Read global background model ZP from header
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
@@ -64,7 +58,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     
     # Estimate of background fluctuation (just for plot)
     if seg_map is not None:
-        std = mad_std(data[(seg_map==0) & (weight_edge>0.5)]) 
+        std = mad_std(data[seg_map==0])
     else:
         std = mad_std(data)
    
@@ -88,7 +82,6 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     
     # Display field_bounds and sub-regions to be matched
     patch, seg_patch = crop_image(data, field_bounds, seg_map,
-                                  weight_map=weight_edge,
                                   sub_bounds=bounds_list,
                                   origin=0, draw=draw)
     
@@ -104,9 +97,9 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     from .utils import calculate_color_term
     from .utils import add_supplementary_SE_star
     
-    # Identify bright galaxies and enlarge their
-    extend_cat = identify_extended_source(SE_cat_field)
-    SE_cat_target = setdiff(SE_cat_field, extend_cat)
+    # Identify bright extended sources and enlarge their mask
+    ext_cat = identify_extended_source(SE_cat_field)
+    SE_cat_target = setdiff(SE_cat_field, ext_cat)
 
     # Crossmatch with PANSTRRS mag < mag_limit
     if use_PS1_DR2:
@@ -212,7 +205,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                                              cat_name='PS',
                                              obj_name=obj_name,
                                              band=band,
-                                             extend_cat=extend_cat,
+                                             ext_cat=ext_cat,
                                              draw=draw,
                                              save=save,
                                              dir_name=dir_name)

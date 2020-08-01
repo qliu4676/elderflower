@@ -761,7 +761,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
     else:
         return cat[crop]
 
-def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
+def crop_image(data, bounds, SE_seg_map=None,
                sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
     from matplotlib import patches  
@@ -782,14 +782,11 @@ def crop_image(data, bounds, SE_seg_map=None, weight_map=None,
         else:
             sky = sigma_clip(data, 3)
         sky_mean = np.mean(sky)
-        sky_std = max(mad_std(sky[sky>sky_mean]),5)
+        sky_std = mad_std(sky)
 
         fig, ax = plt.subplots(figsize=(12,8))       
         plt.imshow(data, norm=AsinhNorm(a=0.1), cmap="gray_r",
-                   vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.95)
-        if weight_map is not None:
-            plt.imshow(data*weight_map, norm=AsinhNorm(a=0.1), cmap="gray",
-                       vmin=sky_mean, vmax=sky_mean+10*sky_std, alpha=0.3)
+                   vmin=sky_mean-sky_std, vmax=sky_mean+10*sky_std, alpha=0.95)
         
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
@@ -1534,7 +1531,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     # Further mask for bright extended sources
     if ext_cat is not None:
-        if len(_cat)>0:
+        if len(ext_cat)>0:
             for (X_c,Y_c, r) in zip(ext_cat['X_IMAGE'],
                                     ext_cat['Y_IMAGE'],
                                     ext_cat['A_IMAGE']*3):
