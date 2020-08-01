@@ -553,7 +553,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
 def plot_fit_PSF1D(results, psf, n_spline=2,
                    n_bootstrap=500, truth=None,  
                    Amp_max=None, r_core=None,
-                   n_out=4, theta_out=1200, image_size=800,
+                   n_cutoff=4, theta_cutoff=1200, image_size=800,
                    save=False, save_dir="./",
                    suffix='', figsize=(7,6)):
 
@@ -604,10 +604,10 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
                 psf_fit.update({'n':n_k})
 
             elif psf.aureole_model == "multi-power":
-                n_s_k = np.concatenate([sample[:N_n], [n_out]])
+                n_s_k = np.concatenate([sample[:N_n], [n_cutoff]])
                 theta_s_k = np.concatenate([[theta_0],
                                             np.atleast_1d(10**sample[N_n:N_n+N_theta]),
-                                            [theta_out]])
+                                            [theta_cutoff]])
                 psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
             
         comp2_k = psf_fit.f_aureole1D(r)
@@ -630,10 +630,10 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
                 psf_fit.update({'n':n_fit})
 
             elif psf.aureole_model == "multi-power":
-                n_s_fit = np.concatenate([fits[:N_n], [n_out]])
+                n_s_fit = np.concatenate([fits[:N_n], [n_cutoff]])
                 theta_s_fit = np.concatenate([[theta_0],
                                               np.atleast_1d(10**fits[N_n:N_n+N_theta]),
-                                              [theta_out]])
+                                              [theta_cutoff]])
                 psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
             
         comp2 = psf_fit.f_aureole1D(r)
@@ -665,7 +665,7 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
     if r_core is not None:
         
         if figsize is not None:
-            plt.axvspan(np.atleast_1d(r_core).max(), theta_out/pixel_scale,
+            plt.axvspan(np.atleast_1d(r_core).max(), theta_cutoff/pixel_scale,
                         color='steelblue', alpha=0.15, zorder=1)
             plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
                         color='seagreen', alpha=0.15, zorder=1)

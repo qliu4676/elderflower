@@ -934,8 +934,8 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     from .modeling import Stars
     
     # Image attributes
-    ZP = Image.zp_val
-    sky_mean = Image.bkg_val
+    ZP = Image.ZP
+    sky_mean = Image.bkg
     image_size = Image.image_size
     
     pos_ref = (Image.bounds[0], Image.bounds[1])
@@ -1492,7 +1492,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                            mag_name='rmag', cat_name='PS', obj_name='', band='G',
-                           extend_cat=None, draw=True, save=False, dir_name='./Measure'):
+                           ext_cat=None, draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
     
@@ -1504,7 +1504,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     mag_name : magnitude column name in catalog_star
     cat_name : suffix of star catalog used
-    extend_cat : (bright) extended source catalog to mask
+    ext_cat : (bright) extended source catalog to mask
     draw : whether to draw the output segm map
     save : whether to save the segm map as fits
     dir_name : path of saving
@@ -1533,11 +1533,11 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
              for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], R_est)]
     
     # Further mask for bright extended sources
-    if extend_cat is not None:
-        if len(extend_cat)>0:
-            for (X_c,Y_c, r) in zip(extend_cat['X_IMAGE'],
-                                    extend_cat['Y_IMAGE'],
-                                    extend_cat['A_IMAGE']*3):
+    if ext_cat is not None:
+        if len(_cat)>0:
+            for (X_c,Y_c, r) in zip(ext_cat['X_IMAGE'],
+                                    ext_cat['Y_IMAGE'],
+                                    ext_cat['A_IMAGE']*3):
                 apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
             
     # Draw segment map generated from the catalog
@@ -1595,7 +1595,7 @@ def build_independent_priors(priors):
 
 ### Recostruct PSF from fit ###    
     
-def make_psf_from_fit(fit_res, psf, image_size=600, n_out=4, theta_out=1200, n_spline=2,
+def make_psf_from_fit(fit_res, psf, image_size=600, n_cutoff=4, theta_cutoff=1200, n_spline=2,
                       fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
     from .sampler import get_params_fit
 
@@ -1620,9 +1620,9 @@ def make_psf_from_fit(fit_res, psf, image_size=600, n_out=4, theta_out=1200, n_s
             param_update = {'n':n_fit}
 
         elif psf.aureole_model == "multi-power":
-            n_s_fit = np.concatenate([params[:N_n], [n_out]])
+            n_s_fit = np.concatenate([params[:N_n], [n_cutoff]])
             theta_s_fit = np.concatenate([[psf.theta_0],
-                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_out]])
+                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_cutoff]])
 
             param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
 

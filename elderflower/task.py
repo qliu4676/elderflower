@@ -5,6 +5,10 @@ import sys
 import numpy as np
 from urllib.error import HTTPError
 
+from .utils import find_keyword_header, check_save_path
+
+from astropy.io import fits
+import astropy.units as u
 
 def Match_Mask_Measure(hdu_path, bounds_list,
                        SE_segmap, SE_catalog,
@@ -27,11 +31,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Read and Display
     ##################################################
     from .utils import crop_image, crop_catalog
-    from .utils import find_keyword_header, check_save_path
     from astropy.stats import mad_std
     from astropy.table import Table, setdiff, join
-    import astropy.units as u
-    from astropy.io import fits
     from astropy import wcs
     
     # Read hdu
@@ -45,11 +46,12 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         wcs_data = wcs.WCS(header)
 
     # Read output from SExtractor detection
+    SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
+    
     if os.path.isfile(SE_segmap):
         seg_map = fits.getdata(SE_segmap)
     else:
         seg_map = None
-    SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
     
     if weight_map is not None:
         weight_edge = fits.getdata(weight_map)
@@ -57,10 +59,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         weight_edge = np.ones_like(data)
      
     # Read global background model ZP from header
-    if bkg is None:
-        bkg = find_keyword_header(header, "BACKVAL")
-    if ZP is None:
-        ZP = find_keyword_header(header, "ZP")
+    if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
+    if ZP is None: ZP = find_keyword_header(header, "ZP")
     
     # Estimate of background fluctuation (just for plot)
     if seg_map is not None:
@@ -71,7 +71,6 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Short summary
     print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
 
-        
     # Convert SE measured flux into mag
     flux = SE_cat_full["FLUX_AUTO"]
     mag = -2.5 * np.ma.log10(flux).filled(flux[flux>0].min()) + ZP
@@ -153,7 +152,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
    
     # Mannually add stars missed in the crossmatch or w/ weird mag to table
-    tab_target = add_supplementary_SE_star(tab_target, SE_cat_target, mag_saturate, draw=draw)
+    tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
+                                            mag_saturate, draw=draw)
     
     # Save matched table and catalog
     if save:
@@ -244,7 +244,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                     r_scale=12, mag_limit=15,
                     mag_threshold=[14,11],
                     mask_type='radius', SB_fit_thre=24.5,
-                    r_core=24, r_out=None,
+                    r_core=24, r_out=None, theta_cutoff=1200,
                     fit_sigma=True, fit_frac=False, leg2d=False,
                     wid_strip=24, n_strip=48, 
                     n_cpu=None, parallel=False, 
@@ -257,11 +257,18 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     # Read Image and Table
     ############################################
     from .image import ImageList
+    from .utils import read_measurement_tables
+    
+    # Read global background model ZP from header
+    header = fits.getheader(hdu_path)
+    if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
+    if ZP is None: ZP = find_keyword_header(header, "ZP")
+    
+    # Construct Image List
     DF_Images = ImageList(hdu_path, bounds0,
                           obj_name, band,
                           pixel_scale, ZP, bkg, pad)
     
-    from .utils import read_measurement_tables
     tables_faint, tables_res_Rnorm = \
                 read_measurement_tables(dir_measure,
                                         bounds0,
@@ -285,7 +292,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     # radius in which power law is flattened, in arcsec (arbitrary)
 
     n_s = np.array([n0, 2., 4])         # power index
-    theta_s = np.array([theta_0, 10**1.9, 1200])  
+    theta_s = np.array([theta_0, 10**1.9, theta_cutoff])
         # transition radius in arcsec
     
     if n_spline == 1:
@@ -303,7 +310,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                         aureole_model='multi-power')
 
     # Pixelize PSF
-    psf.pixelize(pixel_scale=pixel_scale)
+    psf.pixelize(pixel_scale)
 
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
@@ -341,8 +348,8 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     
     if mask_type=='brightness':
         from .utils import SB2Intensity
-        count = SB2Intensity(SB_fit_thre, DF_Images.bkg,
-                             DF_Images.ZP, DF_Image.pixel_scale)[0]
+        count = SB2Intensity(SB_fit_thre, DF_Images.bkg_val,
+                             DF_Images.zp_val, DF_Image.pixel_scale)[0]
     else:
         count = None
         
@@ -377,6 +384,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                             n_spline=n_spline,
                             n_min=1, n_est=n0,
                             theta_in=50, theta_out=240,
+                            theta_cutoff=theta_cutoff,
                             leg2d=leg2d, parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
@@ -429,11 +437,11 @@ def Run_PSF_Fitting(hdu_path, bounds0,
         # Plot recovered PSF
         ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
                           save=save, save_dir=dir_name,
-                          suffix='_'+method)
+                          theta_cutoff=theta_cutoff, suffix='_'+method)
 
         # Recovered 1D PSF
         psf_fit, params = ds.generate_fit(psf, stars_tri[i],
-                                          n_out=4, theta_out=1200)
+                                          n_cutoff=4, theta_cutoff=theta_cutoff)
 
         # Calculate Chi^2
         ds.calculate_reduced_chi2()

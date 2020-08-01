@@ -63,19 +63,8 @@ class ImageButler:
 
     def __repr__(self):
         return f"{self.__class__.__name__} for {self.hdu_path}"
-    
-    @lazyproperty
-    def bkg_val(self):
-        # find background from header
-        return find_keyword_header(header, "BACKVAL") if self.bkg is None else self.bkg
-
-    
-    @lazyproperty
-    def zp_val(self):
-        # find zero point from header
-        return find_keyword_header(header, "ZP") if self.ZP is None else self.ZP
-
-        
+ 
+ 
 class Image(ImageButler):
     """ A Image Class """
         
@@ -325,7 +314,8 @@ class ImageList(ImageButler):
                       draw_real=True,
                       n_min=1,
                       theta_in=50,
-                      theta_out=240):
+                      theta_out=240,
+                      theta_cutoff=1200):
         """ Container for fit storing prior and likelihood function """
         
         from .container import Container
@@ -344,14 +334,15 @@ class ImageList(ImageButler):
 
             # Set Likelihood
             container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i], 
-                                     psf_range=[None, None], norm='brightness',
-                                     image_base=self.image_base[i])
+                                     psf_range=[None, None], theta_cutoff=theta_cutoff,
+                                     norm='brightness', image_base=self.image_base[i])
             
             # Set a few attributes to container for convenience
             container.image = self.images[i]
             container.data = self.data[i]
             container.mask = self.Masks[i]
             container.image_size = self.Images[i].image_size
+            container.theta_cutoff = theta_cutoff
             
             self.containers += [container]
 
