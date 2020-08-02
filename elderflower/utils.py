@@ -196,10 +196,12 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     clip = np.zeros_like(x_data, dtype='bool')
 
     popt, pcov = curve_fit(func, x_data, y_data, p0=p0)
-
+    
+    if draw: plt.figure()
     # Iterative sigma clip
     for i in range(n_iter):
-        if draw: plt.plot(x_test, func(x_test, *popt), color='gray', ls='--')
+        if draw: plt.plot(x_test, func(x_test, *popt),
+                          color='r', lw=1, ls='--', alpha=0.2)
         
         x_clip, y_clip = x_data[~clip], y_data[~clip]
         popt, pcov = curve_fit(func, x_clip, y_clip, p0=p0)
@@ -228,7 +230,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         
     return popt, clip_func
     
-def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=True):
+def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=True):
     """ Empirically pick out (bright) extended sources in the SE_catalog.
         The catalog need contain following columns:
         'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
@@ -1398,6 +1400,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
     if draw:
+        plt.figure()
         plt.scatter(mag, d_mag, s=8, alpha=0.2, color='gray')
         plt.scatter(mag, d_mag_clip, s=6, alpha=0.3)
         plt.axhline(CT, color='k', alpha=0.7)

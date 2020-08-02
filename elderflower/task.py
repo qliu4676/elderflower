@@ -173,7 +173,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     from urllib.error import HTTPError
     
     # Identify bright extended sources and enlarge their mask
-    ext_cat = identify_extended_source(SE_cat_field)
+    ext_cat = identify_extended_source(SE_cat_field, draw=draw)
     SE_cat_target = setdiff(SE_cat_field, ext_cat)
 
     # Crossmatch with PANSTRRS mag < mag_limit
