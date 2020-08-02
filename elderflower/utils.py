@@ -731,7 +731,7 @@ def check_save_path(dir_name, make_new=True, verbose=True):
                 dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
             os.makedirs(dir_name)
     if verbose: print("Results will be saved in %s\n"%dir_name)
-    
+
 
 def find_keyword_header(header, keyword):
     """ Search keyword value in header (converting to float).
@@ -761,7 +761,7 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
     else:
         return cat[crop]
 
-def crop_image(data, bounds, SE_seg_map=None,
+def crop_image(data, bounds, seg_map=None,
                sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
     from matplotlib import patches  
@@ -771,14 +771,9 @@ def crop_image(data, bounds, SE_seg_map=None,
 
     patch = np.copy(data[xmin:xmax, ymin:ymax])
     
-    if SE_seg_map is None:
-        seg_patch = None
-    else:
-        seg_patch = np.copy(SE_seg_map[xmin:xmax, ymin:ymax])
-    
     if draw:
-        if SE_seg_map is not None:
-            sky = data[(SE_seg_map==0)]
+        if seg_map is not None:
+            sky = data[(seg_map==0)]
         else:
             sky = sigma_clip(data, 3)
         sky_mean = np.mean(sky)
@@ -805,13 +800,12 @@ def crop_image(data, bounds, SE_seg_map=None,
                 rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
                                          linewidth=2.5, edgecolor='indianred', facecolor='none')
                 ax.add_patch(rect)
-                
-        
         plt.show()
         
-    if SE_seg_map is None:    
+    if seg_map is None:
         return patch
     else:
+        seg_patch = seg_map.copy()[xmin:xmax, ymin:ymax]
         return patch, seg_patch
 
 def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
@@ -866,12 +860,12 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 def read_measurement_tables(dir_name, bounds0_list,
                             obj_name='', band='G',
                             pad=100, r_scale=12,
-                            mag_limit=15):
+                            mag_limit=15, use_PS1_DR2=True):
     """ Read measurement tables from the directory """
     
     # Magnitude name
     b_name = band.lower()
-    mag_name = b_name+'MeanPSFMag' if 'PS' in dir_name else b_name+'mag'
+    mag_name = b_name+'MeanPSFMag' if use_PS1_DR2 else b_name+'mag'
     
     tables_res_Rnorm = []
     tables_faint = []

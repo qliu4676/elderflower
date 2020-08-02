@@ -3,22 +3,103 @@
 import os
 import sys
 import numpy as np
-from urllib.error import HTTPError
 
 from .utils import find_keyword_header, check_save_path
 
+from astropy.table import Table
 from astropy.io import fits
 import astropy.units as u
 
+SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO','MU_MAX','CLASS_STAR','ELLIPTICITY']
+SE_executable = '/opt/local/bin/source-extractor'
+
+apass_dir = '/Users/qliu/Data/apass/'
+
+def Run_Detection(hdu_path, obj_name, filt='g',
+                  threshold=3, work_dir='./',
+                  ZP_keyname='REF_ZP', ZP=None,
+                  ref_cat='APASSref.cat',
+                  apass_dir=apass_dir,
+                  config_path='default.sex',
+                  executable=SE_executable, **kwargs):
+                
+    from dfreduce.detection import sextractor
+    
+    print(f"Run SExtractor on {hdu_path}...")
+    
+    segname = os.path.join(work_dir, f'{obj_name}_seg.fits')
+    catname = os.path.join(work_dir, f'{obj_name}.cat')
+    
+    header = fits.getheader(hdu_path)
+    
+    # Find zero-point in the fits header
+    if ZP_keyname not in header.keys():
+    
+        # If not in the header, check kwargs
+        if type(ZP) is not float:
+            
+            # If not available in kwargs, compute by crossmatch with refcat
+            from dfreduce.utils.catalogues import match_catalogues
+            print("Compute zero-point from crossmatch with APASS catalog...")
+            
+            # Run sextractor with free zero-point
+            SE_catalog = sextractor.run(hdu_path,
+                                        extra_params=SE_params,
+                                        config_path=config_path,
+                                        catalog_path=catname,
+                                        executable=executable,
+                                        DETECT_THRESH=5,
+                                        ANALYSIS_THRESH=5)
+                                        
+            # Load (APASS) reference catalog
+            if os.path.exists(ref_cat):
+                refcat = Table.read(ref_cat, format='ascii')
+            else:
+                print("Generate APASS reference catalog... It takes time.")
+                ra_range = header['CRPIX1'] * header['CD1_1']
+                dec_range = header['CRPIX2'] * header['CD2_2']
+
+                minra, maxra = sorted([header['CRVAL1'] - ra_range, header['CRVAL1'] + ra_range])
+                mindec, maxdec = sorted([header['CRVAL2'] - dec_range, header['CRVAL2'] + dec_range])
+
+                refcat = catalogues.load_apass_in_region(apass_dir,
+                                                         bounds=[mindec, maxdec, minra, maxra])
+                refcat.write(ref_cat, format='ascii')
+
+            # Crossmatch SE catalog with reference catalog
+            imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, filt, sep_max=3.)
+            
+            # Get the mean ZP from the crossmatched catalog
+            ZP = np.mean(refcat_match[filt] - imagecat_match[filt])
+            print("Matched zero-point = {:.3f}".format(ZP))
+        
+    else:
+        ZP = np.float(header['REFZP'])
+        print("Read zero-point from header : ZP = {:.3f}".format(ZP))
+    
+    SE_catalog = sextractor.run(hdu_path,
+                                extra_params=SE_params,
+                                config_path=config_path,
+                                catalog_path=catname,
+                                executable=executable,
+                                DETECT_THRESH=threshold,
+                                ANALYSIS_THRESH=threshold,
+                                CHECKIMAGE_TYPE='SEGMENTATION',
+                                CHECKIMAGE_NAME=segname,
+                                MAG_ZEROPOINT=ZP, **kwargs)
+                                
+    print(f"CATALOG saved as {catname}")
+    print(f"SEGMENTATION saved as {segname}")
+
+
 def Match_Mask_Measure(hdu_path, bounds_list,
-                       SE_segmap, SE_catalog,
                        obj_name='', band="G",
                        pixel_scale=2.5,
                        ZP=None,bkg=None,field_pad=500,
                        r_scale=12, mag_limit=15, mag_saturate=13,
                        draw=True, save=True,
                        use_PS1_DR2=False,
-                       dir_name='../output/Measure'):
+                       work_dir='./'):
     
     print("""Measure the intensity at R = %d for stars < %.1f
             as normalization of fitting\n"""%(r_scale, mag_limit))
@@ -31,7 +112,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     ##################################################
     from .utils import crop_image, crop_catalog
     from astropy.stats import mad_std
-    from astropy.table import Table, setdiff, join
+    from astropy.table import setdiff, join
     from astropy import wcs
     
     # Read hdu
@@ -45,22 +126,16 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         wcs_data = wcs.WCS(header)
 
     # Read output from SExtractor detection
-    SE_cat_full = Table.read(SE_catalog, format="ascii.sextractor")
+    SE_cat_full = Table.read(os.path.join(work_dir, f'{obj_name}.cat'), format="ascii.sextractor")
     
-    if os.path.isfile(SE_segmap):
-        seg_map = fits.getdata(SE_segmap)
-    else:
-        seg_map = None
+    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}_seg.fits'))
+
      
     # Read global background model ZP from header
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
     
-    # Estimate of background fluctuation (just for plot)
-    if seg_map is not None:
-        std = mad_std(data[seg_map==0])
-    else:
-        std = mad_std(data)
+    std = mad_std(data)
    
     # Short summary
     print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
@@ -74,16 +149,15 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                     data.shape[1]-field_pad,
                     data.shape[0]-field_pad]
     
-    if not use_PS1_DR2:
-        print("Match field %r with catalog\n"%field_bounds)
+    if not use_PS1_DR2: print("Match field %r with catalog\n"%field_bounds)
     
     print("Measure Sky Patch (X min, Y min, X max, Y max) :")
     [print("%r"%b) for b in bounds_list.tolist()]
     
     # Display field_bounds and sub-regions to be matched
-    patch, seg_patch = crop_image(data, field_bounds, seg_map,
-                                  sub_bounds=bounds_list,
-                                  origin=0, draw=draw)
+    patch, _ = crop_image(data, field_bounds, seg_map,
+                          sub_bounds=bounds_list,
+                          origin=0, draw=draw)
     
     # Crop parent SE catalog
     SE_cat_field = crop_catalog(SE_cat_full, field_bounds)
@@ -96,6 +170,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     from .utils import cross_match_PS1_DR2, cross_match
     from .utils import calculate_color_term
     from .utils import add_supplementary_SE_star
+    from urllib.error import HTTPError
     
     # Identify bright extended sources and enlarge their mask
     ext_cat = identify_extended_source(SE_cat_field)
@@ -132,12 +207,15 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                                         mag_name=mag_name)
         
 
-    # Calculate color correction between PANSTARRS and DF filter
+    # Use PANSTARRS DR1 or DR2?
     if use_PS1_DR2:
         mag_name = mag_name_cat = b_name+'MeanPSFMag'
+        dir_name = os.path.join(work_dir, 'Measure-PS2/')
     else:
         mag_name_cat = mag_name+'_PS'
-        
+        dir_name = os.path.join(work_dir, 'Measure-PS1/')
+   
+   # Calculate color correction between PANSTARRS and DF filter
     CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
                               mag_name=mag_name_cat, draw=draw)
     
@@ -158,12 +236,12 @@ def Match_Mask_Measure(hdu_path, bounds_list,
                          overwrite=True, format='ascii')
 
         catalog_star_name = os.path.join(dir_name,
-                 '%s-catalog_PS_%s_all.txt'%(obj_name, b_name))
+                 f'{obj_name}-catalog_PS_{b_name}_all.txt')
         
         catalog_star.write(catalog_star_name, 
                            overwrite=True, format='ascii')
         
-        print('Save PANSTARRS catalog & matched sources in %s'%dir_name)
+        print(f'Save PANSTARRS catalog & matched sources in {dir_name}')
     
     
     ##################################################
@@ -232,19 +310,18 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         
         
 def Run_PSF_Fitting(hdu_path, bounds0,
-                    n_spline=2, obj_name='', band="G", 
+                    obj_name='DFfield', band="G",
+                    n_spline=2, work_dir='./', use_PS1_DR2=True,
                     pixel_scale=2.5, ZP=None, bkg=None, pad=100,
-                    r_scale=12, mag_limit=15,
-                    mag_threshold=[14,11],
+                    r_scale=12, mag_limit=15, mag_threshold=[14,11],
                     mask_type='radius', SB_fit_thre=24.5,
                     r_core=24, r_out=None, theta_cutoff=1200,
                     fit_sigma=True, fit_frac=False, leg2d=False,
                     wid_strip=24, n_strip=48, 
                     n_cpu=None, parallel=False, 
                     brightest_only=False, draw_real=True,
-                    draw=True, print_progress=True,
-                    save=False, dir_name='./',
-                    dir_measure='../output/Measure-PS'):
+                    draw=True, save=False,
+                    print_progress=True):
     
     ############################################
     # Read Image and Table
@@ -262,13 +339,20 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                           obj_name, band,
                           pixel_scale, ZP, bkg, pad)
     
+    # Read faint stars info and brightness measurement
+    if use_PS1_DR2:
+        dir_measure = os.path.join(work_dir, 'Measure-PS2/')
+    else:
+        dir_measure = os.path.join(work_dir, 'Measure-PS1/')
+        
     tables_faint, tables_res_Rnorm = \
                 read_measurement_tables(dir_measure,
                                         bounds0,
                                         obj_name=obj_name,
                                         band=band, pad=pad,
                                         r_scale=r_scale,
-                                        mag_limit=mag_limit)
+                                        mag_limit=mag_limit,
+                                        use_PS1_DR2=use_PS1_DR2)
     
     ############################################
     # Setup PSF
@@ -309,7 +393,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e6,
                                            psf_range=1000)
-
+                                           
     # Deep copy
     psf_tri = psf.copy()
     
@@ -324,7 +408,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                                      r_scale=r_scale,
                                      mag_threshold=mag_threshold,
                                      verbose=True, draw=False,
-                                     save=save, save_dir=dir_name)
+                                     save=save, save_dir=work_dir)
     
     #breakpoint()
     
@@ -351,7 +435,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
                         sn_thre=2.5, n_dilation=5, draw=True,
-                        save=save, save_dir=dir_name)
+                        save=save, save_dir=work_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
     if brightest_only:
@@ -415,7 +499,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
 #             if leg2d: fname+='l'
 #             if brightest_only: fname += 'b'
 
-#             ds.save_results(fname+'.res', fit_info, save_dir=dir_name)
+#             ds.save_results(fname+'.res', fit_info, save_dir=work_dir)
         
         ############################################
         # Plot Results
@@ -424,12 +508,12 @@ def Run_PSF_Fitting(hdu_path, bounds0,
         method = str(n_spline)+'p'
         
         ds.cornerplot(figsize=(18, 16),
-                      save=save, save_dir=dir_name,
+                      save=save, save_dir=work_dir,
                       suffix='_'+method)
 
         # Plot recovered PSF
         ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
-                          save=save, save_dir=dir_name,
+                          save=save, save_dir=work_dir,
                           theta_cutoff=theta_cutoff, suffix='_'+method)
 
         # Recovered 1D PSF
@@ -444,13 +528,19 @@ def Run_PSF_Fitting(hdu_path, bounds0,
                               norm=AsinhNorm(a=0.01),
                               vmin=DF_Images.bkg-2,
                               vmax=DF_Images.bkg+50, 
-                              save=save, save_dir=dir_name,
+                              save=save, save_dir=work_dir,
                               suffix='_'+method)
 
         if leg2d:
-            ds.draw_background(save=save, save_dir=dir_name,
+            ds.draw_background(save=save, save_dir=work_dir,
                                suffix='_'+method)
 
         dsamplers += [ds]
+        
+    
+    # Delete Stars to avoid pickling error in rerun
+    for variable in dir():
+        if 'stars' in variable:
+            del locals()[variable]
         
     return dsamplers

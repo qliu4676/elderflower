@@ -1181,9 +1181,8 @@ def C_mpow1Dto2D(n_s, theta_s):
 
 def get_center_offset(pos):
 # Shift center for the purpose of accuracy (by default galsim round to integer!)
-    # original
-    x_pos, y_pos = pos + 1
-    # test on Mar 28
+    # Originally should be x_pos, y_pos = pos + 1 (ref galsim demo)
+    # But origin of star_pos in SE is (1,1) but (0,0) in python
     x_pos, y_pos = pos
     
     x_nominal = x_pos + 0.5
@@ -1424,14 +1423,15 @@ def generate_image_by_flux(psf, stars, xx, yy,
 
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
+        # Note origin of star_pos in SE is (1,1) but (0,0) in python
         image_gs = full_image.array
         
-        func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+        func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                        Flux=frac * stars.Flux_verybright)
         image_aureole = np.sum([f2d(xx,yy) for f2d in func_aureole_2d_s], axis=0)
         
         if draw_core:
-            func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright,
+            func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright-1,
                                                      Flux=(1-frac) * stars.Flux_verybright)
             image_gs += np.sum([f2d(xx,yy) for f2d in func_core_2d_s], axis=0)
                 
@@ -1565,15 +1565,16 @@ def generate_image_by_znorm(psf, stars, xx, yy,
                 
     if draw_real:
         # Draw very bright star in real space (high cost in convolution)
+        # Note origin of star_pos in SE is (1,1) but (0,0) in python
         image_gs = full_image.array
         
         if brightest_only:
             # Only plot the aureole. A Deeper mask is required.
-            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            I0=I0_verybright)
         else:
             # Plot core + aureole. 
-            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright,
+            func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            Flux=frac * stars.Flux_verybright)
             if draw_core:
                 func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright,
