@@ -1,6 +1,8 @@
 import os
 import numpy as np
 
+from copy import deepcopy
+
 try: 
     import seaborn as sns
     seaborn_plot = True
@@ -485,32 +487,29 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
-def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
-                       r_core=None, vmin=None, vmax=None, cmap='gnuplot2', norm=None,
+def draw_comparison_2D(image_fit, data, mask, image_star,
+                       noise_fit=0, r_core=None,
+                       vmin=None, vmax=None,
+                       cmap='gnuplot2', norm=AsinhNorm(0.01),
                        save=False, save_dir=".", suffix=""):
+                       
     """ Compare data and fit in 2D """
     
     mask_fit = getattr(mask, 'mask_comb', mask.mask_deep)
     
     if vmin is None:
-        vmin = np.median(image_fit[~mask_fit]) - 1
+        vmin = np.median(image_fit[~mask_fit]) - 5
     if vmax is None:
-        vmax = vmin + 150
+        vmax = vmin + 200
         
-    if norm is None:
-        norm1 = LogNorm()
-        norm2 = LogNorm()
-    else:
-        from copy import deepcopy
-        norm1 = norm
-        norm2 = deepcopy(norm1)
+    norm2 = deepcopy(norm)
     
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
     
-    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)    
+    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
     im = ax3.imshow(image_star, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)    
@@ -527,11 +526,11 @@ def draw_comparison_2D(image_fit, data, mask, image_star, noise_fit=0,
 #     ax4.set_title("Chi. [(I$_f$ - I$_0$)/$\sigma_0$]", fontsize=15); colorbar(im)
     
     residual = (data-image_star)
-    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     
     residual[mask_fit] = 0
-    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm1, cmap=cmap)
+    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
     
     if r_core is not None:

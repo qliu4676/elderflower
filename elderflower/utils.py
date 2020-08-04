@@ -21,6 +21,7 @@ from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 from photutils.segmentation import SegmentationImage
     
+from .io import save_pickle, load_pickle, check_save_path
 from .plotting import LogNorm, AsinhNorm, colorbar
 
 # default SE columns for cross_match
@@ -679,7 +680,7 @@ def measure_Rnorm_all(table, bounds,
     res_thumb : thumbnails of image, mask, background and center of object, stored as dictionary
         
     """
-
+    
     Xmin, Ymin = bounds[:2]
     
     table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X%sY%s.txt'\
@@ -688,7 +689,7 @@ def measure_Rnorm_all(table, bounds,
                                   %(obj_name, mag_name[0], mag_limit, Xmin, Ymin))
     if read:
         table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
-        res_thumb = load_thumbs(res_thumb_name)
+        res_thumb = load_pickle(res_thumb_name)
         
     else:
         tab = table[table[mag_name]<mag_limit]
@@ -710,7 +711,7 @@ def measure_Rnorm_all(table, bounds,
         
         if save:
             check_save_path(dir_name, make_new=False, verbose=False)
-            save_thumbs(res_thumb, res_thumb_name)
+            save_pickle(res_thumb, res_thumb_name)
             table_res_Rnorm.write(table_Rnorm_name, overwrite=True, format='ascii')
             
     return table_res_Rnorm, res_thumb
@@ -723,33 +724,6 @@ def id_generator(size=6, chars=None):
     if chars is None:
         chars = string.ascii_letters + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
-
-def check_save_path(dir_name, make_new=True, verbose=True):
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name)
-    elif make_new:
-        if len(os.listdir(dir_name)) != 0:
-            while os.path.exists(dir_name):
-                dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
-            os.makedirs(dir_name)
-    if verbose: print("Results will be saved in %s\n"%dir_name)
-
-
-def find_keyword_header(header, keyword):
-    """ Search keyword value in header (converting to float).
-        Input a value by user if not found. """
-    try:
-        val = np.float(header[keyword])
-     
-    except KeyError:
-        print("%s missing in header --->"%keyword)
-        
-        try:
-            val = np.float(input("Input a value of %s :"%keyword))
-        except ValueError:
-            sys.exit("Invalid %s values!"%keyword) 
-            
-    return val
     
     
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
@@ -1413,7 +1387,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           mag_range=[13, 22], K=2, degree=3, draw=True):
+                           mag_range=[13, 22], K=3, degree=3, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
@@ -1531,7 +1505,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         if len(ext_cat)>0:
             for (X_c,Y_c, r) in zip(ext_cat['X_IMAGE'],
                                     ext_cat['Y_IMAGE'],
-                                    ext_cat['A_IMAGE']*3):
+                                    ext_cat['A_IMAGE']*5):
                 apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
             
     # Draw segment map generated from the catalog
@@ -1561,20 +1535,6 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     return seg_map
 
 
-def save_thumbs(obj, filename):
-    import pickle
-    fname = filename+'.pkl'
-    print("Save thumbs to: %s"%fname)
-    with open(fname, 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
-def load_thumbs(filename):
-    import pickle
-    fname = filename+'.pkl'
-    print("Read thumbs from: %s"%fname) 
-    with open(fname, 'rb') as f:
-        return pickle.load(f)
-
 ### Prior Helper ###    
 def build_independent_priors(priors):
     """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
@@ -1584,7 +1544,6 @@ def build_independent_priors(priors):
             v[i] = priors[i].ppf(u[i])
         return v
     return prior_transform    
-
 
 
 ### Recostruct PSF from fit ###    

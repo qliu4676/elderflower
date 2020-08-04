@@ -7,7 +7,7 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.utils import lazyproperty
 
-from .utils import crop_image, find_keyword_header
+from .utils import crop_image
 from .plotting import AsinhNorm
 
 

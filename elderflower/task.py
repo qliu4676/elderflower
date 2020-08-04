@@ -4,16 +4,17 @@ import os
 import sys
 import numpy as np
 
-from .utils import find_keyword_header, check_save_path
-
 from astropy.table import Table
 from astropy.io import fits
-import astropy.units as u
+
+from .io import find_keyword_header
+
 
 SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO','MU_MAX','CLASS_STAR','ELLIPTICITY']
 SE_executable = '/opt/local/bin/source-extractor'
 
 apass_dir = '/Users/qliu/Data/apass/'
+
 
 def Run_Detection(hdu_path, obj_name, filt='g',
                   threshold=3, work_dir='./',
@@ -166,6 +167,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Crossmatch with Star Catalog (across the field)
     ##################################################
     
+    import astropy.units as u
     from .utils import identify_extended_source
     from .utils import cross_match_PS1_DR2, cross_match
     from .utils import calculate_color_term
@@ -226,7 +228,10 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
                                             mag_saturate, draw=draw)
     
+    ##################################################
     # Save matched table and catalog
+    ##################################################
+    from .io import check_save_path
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
         tab_target_name = os.path.join(dir_name,
@@ -254,7 +259,7 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
-                                             mag_range=[mag_saturate,22], K=2.5,
+                                             mag_range=[mag_saturate,22], K=3,
                                              degree=3, draw=False)
     
     for bounds in bounds_list:
@@ -310,16 +315,29 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         
         
 def Run_PSF_Fitting(hdu_path, bounds0,
-                    obj_name='DFfield', band="G",
-                    n_spline=2, work_dir='./', use_PS1_DR2=True,
-                    pixel_scale=2.5, ZP=None, bkg=None, pad=100,
-                    r_scale=12, mag_limit=15, mag_threshold=[14,11],
-                    mask_type='radius', SB_fit_thre=24.5,
-                    r_core=24, r_out=None, theta_cutoff=1200,
-                    fit_sigma=True, fit_frac=False, leg2d=False,
+                    obj_name='DFfield',
+                    band="G",
+                    n_spline=2,
+                    work_dir='./',
+                    use_PS1_DR2=True,
+                    pixel_scale=2.5,
+                    ZP=None, bkg=None, pad=100,
+                    r_scale=12, mag_limit=15,
+                    mag_threshold=[14,11],
+                    mask_type='radius',
+                    SB_fit_thre=24.5,
+                    r_core=24, r_out=None,
+                    theta_cutoff=1200,
+                    fit_sigma=True,
+                    fit_frac=False,
+                    leg2d=False,
                     wid_strip=24, n_strip=48, 
-                    n_cpu=None, parallel=False, 
-                    brightest_only=False, draw_real=True,
+                    n_cpu=None,
+                    parallel=False,
+                    brightest_only=False,
+                    draw_real=True,
+                    nlive_init=None,
+                    sample_method='auto',
                     draw=True, save=False,
                     print_progress=True):
     
@@ -482,10 +500,12 @@ def Run_PSF_Fitting(hdu_path, bounds0,
         ndim = container.ndim
 
         ds = DynamicNestedSampler(container,
-                                  sample='auto', n_cpu=n_cpu)
-        
-        ds.run_fitting(nlive_init=ndim*10,
-                       nlive_batch=2*ndim+2, maxbatch=2,
+                                  n_cpu=n_cpu,
+                                  sample=sample_method)
+                                  
+        if nlive_init is None: nlive_init = ndim*10
+        ds.run_fitting(nlive_init=nlive_init,
+                       nlive_batch=5*ndim+5, maxbatch=2,
                        print_progress=print_progress)
     
 #         if save:
@@ -526,7 +546,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
         # Draw 2D compaison
         ds.draw_comparison_2D(r_core=r_core,
                               norm=AsinhNorm(a=0.01),
-                              vmin=DF_Images.bkg-2,
+                              vmin=DF_Images.bkg-psf_fit.bkg_std,
                               vmax=DF_Images.bkg+50, 
                               save=save, save_dir=work_dir,
                               suffix='_'+method)
