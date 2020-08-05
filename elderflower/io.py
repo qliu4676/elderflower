@@ -2,8 +2,9 @@ import os
 import re
 import sys
 import pickle
-
+import yaml
 import numpy as np
+from functools import partial, wraps
 
 def check_save_path(dir_name, make_new=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
@@ -54,3 +55,34 @@ def load_pickle(filename):
     print("Read data from %s"%fname)
     with open(fname, 'rb') as f:
         return pickle.load(f)
+
+
+def load_config(filename):
+    """ Read a yaml configuration. """
+    
+    if not filename.endswith('.yaml'):
+        sys.exit(f"Table {filename} is not a yaml file. Exit.")
+    
+    with open(filename, 'r') as stream:
+        try:
+            return yaml.load(stream, Loader=yaml.FullLoader)
+        except yaml.YAMLError as err:
+            print(err)
+
+def config_kwargs(func, config_file):
+    """Wrap keyword arguments from a yaml configuration file."""
+
+    # Load yaml file
+    with open(config_file, 'r') as f:
+        config = yaml.load(f,Loader=yaml.FullLoader)
+    print(f"Loaded configuration file {config_file}")
+    
+    # Wrap the function
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        config.update(kwargs)
+        return func(*args, **config)
+
+    return wrapper
+
+#config = partial(config_kwargs, config_file="./config.yaml")

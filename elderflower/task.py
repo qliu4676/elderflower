@@ -168,10 +168,10 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     ##################################################
     
     import astropy.units as u
-    from .utils import identify_extended_source
-    from .utils import cross_match_PS1_DR2, cross_match
-    from .utils import calculate_color_term
-    from .utils import add_supplementary_SE_star
+    from .utils import (identify_extended_source,
+                        cross_match_PS1_DR2, cross_match,
+                        calculate_color_term,
+                        add_supplementary_SE_star)
     from urllib.error import HTTPError
     
     # Identify bright extended sources and enlarge their mask
@@ -252,8 +252,9 @@ def Match_Mask_Measure(hdu_path, bounds_list,
     ##################################################
     # Build Mask & Measure Scaling (in selected patch)
     ##################################################
-    from .utils import fit_empirical_aperture, make_segm_from_catalog
-    from .utils import measure_Rnorm_all
+    from .utils import (fit_empirical_aperture,
+                        make_segm_from_catalog,
+                        measure_Rnorm_all)
     from .plotting import plot_bright_star_profile
     
     # Empirical enlarged aperture size from magnitude based on matched SE detection
@@ -387,7 +388,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     # radius in which power law is flattened, in arcsec (arbitrary)
 
     n_s = np.array([n0, 2., 4])         # power index
-    theta_s = np.array([theta_0, 10**1.9, theta_cutoff])
+    theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # transition radius in arcsec
     
     if n_spline == 1:

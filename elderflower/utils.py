@@ -862,7 +862,7 @@ def read_measurement_tables(dir_name, bounds0_list,
             table_catalog = Table.read(fname_catalog, format="ascii")
             mag_catalog = table_catalog[mag_name]
         else:
-            sys.exit("Table %s does not exist. Exit."%fname_catalog)
+            sys.exit(f"Table {fname_catalog} does not exist. Exit.")
 
         # stars fainter than magnitude limit (fixed as background), > 22 is ignored
         table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
@@ -880,7 +880,7 @@ def read_measurement_tables(dir_name, bounds0_list,
         if os.path.isfile(fname_res_Rnorm):
             table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
         else:
-            sys.exit("Table %s does not exist. Exit."%fname_res_Rnorm)
+            sys.exit(f"Table {fname_res_Rnorm} does not exist. Exit.")
 
         # Crop the catalog
         table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=bounds0)

@@ -282,7 +282,6 @@ class ImageList(ImageButler):
         
         
     def estimate_bkg(self):
-        
         """ Estimate background level and std """
         
         from astropy.stats import sigma_clip
