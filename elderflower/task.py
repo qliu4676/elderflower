@@ -4,6 +4,8 @@ import os
 import sys
 import numpy as np
 
+from functools import partial
+
 from astropy.table import Table
 from astropy.io import fits
 
@@ -16,7 +18,7 @@ SE_executable = '/opt/local/bin/source-extractor'
 apass_dir = '/Users/qliu/Data/apass/'
 
 
-def Run_Detection(hdu_path, obj_name, filt='g',
+def Run_Detection(hdu_path, obj_name, band='g',
                   threshold=3, work_dir='./',
                   ZP_keyname='REF_ZP', ZP=None,
                   ref_cat='APASSref.cat',
@@ -68,10 +70,10 @@ def Run_Detection(hdu_path, obj_name, filt='g',
                 refcat.write(ref_cat, format='ascii')
 
             # Crossmatch SE catalog with reference catalog
-            imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, filt, sep_max=3.)
+            imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=3.)
             
             # Get the mean ZP from the crossmatched catalog
-            ZP = np.mean(refcat_match[filt] - imagecat_match[filt])
+            ZP = np.mean(refcat_match[band] - imagecat_match[band])
             print("Matched zero-point = {:.3f}".format(ZP))
         
     else:
@@ -93,11 +95,16 @@ def Run_Detection(hdu_path, obj_name, filt='g',
     print(f"SEGMENTATION saved as {segname}")
 
 
-def Match_Mask_Measure(hdu_path, bounds_list,
-                       obj_name='', band="G",
+def Match_Mask_Measure(hdu_path,
+                       bounds_list,
+                       obj_name='',
+                       band="G",
                        pixel_scale=2.5,
-                       ZP=None,bkg=None,field_pad=500,
-                       r_scale=12, mag_limit=15, mag_saturate=13,
+                       ZP=None, bkg=None,
+                       field_pad=500,
+                       r_scale=12,
+                       mag_limit=15,
+                       mag_saturate=13,
                        draw=True, save=True,
                        use_PS1_DR2=False,
                        work_dir='./'):
@@ -315,7 +322,8 @@ def Match_Mask_Measure(hdu_path, bounds_list,
         
         
         
-def Run_PSF_Fitting(hdu_path, bounds0,
+def Run_PSF_Fitting(hdu_path,
+                    bounds_list,
                     obj_name='DFfield',
                     band="G",
                     n_spline=2,
@@ -354,7 +362,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     if ZP is None: ZP = find_keyword_header(header, "ZP")
     
     # Construct Image List
-    DF_Images = ImageList(hdu_path, bounds0,
+    DF_Images = ImageList(hdu_path, bounds_list,
                           obj_name, band,
                           pixel_scale, ZP, bkg, pad)
     
@@ -366,7 +374,7 @@ def Run_PSF_Fitting(hdu_path, bounds0,
         
     tables_faint, tables_res_Rnorm = \
                 read_measurement_tables(dir_measure,
-                                        bounds0,
+                                        bounds_list,
                                         obj_name=obj_name,
                                         band=band, pad=pad,
                                         r_scale=r_scale,
@@ -511,12 +519,12 @@ def Run_PSF_Fitting(hdu_path, bounds0,
     
 #         if save:
 #             fit_info = {'n_spline':n_spline, 'image_size':image_size,
-#                         'bounds0':bounds0, 'leg2d':leg2d,
+#                         'bounds_list':bounds_list, 'leg2d':leg2d,
 #                         'r_core':r_core, 'r_scale':r_scale}
 
 #             method = str(n_spline)+'p'
-#             fname='NGC5907-%s-fit_best_X%dY%d_%s'\
-#                         %(band, bounds0[0], bounds0[1], method)
+#             fname='NGC5907-%s-fit_best_%s'\
+#                         %(band, method)
 #             if leg2d: fname+='l'
 #             if brightest_only: fname += 'b'
 
@@ -565,3 +573,61 @@ def Run_PSF_Fitting(hdu_path, bounds0,
             del locals()[variable]
         
     return dsamplers
+
+
+
+class berry:
+    """ Fruit of elderflower """
+
+    def __init__(self, hdu_path, bounds_list,
+                 obj_name='DFfield', band='g',
+                 config_file="./config.yaml"):
+        """
+        
+        Parameters
+        ----------
+        
+        hdu_path : str
+            path of hdu data
+        bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
+            list of boundaries of regions to be fit (Nx4)
+        obj_name : str
+            object name
+        band : str
+            filter name
+        
+        """
+        
+        self.hdu_path = hdu_path
+        self.bounds_list = bounds_list
+        self.obj_name = obj_name
+        self.band = band
+        
+        from elderflower.io import config_kwargs
+        self.config_func = partial(config_kwargs, config_file=config_file)
+    
+    
+    def print_keys(self):
+        @self.config_func
+        def echo(**kwargs):
+            import pprint as pp
+            pp.pprint(kwargs)
+
+        echo()
+    
+    def detection(self, **kwargs):
+        Run_Detection(self.hdu_path, self.obj_name,
+                      band=self.band, **kwargs)
+        
+    def run(self):
+        @self.config_func
+        def match(self):
+            Match_Mask_Measure(self.hdu_path, self.bounds_list)
+            
+        @self.config_func
+        def fit(self):
+            Run_PSF_Fitting(self.hdu_path, self.bounds_list)
+            
+        self.match()
+        self.samplers = self.fit()
+    

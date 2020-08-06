@@ -63,9 +63,9 @@ def load_config(filename):
     if not filename.endswith('.yaml'):
         sys.exit(f"Table {filename} is not a yaml file. Exit.")
     
-    with open(filename, 'r') as stream:
+    with open(filename, 'r') as f:
         try:
-            return yaml.load(stream, Loader=yaml.FullLoader)
+            return yaml.load(f, Loader=yaml.FullLoader)
         except yaml.YAMLError as err:
             print(err)
 
@@ -73,8 +73,7 @@ def config_kwargs(func, config_file):
     """Wrap keyword arguments from a yaml configuration file."""
 
     # Load yaml file
-    with open(config_file, 'r') as f:
-        config = yaml.load(f,Loader=yaml.FullLoader)
+    config = load_config(config_file)
     print(f"Loaded configuration file {config_file}")
     
     # Wrap the function
@@ -84,5 +83,4 @@ def config_kwargs(func, config_file):
         return func(*args, **config)
 
     return wrapper
-
-#config = partial(config_kwargs, config_file="./config.yaml")
+    

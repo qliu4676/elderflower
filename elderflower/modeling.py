@@ -1748,7 +1748,6 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         elif n_spline==2:
             def prior_tf_2p(u):
                 v = u.copy()
-    #             v[0] = u[0] * 2*d_n0 + (n_est-d_n0)              # n0 : n +/- d_n0
                 v[0] = Prior_n.ppf(u[0])    # n0 : N (n, d_n0)
                 v[1] = u[1] * (v[0]- d_n0 - n_min) + n_min        # n1 : n_min - (n0-d_n0)
                 v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
@@ -1772,75 +1771,105 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
             return prior_tf_2p
 
-        elif n_spline==3:
-            def prior_tf_3p(u):
-                v = u.copy()
-                v[0] = Prior_n.ppf(u[0])        # n0 : N (n, d_n0)
-                v[1] = u[1] * 0.5 + (v[0]-1)               # n1 : n0-1.0 - n0-0.5
-                v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
-                    # n2 : max[n_min, n1-1.5] - n1-0.5
-                v[3] = u[3] * dlog_t + log_t_in                 
-                    # log theta1 : t_in-t_out  arcsec
-                v[4] = u[4] * (log_t_out - v[3]) + v[3]
-                    # log theta2 : theta1 - t_out  arcsec
-
-                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
-
-                if fit_sigma:
-                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
-                    leg_amp = v[-K]
-                else:
-                    leg_amp = 0.5
-
-                if leg2d:
-                    v[-K-2] = stats.uniform.ppf(u[-K-2], 
-                                                loc=leg_amp-1.3, scale=1.3)  # log A10
-                    v[-K-3] = stats.uniform.ppf(u[-K-3],
-                                                loc=leg_amp-1.3, scale=1.3)  # log A01
-                if fit_frac:
-                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-
-                return v
-
-            return prior_tf_3p
+#        elif n_spline==3:
+#            def prior_tf_3p(u):
+#                v = u.copy()
+#                v[0] = Prior_n.ppf(u[0])        # n0 : N (n, d_n0)
+#                v[1] = u[1] + (v[0]-1.5)        # n1 : n0-1.5 - n0-0.5
+#                v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
+#                    # n2 : max{n_min, n1-1.5} - n1-0.5
+#                v[3] = u[3] * dlog_t + log_t_in
+#                    # log theta1 : t_in-t_out  arcsec
+#                v[4] = u[4] * (log_t_out - v[3]) + v[3]
+#                    # log theta2 : theta1 - t_out  arcsec
+#
+#                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+#
+#                if fit_sigma:
+#                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+#                    leg_amp = v[-K]
+#                else:
+#                    leg_amp = 0.5
+#
+#                if leg2d:
+#                    v[-K-2] = stats.uniform.ppf(u[-K-2],
+#                                                loc=leg_amp-1.3, scale=1.3)  # log A10
+#                    v[-K-3] = stats.uniform.ppf(u[-K-3],
+#                                                loc=leg_amp-1.3, scale=1.3)  # log A01
+#                if fit_frac:
+#                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+#
+#                return v
+#
+#            return prior_tf_3p
 
         else:
-            def prior_tf_sp(u):
-                v = u.copy()
+            prior_tf = partial(prior_tf_sp,
+                               Prior_n=Prior_n,
+                               Prior_mu=Prior_mu,
+                               Prior_logsigma=Prior_logsigma,
+                               n_spline=n_spline,
+                               n_min=n_min,
+                               log_t_in=log_t_in,
+                               log_t_out=log_t_out,
+                               fit_sigma=fit_sigma,
+                               fit_frac=fit_frac,
+                               K=K, leg2d=leg2d)
 
-                v[0] = Prior_n.ppf(u[0])
+            return prior_tf
 
-                for k in range(n_spline-1):
-                    v[k+1] = u[k+1] * max(-0.3, 1.3-v[k]) + (v[k]-0.3)         
-                    # n_k+1 : [1, n_k-0.6] - n_k-0.3a
-                v[n_spline] = u[n_spline] * dlog_t + log_t_in
-                # log theta1 : t_in-t_out  arcsec
 
-                for k in range(n_spline-2):
+def prior_tf_sp(u,
+                Prior_n=None,
+                Prior_mu=None,
+                Prior_logsigma=None,
+                n_spline=3,
+                n_min=1,
+                log_t_in=1.7,
+                log_t_out=2.4,
+                fit_sigma=True,
+                fit_frac=False,
+                K=1, leg2d=False):
+                
+    """ Prior Transform function for n_spline """
 
-                    v[k+n_spline+1] = u[k+n_spline+1] * \
-                                        min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
-                    # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
+    v = u.copy()
 
-                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+    v[0] = Prior_n.ppf(u[0])
 
-                if fit_sigma:
-                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
-                    leg_amp = v[-K]
-                else:
-                    leg_amp = 0.5
+    for k in range(n_spline-1):
+        v[k+1] = u[k+1] * max(-1.2, n_min+0.3-v[k]) + (v[k]-0.3)
+        # n_k+1 : max{n_min, n_k-1.5} - n_k-0.3 (new, much slower?)
+#        v[k+1] = u[k+1] * max(-0.3, n_min+0.3-v[k]) + (v[k]-0.3)
+#        # n_k+1 : max{1, n_k-0.6} - n_k-0.3 (old)
 
-                if leg2d:
-                    v[-K-2] = stats.uniform.ppf(u[-K-2], 
-                                                loc=leg_amp-1.3, scale=1.3)  # log A10
-                    v[-K-3] = stats.uniform.ppf(u[-K-3],
-                                                loc=leg_amp-1.3, scale=1.3)  # log A01
-                if fit_frac:
-                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+    v[n_spline] = u[n_spline] * (log_t_out - log_t_in) + log_t_in
+    # log theta1 : t_in-t_out  arcsec
 
-                return v
+    for k in range(n_spline-2):
 
-            return prior_tf_sp
+        v[k+n_spline+1] = u[k+n_spline+1] * \
+                            min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
+        # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
+
+    v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
+
+    if fit_sigma:
+        v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
+        leg_amp = v[-K]
+    else:
+        leg_amp = 0.5
+
+    if leg2d:
+        v[-K-2] = stats.uniform.ppf(u[-K-2],
+                                    loc=leg_amp-1.3, scale=1.3)  # log A10
+        v[-K-3] = stats.uniform.ppf(u[-K-3],
+                                    loc=leg_amp-1.3, scale=1.3)  # log A01
+    if fit_frac:
+        v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
+
+    return v
+
         
 def draw_proposal(draw_func, proposal, psf, stars, xx, yy, image_base,
                   leg2d=False, H10=None, H01=None, K=0, **kwargs):
