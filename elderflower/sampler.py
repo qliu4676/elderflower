@@ -255,7 +255,7 @@ def get_params_fit(results, return_sample=False):
 
 def save_nested_fitting_result(res, filename='fit.res'):
     with open(filename,'wb') as file:
-        pickle.dump(res, file)
+        pickle.dump(res, file, pickle.HIGHEST_PROTOCOL)
         
 def load_nested_fitting_result(filename='fit.res'):        
     with open(filename, "rb") as file:

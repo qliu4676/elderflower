@@ -234,6 +234,7 @@ def Match_Mask_Measure(hdu_path,
     # Mannually add stars missed in the crossmatch or w/ weird mag to table
     tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
                                             mag_saturate, draw=draw)
+                                            
     
     ##################################################
     # Save matched table and catalog
@@ -328,7 +329,7 @@ def Run_PSF_Fitting(hdu_path,
                     band="G",
                     n_spline=2,
                     work_dir='./',
-                    use_PS1_DR2=True,
+                    use_PS1_DR2=False,
                     pixel_scale=2.5,
                     ZP=None, bkg=None, pad=100,
                     r_scale=12, mag_limit=15,
@@ -595,6 +596,8 @@ class berry:
             object name
         band : str
             filter name
+        config_file : yaml
+            configuration file which contains keyword arguments
         
         """
         
@@ -607,27 +610,27 @@ class berry:
         self.config_func = partial(config_kwargs, config_file=config_file)
     
     
-    def print_keys(self):
+    @property
+    def kwargs(self):
         @self.config_func
-        def echo(**kwargs):
-            import pprint as pp
-            pp.pprint(kwargs)
-
-        echo()
+        def _kwargs(**kwargs):
+            return kwargs
+            
+        return _kwargs()
     
     def detection(self, **kwargs):
         Run_Detection(self.hdu_path, self.obj_name,
                       band=self.band, **kwargs)
         
     def run(self):
+            
         @self.config_func
-        def match(self):
+        def _match():
             Match_Mask_Measure(self.hdu_path, self.bounds_list)
             
         @self.config_func
-        def fit(self):
-            Run_PSF_Fitting(self.hdu_path, self.bounds_list)
+        def _fit():
+            return Run_PSF_Fitting(self.hdu_path, self.bounds_list)
             
-        self.match()
-        self.samplers = self.fit()
+        _match(); samplers = _fit()
     
