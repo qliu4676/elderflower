@@ -123,7 +123,7 @@ class Mask:
                                                         k, self.pixel_scale)
                 
         
-    def make_mask_map_deep(self, dir_measure=None, by='radius', 
+    def make_mask_map_deep(self, dir_measure=None, by='aper',
                            r_core=None, r_out=None, count=None,
                            draw=True, save=False, save_dir='.', 
                            obj_name='', band='G', *args, **kwargs):
@@ -135,7 +135,7 @@ class Mask:
         Parameters
         ----------
         by : mask type
-            "radius": aperture-like masking
+            "aper": aperture-like masking
             "brightness": brightness-limit masking
         r_core : core radius of [medium, very bright] stars to be masked
         count : absolute count (in ADU) above which is masked        
@@ -374,7 +374,7 @@ def make_mask_map_core(image, star_pos, r_core=12):
 
 
 def make_mask_map_dual(image, stars,
-                       xx=None, yy=None, by='radius', 
+                       xx=None, yy=None, by='aper',
                        pad=0, r_core=24, r_out=None, count=None,
                        seg_base=None, n_bright=25, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, 
@@ -390,7 +390,7 @@ def make_mask_map_dual(image, stars,
         
     star_pos = stars.star_pos_bright + pad
     
-    if by == 'radius':
+    if by == 'aper':
         r_core_s = np.unique(r_core)[::-1]
         if len(r_core_s) == 1:
             r_core_A, r_core_B = r_core_s, r_core_s
@@ -412,7 +412,7 @@ def make_mask_map_dual(image, stars,
             print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
             
     if sn_thre is not None:
-        print("Detect and deblend source... Mask S/N > %.1f (%dth enlarged)"%(sn_thre, n_dilation))
+        print("Detect and deblend source... Mask S/N > %.1f (X%d enlarged)"%(sn_thre, n_dilation))
         # detect all source first 
         back, back_rms = background_sub_SE(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
@@ -453,7 +453,7 @@ def make_mask_map_dual(image, stars,
         
         max_lab = segm_deb.max_label
     
-    if by == 'radius':
+    if by == 'aper':
         # mask core for bright stars out to given radii
         print("Mask core regions: r < %d (%d) pix "%(r_core_A, r_core_B))
         core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r

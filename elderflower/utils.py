@@ -665,10 +665,10 @@ def measure_Rnorm_all(table, bounds,
     image : image data
     
     seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
-    r_scale : radius at which the flux scaling is measured (default: 10)
+    r_scale : radius at which the flux scaling is measured (default: 12)
     width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
     mag_name : magnitude column name
-    mag_limit : magnitude limit below which are measured
+    mag_limit : magnitude upper limit below which are measured
     read : whether to read existed outputs
     save : whether to save output table and thumbnails
     obj_name : object name used as prefix of saved output

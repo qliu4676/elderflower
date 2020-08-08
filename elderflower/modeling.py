@@ -28,7 +28,7 @@ try:
     
 except ImportError:
     import warnings
-    warnings.warn("Joblib / psutil / multiprocessing / mpi4py is not installed. Parallelization is not enabled.")
+    warnings.warn("One of Joblib, psutil, multiprocessing, mpi4py is not installed. Parallelization is not enabled.")
     parallel_enabled = False
 
 try:
@@ -1663,7 +1663,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     mu_est : estimate of sky background level, from either the global DF reduction pipeline or a local sigma-clipped mean after aggresive mask
     std_est : esimtate of sky uncertainty, from a local sigma-clipped stddev after aggresive mask
     
-    n_spline : number of power-law component fot modeling the aureole
+    n_spline : number of power-law component for modeling the aureole
     n_min : minium power index allowed in fitting
     d_n0 : stddev of noraml prior of n_0
     theta_in : inner boundary of the first transition radius

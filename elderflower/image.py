@@ -12,31 +12,32 @@ from .plotting import AsinhNorm
 
 
 class ImageButler:
-    """ A Image Butler """
+    """
+    
+    A class storing Image info.
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        path of hdu data
+    obj_name : str
+        object name
+    band : str
+        filter name
+    pixel_scale : float
+        pixel scale in arcsec/pixel
+    ZP : float or None (default)
+        zero point (if None, read from header)
+    bkg : float or None (default)
+        background (if None, read from header)
+    pad : int
+        padding size of the image for fitting (default: 100)
+    
+    """
     
     def __init__(self, hdu_path, obj_name='', band='G',
                  pixel_scale=2.5, ZP=None, bkg=None, pad=100, verbose=True):
-        """ 
-        
-        Parameters
-        ----------
-        
-        hdu_path : str
-            path of hdu data
-        obj_name : str
-            object name
-        band : str
-            filter name
-        pixel_scale : float
-            pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
-        bkg : float or None (default)
-            background (if None, read from header)
-        pad : int
-            padding size of the image for fitting (default: 100)
-        
-        """
         
         self.verbose = verbose
         self.obj_name = obj_name
@@ -66,32 +67,38 @@ class ImageButler:
  
  
 class Image(ImageButler):
-    """ A Image Class """
+    """
+    
+    An class storing images.
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        path of hdu data
+    bounds0 : list [X min, Y min, X max, Y max]
+        boundary of region to be fit
+    obj_name : str
+        object name
+    band : str
+        filter name
+    pixel_scale : float
+        pixel scale in arcsec/pixel
+    ZP : float or None (default)
+        zero point (if None, read from header)
+    bkg : float or None (default)
+        background (if None, read from header)
+    pad : int
+        padding size of the image for fitting (default: 100)
+    
+    """
         
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=2.5,
                  ZP=None, bkg=None, pad=100, verbose=True):
         """ 
         
-        Parameters
-        ----------
         
-        hdu_path : str
-            path of hdu data
-        bounds0 : list [X min, Y min, X max, Y max]
-            boundary of region to be fit
-        obj_name : str
-            object name
-        band : str
-            filter name
-        pixel_scale : float
-            pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
-        bkg : float or None (default)
-            background (if None, read from header)
-        pad : int
-            padding size of the image for fitting (default: 100)
         
         """
         
@@ -124,35 +131,36 @@ class Image(ImageButler):
         
         
 class ImageList(ImageButler):
-    """ A ImageList Class """
+    """
+    
+    A class storing a list of images.
+    
+    Parameters
+    ----------
+
+    hdu_path : str
+        path of hdu data
+    bounds0_list : list / turple
+        list of boundaries of regions to be fit (Nx4)
+        [[X min, Y min, X max, Y max],[...],...]
+    obj_name : str
+        object name
+    band : str
+        filter name
+    pixel_scale : float
+        pixel scale in arcsec/pixel
+    ZP : float or None (default)
+        zero point (if None, read from header)
+    bkg : float or None (default)
+        background (if None, read from header)
+    pad : int
+        padding size of the image for fitting (default: 100)
+    
+    """
     
     def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=2.5,
                  ZP=None, bkg=None, pad=100, verbose=False):
-        
-        """ 
-        
-        Parameters
-        ----------
-    
-        hdu_path : str
-            path of hdu data
-        bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
-            list of boundaries of regions to be fit (Nx4)
-        obj_name : str
-            object name
-        band : str
-            filter name
-        pixel_scale : float
-            pixel scale in arcsec/pixel
-        ZP : float or None (default)
-            zero point (if None, read from header)
-        bkg : float or None (default)
-            background (if None, read from header)
-        pad : int
-            padding size of the image for fitting (default: 100)
-        
-        """
         
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, ZP, bkg, pad, verbose)
@@ -214,7 +222,7 @@ class ImageList(ImageButler):
             
     
     def make_mask(self, stars_list, dir_measure='../output/Measure',
-                  by='radius',  r_core=None, r_out=None,
+                  by='aper',  r_core=None, r_out=None,
                   sn_thre=2.5, n_dilation=5, count=None,
                   n_strip=48, wid_strip=16, dist_strip=None,
                   wid_cross=10, dist_cross=72, clean=True,

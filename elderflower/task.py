@@ -20,7 +20,7 @@ apass_dir = '/Users/qliu/Data/apass/'
 
 def Run_Detection(hdu_path, obj_name, band='g',
                   threshold=3, work_dir='./',
-                  ZP_keyname='REF_ZP', ZP=None,
+                  ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
                   apass_dir=apass_dir,
                   config_path='default.sex',
@@ -42,7 +42,7 @@ def Run_Detection(hdu_path, obj_name, band='g',
         if type(ZP) is not float:
             
             # If not available in kwargs, compute by crossmatch with refcat
-            from dfreduce.utils.catalogues import match_catalogues
+            from dfreduce.utils.catalogues import (match_catalogues, load_apass_in_region)
             print("Compute zero-point from crossmatch with APASS catalog...")
             
             # Run sextractor with free zero-point
@@ -65,8 +65,8 @@ def Run_Detection(hdu_path, obj_name, band='g',
                 minra, maxra = sorted([header['CRVAL1'] - ra_range, header['CRVAL1'] + ra_range])
                 mindec, maxdec = sorted([header['CRVAL2'] - dec_range, header['CRVAL2'] + dec_range])
 
-                refcat = catalogues.load_apass_in_region(apass_dir,
-                                                         bounds=[mindec, maxdec, minra, maxra])
+                refcat = load_apass_in_region(apass_dir,
+                                              bounds=[mindec, maxdec, minra, maxra])
                 refcat.write(ref_cat, format='ascii')
 
             # Crossmatch SE catalog with reference catalog
@@ -77,7 +77,7 @@ def Run_Detection(hdu_path, obj_name, band='g',
             print("Matched zero-point = {:.3f}".format(ZP))
         
     else:
-        ZP = np.float(header['REFZP'])
+        ZP = np.float(header[ZP_keyname])
         print("Read zero-point from header : ZP = {:.3f}".format(ZP))
     
     SE_catalog = sextractor.run(hdu_path,
@@ -97,17 +97,77 @@ def Run_Detection(hdu_path, obj_name, band='g',
 
 def Match_Mask_Measure(hdu_path,
                        bounds_list,
-                       obj_name='',
+                       obj_name='DFfield',
                        band="G",
                        pixel_scale=2.5,
-                       ZP=None, bkg=None,
-                       field_pad=500,
+                       ZP=None,
+                       bkg=None,
+                       field_pad=100,
                        r_scale=12,
                        mag_limit=15,
                        mag_saturate=13,
-                       draw=True, save=True,
+                       draw=True,
+                       save=True,
                        use_PS1_DR2=False,
                        work_dir='./'):
+                       
+    """
+    
+    Generate a series of files as preparations for the fitting.
+    
+    The function completes by the following steps:
+    1) Identify bright extended sources empirically and mask them.
+    2) Crossmatch the SExtractor table with the PANSTARRS catalog.
+    3) Correct the catalogued magnitudes to the used filter.
+    4) Add saturated stars missing in the crossmatch by a correction.
+    5) Make mask maps for dim stars with empirical apertures enlarged
+    from SExtractor.
+    6) Measure brightness in annuli around bright stars
+    
+    The output files are saved in:
+    work_dir/obj_name/Measure-PS1 or work_dir/obj_name/Measure-PS2
+    
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        Full path of hdu data
+    bounds_list : 2D list / turple
+        List of boundaries of regions to be fit (Nx4)
+        [[X min, Y min, X max, Y max],[...],...]
+    obj_name : str
+        Object name
+    band : str, default 'G'
+        Filter name ('G', 'g' or 'R', 'r')
+    pixel_scale : float, default 2.5
+        Pixel scale in arcsec/pixel
+    ZP : float or None, default None
+        Zero point value (if None, read from header)
+    bkg : float or None, default None
+        Background value (if None, read from header)
+    field_pad : int, default 100
+        Padding size (in pix) of the field for crossmatch. Only used
+        if use_PS1_DR2=False
+    r_scale : int, default 12
+        Radius (in pix) at which the brightness is measured
+    mag_limit : float, default 15
+        Magnitude upper limit below which are measured
+    mag_saturate : float, default 13
+        Estimate of magnitude at which the image is saturated.
+        The exact value will be fit if ZP provided
+    draw : bool, default True
+        Whether to draw diagnostic plots
+    save : bool, default True
+        Whether to save results
+    use_PS1_DR2 : bool, default False
+        Whether to use PANSTARRS DR2
+        Crossmatch with DR2 is done by MAST query, which might fail
+        if a field is too large (> 1 deg^2)
+    work_dir : str, default current directory
+        Full path of directory for saving
+    
+    """
     
     print("""Measure the intensity at R = %d for stars < %.1f
             as normalization of fitting\n"""%(r_scale, mag_limit))
@@ -269,7 +329,7 @@ def Match_Mask_Measure(hdu_path,
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
                                              mag_range=[mag_saturate,22], K=3,
-                                             degree=3, draw=False)
+                                             degree=3, draw=draw)
     
     for bounds in bounds_list:
         
@@ -316,10 +376,11 @@ def Match_Mask_Measure(hdu_path,
                                           mag_name=mag_name_cat,
                                           save=save, dir_name=dir_name)
         
-        plot_bright_star_profile(tab_target_patch,
-                                 tab_res_Rnorm, res_thumb,
-                                 bkg_sky=bkg, std_sky=std, ZP=ZP,
-                                 pixel_scale=pixel_scale)
+        if draw:
+            plot_bright_star_profile(tab_target_patch,
+                                     tab_res_Rnorm, res_thumb,
+                                     bkg_sky=bkg, std_sky=std, ZP=ZP,
+                                     pixel_scale=pixel_scale)
         
         
         
@@ -327,29 +388,139 @@ def Run_PSF_Fitting(hdu_path,
                     bounds_list,
                     obj_name='DFfield',
                     band="G",
-                    n_spline=2,
-                    work_dir='./',
-                    use_PS1_DR2=False,
                     pixel_scale=2.5,
-                    ZP=None, bkg=None, pad=100,
-                    r_scale=12, mag_limit=15,
+                    ZP=None,
+                    bkg=None,
+                    pad=100,
+                    r_scale=12,
+                    mag_limit=15,
                     mag_threshold=[14,11],
                     mask_type='radius',
-                    SB_fit_thre=24.5,
-                    r_core=24, r_out=None,
+                    wid_strip=24,
+                    n_strip=48,
+                    SB_threshold=24.5,
+                    n_spline=3,
+                    r_core=24,
+                    r_out=None,
                     theta_cutoff=1200,
                     fit_sigma=True,
                     fit_frac=False,
                     leg2d=False,
-                    wid_strip=24, n_strip=48, 
-                    n_cpu=None,
-                    parallel=False,
-                    brightest_only=False,
                     draw_real=True,
+                    brightest_only=False,
+                    parallel=True,
+                    n_cpu=None,
                     nlive_init=None,
                     sample_method='auto',
-                    draw=True, save=False,
-                    print_progress=True):
+                    print_progress=True,
+                    draw=True,
+                    save=False,
+                    use_PS1_DR2=False,
+                    work_dir='./'):
+    
+    """
+    
+    Run the wide-angle PSF fitting.
+
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        Full path of hdu data
+    bounds_list : 2D int list / turple
+        List of boundaries of regions to be fit (Nx4)
+        [[X min, Y min, X max, Y max],[...],...]
+    obj_name : str
+        Object name
+    band : str, default 'G'
+        Filter name ('G', 'g' or 'R', 'r')
+    pixel_scale : float, default 2.5
+        Pixel scale in arcsec/pixel
+    ZP : float or None, default None
+        Zero point value (if None, read from header)
+    bkg : float or None, default None
+        Background value (if None, read from header)
+    pad : int, default 50
+        Padding size of the field for fitting
+    r_scale : int, default 12
+        Radius (in pix) at which the brightness is measured
+    mag_limit : float, default 15
+        Magnitude upper limit below which are measured
+    mag_threshold : [float, float], default: [14, 11]
+        Magnitude theresholds to classify faint stars, medium bright
+        stars and very bright stars.
+        The conversion from brightness is using a static PSF.
+        (* will change to stacked profiles)
+    mask_type : 'aper' or 'brightness', default 'aper'
+            "aper": aperture masking
+            "brightness": brightness-limit masking
+    wid_strip : int, default 24
+        Width of strip for masks of very bright stars.
+    n_strip : int, default 48
+        Number of strip for masks of very bright stars.
+    SB_threshold : float, default 24.5
+        Surface brightness upper limit for masking.
+        Only used if mask_type = 'brightness'.
+    n_spline : int, default 3
+        Number of power-law component for the aureole models.
+        The speed goes down as n_spline goes up. Default is 3.
+    r_core : int or [int, int], default 24
+        Radius (in pix) for the inner mask of [very, medium]
+        bright stars. Default is 1' for Dragonfly.
+    r_out : int or [int, int] or None, default None
+        Radius (in pix) for the outer mask of [very, medium]
+        bright stars. If None, turn off outer mask.
+    theta_cutoff : float, default 1200
+        Cutoff range (in arcsec) for the aureole model. The model
+        is cut off beyond it wit n=4. Default is 20' for Dragonfly.
+    fit_sigma : bool, default False
+        Whether to fit the background stddev.
+        If False, will use the estimated value
+    fit_frac : bool, default False
+        Whether to fit the fraction of the aureole.
+        If False, use a static value
+        (* will change to values from stacked profiles)
+    leg2d : bool, default False
+        Whether to fit a varied background with 2D Legendre
+        polynomial. Currently only support 1st order.
+    draw_real : bool, default True
+        Whether to draw very bright stars in real space.
+        Recommended to be turned on.
+    brightest_only : bool, default False
+        Whether to draw very bright stars only.
+        If turned on the fitting will ignore medium bright stars.
+    parallel : bool, default True
+        Whether to run drawing for medium bright stars in parallel.
+    n_cpu : int, default None
+        Number of cpu used for fitting and/or drawing.
+    nlive_init : int, default None
+        Number of initial live points in dynesty. If None will
+        use nlive_init = ndim*10.
+    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice',
+                    'rslice', 'hslice', callable}, default 'auto'
+        Samplimg method in dynesty.
+        If 'auto', the method is 'unif' for ndim < 10, 'rwalk' for
+        10 <= ndim <= 20, 'slice' for ndim > 20.
+    print_progress : bool, default True
+        Whether to turn on the progress bar of dynesty
+    draw : bool, default True
+        Whether to draw diagnostic plots
+    save : bool, default True
+        Whether to save results
+    use_PS1_DR2 : bool, default False
+        Whether to use PANSTARRS DR2.
+        Crossmatch with DR2 is done by MAST query, which might fail
+        if a field is too large (> 1 deg^2)
+    work_dir : str, default current directory
+        Full Path of directory for saving
+        
+        
+    Returns
+    ----------
+    dsamplers : A list of sampler class which contains fitting results.
+        
+    """
     
     ############################################
     # Read Image and Table
@@ -453,9 +624,9 @@ def Run_PSF_Fitting(hdu_path,
     
     if mask_type=='brightness':
         from .utils import SB2Intensity
-        count = SB2Intensity(SB_fit_thre, DF_Images.bkg_val,
-                             DF_Images.zp_val, DF_Image.pixel_scale)[0]
-    else:
+        count = SB2Intensity(SB_threshold, DF_Images.bkg,
+                             DF_Images.ZP, DF_Image.pixel_scale)[0]
+    elif mask_type=='aper':
         count = None
         
     # Mask faint and centers of bright stars
@@ -578,33 +749,37 @@ def Run_PSF_Fitting(hdu_path,
 
 
 class berry:
-    """ Fruit of elderflower """
+    
+    """
+    
+    Fruit of elderflower
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        path of hdu data
+    bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
+        list of boundaries of regions to be fit (Nx4)
+    obj_name : str
+        object name
+    band : str
+        filter name
+    config_file : yaml
+        configuration file which contains keyword arguments
+    
+    """
 
     def __init__(self, hdu_path, bounds_list,
                  obj_name='DFfield', band='g',
-                 config_file="./config.yaml"):
-        """
-        
-        Parameters
-        ----------
-        
-        hdu_path : str
-            path of hdu data
-        bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
-            list of boundaries of regions to be fit (Nx4)
-        obj_name : str
-            object name
-        band : str
-            filter name
-        config_file : yaml
-            configuration file which contains keyword arguments
-        
-        """
+                 work_dir='./', config_file="./config.yaml"):
         
         self.hdu_path = hdu_path
         self.bounds_list = bounds_list
         self.obj_name = obj_name
         self.band = band
+        
+        self.work_dir = work_dir
         
         from elderflower.io import config_kwargs
         self.config_func = partial(config_kwargs, config_file=config_file)
@@ -619,18 +794,19 @@ class berry:
         return _kwargs()
     
     def detection(self, **kwargs):
-        Run_Detection(self.hdu_path, self.obj_name,
-                      band=self.band, **kwargs)
+        Run_Detection(self.hdu_path, self.obj_name, band=self.band,
+                      work_dir=self.work_dir, **kwargs)
         
     def run(self):
             
         @self.config_func
-        def _match():
-            Match_Mask_Measure(self.hdu_path, self.bounds_list)
+        def _run(func, **kwargs):
+            keys = set(kwargs.keys()).intersection(func.__code__.co_varnames)
+            pars = {key: kwargs[key] for key in keys}
             
-        @self.config_func
-        def _fit():
-            return Run_PSF_Fitting(self.hdu_path, self.bounds_list)
-            
-        _match(); samplers = _fit()
-    
+            return func(self.hdu_path, self.bounds_list,
+                        self.obj_name, band=self.band,
+                        work_dir=self.work_dir, **pars)
+                        
+        _ = _run(Match_Mask_Measure)
+        self.samplers = _run(Run_PSF_Fitting)

@@ -217,7 +217,7 @@ def Run_Dynamic_Nested_Fitting(loglikelihood, prior_transform, ndim,
     start = time.time()
     
     if n_cpu is None:
-        n_cpu = mp.cpu_count()-1
+        n_cpu = min(mp.cpu_count()-1, 10)
         
     with mp.Pool(processes=n_cpu) as pool:
         print("Opening pool: # of CPU used: %d"%(n_cpu))
