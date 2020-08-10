@@ -321,8 +321,7 @@ class ImageList(ImageButler):
                       draw_real=True,
                       n_min=1,
                       theta_in=50,
-                      theta_out=240,
-                      theta_cutoff=1200):
+                      theta_out=240):
         """ Container for fit storing prior and likelihood function """
         
         from .container import Container
@@ -340,16 +339,16 @@ class ImageList(ImageButler):
                                 n_min=n_min, theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
-            container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i], 
-                                     psf_range=[None, None], theta_cutoff=theta_cutoff,
-                                     norm='brightness', image_base=self.image_base[i])
+            container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i],
+                                     psf_range=[None, None], norm='brightness',
+                                     image_base=self.image_base[i])
             
             # Set a few attributes to container for convenience
             container.image = self.images[i]
             container.data = self.data[i]
             container.mask = self.Masks[i]
             container.image_size = self.Images[i].image_size
-            container.theta_cutoff = theta_cutoff
+            container.theta_c = psf.theta_c
             
             self.containers += [container]
 

@@ -151,6 +151,7 @@ def Match_Mask_Measure(hdu_path,
         if use_PS1_DR2=False
     r_scale : int, default 12
         Radius (in pix) at which the brightness is measured
+        Default is 30" for Dragonfly.
     mag_limit : float, default 15
         Magnitude upper limit below which are measured
     mag_saturate : float, default 13
@@ -395,7 +396,7 @@ def Run_PSF_Fitting(hdu_path,
                     r_scale=12,
                     mag_limit=15,
                     mag_threshold=[14,11],
-                    mask_type='radius',
+                    mask_type='aper',
                     wid_strip=24,
                     n_strip=48,
                     SB_threshold=24.5,
@@ -444,7 +445,8 @@ def Run_PSF_Fitting(hdu_path,
     pad : int, default 50
         Padding size of the field for fitting
     r_scale : int, default 12
-        Radius (in pix) at which the brightness is measured
+        Radius (in pix) at which the brightness is measured.
+        Default is 30" for Dragonfly.
     mag_limit : float, default 15
         Magnitude upper limit below which are measured
     mag_threshold : [float, float], default: [14, 11]
@@ -566,24 +568,18 @@ def Run_PSF_Fitting(hdu_path,
     n0 = 3.2                    # estimated true power index
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
+    n_c = 4                     # cutoff power index (arbitrarily steep)
 
-    n_s = np.array([n0, 2., 4])         # power index
+    n_s = np.array([n0, 2., n_c])         # power index
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # transition radius in arcsec
-    
-    if n_spline == 1:
-        # Single-power PSF
-        params_pow = {"fwhm":fwhm, "beta":beta,
-                      "frac":frac, "n":n0, 'theta_0':theta_0}
-        psf = PSF_Model(params=params_pow,
-                        aureole_model='power')
-        
-    else:
-        # Multi-power PSF
-        params_mpow = {"fwhm":fwhm, "beta":beta,
-                       "frac":frac, "n_s":n_s, 'theta_s':theta_s}
-        psf = PSF_Model(params=params_mpow,
-                        aureole_model='multi-power')
+
+    # Multi-power-law PSF
+    params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
+                   "n_s":n_s, "theta_s":theta_s,
+                   "n_c":n_c, "theta_c":theta_cutoff}
+    psf = PSF_Model(params=params_mpow,
+                    aureole_model='multi-power')
 
     # Pixelize PSF
     psf.pixelize(pixel_scale)
@@ -660,7 +656,6 @@ def Run_PSF_Fitting(hdu_path,
                             n_spline=n_spline,
                             n_min=1, n_est=n0,
                             theta_in=50, theta_out=240,
-                            theta_cutoff=theta_cutoff,
                             leg2d=leg2d, parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
@@ -714,12 +709,10 @@ def Run_PSF_Fitting(hdu_path,
 
         # Plot recovered PSF
         ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
-                          save=save, save_dir=work_dir,
-                          theta_cutoff=theta_cutoff, suffix='_'+method)
+                          save=save, save_dir=work_dir, suffix='_'+method)
 
         # Recovered 1D PSF
-        psf_fit, params = ds.generate_fit(psf, stars_tri[i],
-                                          n_cutoff=4, theta_cutoff=theta_cutoff)
+        psf_fit, params = ds.generate_fit(psf, stars_tri[i])
 
         # Calculate Chi^2
         ds.calculate_reduced_chi2()

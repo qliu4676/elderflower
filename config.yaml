@@ -11,17 +11,17 @@
     ZP: 27.116
     
     # Run_PSF_Fitting
-    n_spline: 2
+    n_spline: 3
     use_PS1_DR2: False
     pixel_scale: 2.5
     r_scale: 12
     pad: 100
     mag_limit: 15
     mag_threshold: [14,11]
-    mask_type: 'radius'
-    SB_fit_thre: 24.5
+    mask_type: 'aper'
+    SB_threshold: 24.5
     r_core: 24
-    r_out: None
+    r_out: ~
     theta_cutoff: 1200
     fit_sigma: True
     fit_frac: False
@@ -32,7 +32,7 @@
     parallel: False
     brightest_only: False
     draw_real: True
-    nlive_init: None
+    nlive_init: ~
     sample_method: 'auto'
     draw: True
     print_progress: True

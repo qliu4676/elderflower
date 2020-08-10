@@ -1804,42 +1804,30 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 #            return prior_tf_3p
 
         else:
-            prior_tf = partial(prior_tf_sp,
-                               Prior_n=Prior_n,
-                               Prior_mu=Prior_mu,
-                               Prior_logsigma=Prior_logsigma,
-                               n_spline=n_spline,
-                               n_min=n_min,
-                               log_t_in=log_t_in,
-                               log_t_out=log_t_out,
-                               fit_sigma=fit_sigma,
-                               fit_frac=fit_frac,
-                               K=K, leg2d=leg2d)
+            prior_tf = partial(prior_tf_sp, Priors=[Prior_n, Prior_mu, Prior_logsigma],
+                               n_spline=n_spline, leg2d=leg2d, n_min=n_min,
+                               log_t_in=log_t_in, log_t_out=log_t_out,
+                               fit_sigma=fit_sigma, fit_frac=fit_frac, K=K)
 
             return prior_tf
 
 
-def prior_tf_sp(u,
-                Prior_n=None,
-                Prior_mu=None,
-                Prior_logsigma=None,
-                n_spline=3,
-                n_min=1,
-                log_t_in=1.7,
-                log_t_out=2.4,
-                fit_sigma=True,
-                fit_frac=False,
-                K=1, leg2d=False):
+def prior_tf_sp(u, Priors,
+                n_spline=3, n_min=1, leg2d=False,
+                log_t_in=1.7, log_t_out=2.4,
+                fit_sigma=True, fit_frac=False, K=1):
                 
     """ Prior Transform function for n_spline """
 
     v = u.copy()
+    Prior_n, Prior_mu, Prior_logsigma = Priors
 
     v[0] = Prior_n.ppf(u[0])
 
     for k in range(n_spline-1):
         v[k+1] = u[k+1] * max(-1.2, n_min+0.3-v[k]) + (v[k]-0.3)
         # n_k+1 : max{n_min, n_k-1.5} - n_k-0.3 (new, much slower?)
+        
 #        v[k+1] = u[k+1] * max(-0.3, n_min+0.3-v[k]) + (v[k]-0.3)
 #        # n_k+1 : max{1, n_k-0.6} - n_k-0.3 (old)
 
@@ -1871,17 +1859,20 @@ def prior_tf_sp(u,
     return v
 
         
-def draw_proposal(draw_func, proposal, psf, stars, xx, yy, image_base,
-                  leg2d=False, H10=None, H01=None, K=0, **kwargs):
+def draw_proposal(draw_func, proposal,
+                  psf, stars, xx, yy, image_base,
+                  leg=None, K=0, **kwargs):
     
     # Draw image and calculate log-likelihood
     mu = proposal[-K-1] 
     
     image_tri = draw_func(psf, stars, xx, yy, **kwargs)
-    image_tri +=  image_base + mu 
-
-    if leg2d:
+    image_tri +=  image_base + mu
+        
+    if leg is not None:
         A10, A01 = 10**proposal[-K-2], 10**proposal[-K-3]
+        H10, H01 = leg.coefs
+        
         image_tri += A10 * H10 + A01 * H01
 
     return image_tri 
@@ -1895,11 +1886,29 @@ def calculate_likelihood(ypred, data, sigma):
         loglike = -1e100
         
     return loglike
+    
+class Legendre2D:
+    # Legendre 2D coefficients
+    
+    def __init__(self, image_size, order=1):
+        self.image_size = image_size
+        cen = ((image_size-1)/2., (image_size-1)/2.)
+        x_grid = y_grid = np.linspace(0,image_size-1, image_size)
+        
+        self.x_grid = x_grid
+        self.y_grid = y_grid
+        self.cen = cen
+        
+        if order == 1:
+            H10 = leggrid2d((x_grid-cen[1])/image_size,
+                            (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
+            H01 = leggrid2d((x_grid-cen[1])/image_size,
+                            (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
+            self.coefs = [H10, H01]
 
 
 def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                    norm='brightness', n_spline=2,
-                   n_cutoff=4, theta_cutoff=1200,
                    image_base=None, psf_range=[None,None],
                    leg2d=False, fit_sigma=True, fit_frac=False, 
                    brightest_only=False, parallel=False, draw_real=False):
@@ -1928,9 +1937,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
     
     z_norm = stars.z_norm.copy()
     
-    pixel_scale = psf.pixel_scale
-    bkg = stars.BKG
-    
     if norm=='brightness':
         draw_func = generate_image_by_znorm
         
@@ -1944,8 +1950,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         
     p_draw_func = partial(draw_func, xx=xx, yy=yy,
                             psf_range=psf_range,
-                            psf_scale=pixel_scale,
-                            max_psf_range=theta_cutoff,
+                            psf_scale=psf.pixel_scale,
+                            max_psf_range=psf.theta_c,
                             brightest_only=brightest_only,
                             subtract_external=subtract_external,
                             parallel=parallel, draw_real=draw_real)
@@ -1953,16 +1959,13 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
     if image_base is None:
         image_base = np.zeros((image_size, image_size))
     
-#     if sigma is None:
-#         fit_sigma =True
-    
     # 1st-order Legendre Polynomial
-    cen = ((image_size-1)/2., (image_size-1)/2.)
-    x_grid = y_grid = np.linspace(0,image_size-1, image_size)
-    H10 = leggrid2d((x_grid-cen[1])/image_size,
-                    (y_grid-cen[0])/image_size, c=[[0,1],[0,0]])
-    H01 = leggrid2d((x_grid-cen[1])/image_size,
-                    (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
+    if leg2d:
+        leg = Legendre2D(image_size, order=1)
+        H10, H01 = leg.coefs
+    else:
+        leg = None
+        H10, H01 = 0, 0
         
     if n_spline == 'm':
         
@@ -1987,7 +1990,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
             if norm=='brightness':
                 # I varies with sky background
-                stars.z_norm = z_norm + (bkg - mu)
+                stars.z_norm = z_norm + (stars.BKG - mu)
 
             image_tri = p_draw_func(psf, stars)
             image_tri = image_tri + image_base + mu 
@@ -2001,7 +2004,9 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         return loglike_mof
         
     else:
-        theta_0 = psf.theta_0
+        theta_0 = psf.theta_0  # inner flattening
+        theta_c = psf.theta_c  # outer cutoff
+        n_c = psf.n_c
         
         if n_spline==1:
 
@@ -2025,7 +2030,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 if norm=='brightness':
                     # I varies with sky background
-                    stars.z_norm = z_norm + (bkg - mu)
+                    stars.z_norm = z_norm + (stars.BKG - mu)
 
                 image_tri = p_draw_func(psf, stars)
                 image_tri = image_tri + image_base + mu
@@ -2045,8 +2050,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 if fit_frac: K += 1        
                 if fit_sigma: K += 1
 
-                n_s = np.append(v[:2], n_cutoff)
-                theta_s = np.append([theta_0, 10**v[2]], theta_cutoff)
+                n_s = np.append(v[:2], n_c)
+                theta_s = np.append([theta_0, 10**v[2]], theta_c)
                 mu = v[-K-1]
                 loglike = -1000
 
@@ -2064,7 +2069,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 if norm=='brightness':
                     # I varies with sky background
-                    stars.z_norm = z_norm + (bkg - mu)
+                    stars.z_norm = z_norm + (stars.BKG - mu)
 
                 image_tri = p_draw_func(psf, stars)
 
@@ -2090,8 +2095,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 if fit_frac: K += 1        
                 if fit_sigma: K += 1
 
-                n_s = np.append(v[:3], n_cutoff)
-                theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_cutoff)
+                n_s = np.append(v[:3], n_c)
+                theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_c)
                 mu = v[-K-1]
 
                 param_update ={'n_s':n_s, 'theta_s':theta_s}
@@ -2107,7 +2112,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 if norm=='brightness':
                     # I varies with sky background
-                    stars.z_norm = z_norm + (bkg - mu)
+                    stars.z_norm = z_norm + (stars.BKG - mu)
 
                 image_tri = p_draw_func(psf, stars)
                 image_tri += image_base + mu 
@@ -2125,41 +2130,58 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
             return loglike_3p
 
         else:
-
-            def loglike_sp(v):
-                K = 0
-                if fit_frac: K += 1        
-                if fit_sigma: K += 1
-
-                n_s = np.append(v[:n_spline], n_cutoff)
-                theta_s = np.concatenate([[theta_0], 10**v[n_spline:2*n_spline-1],
-                                         [theta_cutoff]])
-                mu = v[-K-1]
-                param_update ={'n_s':n_s, 'theta_s':theta_s}
-
-                if fit_sigma:
-                    sigma = 10**v[-K]
-
-                if fit_frac:
-                    frac = 10**v[-1]  
-                    param_update['frac'] = frac
-
-                psf.update(param_update)
-
-                image_tri = draw_proposal(draw_func, v, psf, stars, xx, yy, image_base,
-                                          leg2d=leg2d, H10=H10, H01=H01, K=K,
-                                          psf_range=psf_range, psf_scale=pixel_scale,
-                                          brightest_only=brightest_only,
-                                          subtract_external=subtract_external,
-                                          parallel=parallel, draw_real=draw_real)
-
-                ypred = image_tri[~mask_fit].ravel()
-                loglike = calculate_likelihood(ypred, data, sigma)
-
-                return loglike
-
-            return loglike_sp
-
-
-    
         
+            loglike = partial(loglike_sp, data=data, psf=psf, stars=stars,
+                              image_base=image_base, mask_fit=mask_fit,
+                              draw_func=draw_func, z_norm=z_norm,
+                              n_spline=n_spline, leg=leg,
+                              fit_sigma=fit_sigma, fit_frac=fit_frac, K=K)
+            
+            return loglike
+
+def loglike_sp(v, data, psf, stars,
+               xx, yy, image_base,
+               draw_func, mask_fit,
+               z_norm,
+               n_spline=3, leg=None,
+               fit_sigma=True, fit_frac=False, K=1):
+              
+    K = 0
+    if fit_frac: K += 1
+    if fit_sigma: K += 1
+    
+    n_c = psf.n_c
+    n_s = np.append(v[:n_spline], n_c)
+    
+    theta_0, theta_c = psf.theta_0, psf.theta_c
+    theta_s = np.concatenate([[theta_0],10**v[n_spline:2*n_spline-1], [theta_c]])
+    
+    mu = v[-K-1]
+    param_update = {'n_s':n_s, 'theta_s':theta_s}
+
+    if fit_sigma:
+        sigma = 10**v[-K]
+
+    if fit_frac:
+        frac = 10**v[-1]
+        param_update['frac'] = frac
+
+    psf.update(param_update)
+    
+    if norm=='brightness':
+        # I varies with sky background
+        stars.z_norm = z_norm + (stars.BKG - mu)
+
+    image_tri = draw_proposal(draw_func, v, psf, stars,
+                              xx, yy, image_base,
+                              leg=leg, K=K,
+                              psf_range=psf_range, psf_scale=psf.pixel_scale,
+                              max_psf_range=psf.theta_c,
+                              brightest_only=brightest_only,
+                              subtract_external=subtract_external,
+                              parallel=parallel, draw_real=draw_real)
+    
+    ypred = image_tri[~mask_fit].ravel()
+    loglike = calculate_likelihood(ypred, data, sigma)
+
+    return loglike

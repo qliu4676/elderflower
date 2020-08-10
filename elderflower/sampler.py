@@ -138,8 +138,7 @@ class DynamicNestedSampler:
         
         plot_fit_PSF1D(self.results, psf, n_spline=ct.n_spline, **kwargs)
     
-    def generate_fit(self, psf, stars,
-                     norm='brightness', n_cutoff=4, theta_cutoff=1200):
+    def generate_fit(self, psf, stars, norm='brightness'):
         
         from .utils import make_psf_from_fit
         from .modeling import generate_image_fit
@@ -151,9 +150,7 @@ class DynamicNestedSampler:
                                             n_spline=ct.n_spline,
                                             leg2d=ct.leg2d, 
                                             fit_sigma=ct.fit_sigma,
-                                            fit_frac=ct.fit_frac,
-                                            n_cutoff=n_cutoff,
-                                            theta_cutoff=theta_cutoff)
+                                            fit_frac=ct.fit_frac)
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std

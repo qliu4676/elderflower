@@ -550,10 +550,10 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
         plt.show()
     
     
-def plot_fit_PSF1D(results, psf, n_spline=2,
+def plot_fit_PSF1D(results, psf,
+                   image_size=800, n_spline=2,
                    n_bootstrap=500, truth=None,  
                    Amp_max=None, r_core=None,
-                   n_cutoff=4, theta_cutoff=1200, image_size=800,
                    save=False, save_dir="./",
                    suffix='', figsize=(7,6)):
 
@@ -598,16 +598,19 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
             beta1_k = sample[1]
             psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
             
-        else:    
+        else:
+            n_c = psf.n_c
+            theta_c = psf.theta_c
+            
             if psf.aureole_model == "power":
                 n_k = sample[0]
                 psf_fit.update({'n':n_k})
 
             elif psf.aureole_model == "multi-power":
-                n_s_k = np.concatenate([sample[:N_n], [n_cutoff]])
+                n_s_k = np.concatenate([sample[:N_n], [n_c]])
                 theta_s_k = np.concatenate([[theta_0],
                                             np.atleast_1d(10**sample[N_n:N_n+N_theta]),
-                                            [theta_cutoff]])
+                                            [theta_c]])
                 psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
             
         comp2_k = psf_fit.f_aureole1D(r)
@@ -630,10 +633,10 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
                 psf_fit.update({'n':n_fit})
 
             elif psf.aureole_model == "multi-power":
-                n_s_fit = np.concatenate([fits[:N_n], [n_cutoff]])
+                n_s_fit = np.concatenate([fits[:N_n], [n_c]])
                 theta_s_fit = np.concatenate([[theta_0],
                                               np.atleast_1d(10**fits[N_n:N_n+N_theta]),
-                                              [theta_cutoff]])
+                                              [theta_c]])
                 psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
             
         comp2 = psf_fit.f_aureole1D(r)
@@ -665,7 +668,7 @@ def plot_fit_PSF1D(results, psf, n_spline=2,
     if r_core is not None:
         
         if figsize is not None:
-            plt.axvspan(np.atleast_1d(r_core).max(), theta_cutoff/pixel_scale,
+            plt.axvspan(np.atleast_1d(r_core).max(), theta_c/pixel_scale,
                         color='steelblue', alpha=0.15, zorder=1)
             plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
                         color='seagreen', alpha=0.15, zorder=1)

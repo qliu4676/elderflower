@@ -1548,8 +1548,10 @@ def build_independent_priors(priors):
 
 ### Recostruct PSF from fit ###    
     
-def make_psf_from_fit(fit_res, psf, image_size=600, n_cutoff=4, theta_cutoff=1200, n_spline=2,
-                      fit_sigma=True, fit_frac=False, leg2d=False, sigma=None):
+def make_psf_from_fit(fit_res, psf,
+                      image_size=600, n_spline=2,
+                      leg2d=False, sigma=None,
+                      fit_sigma=True, fit_frac=False):
     from .sampler import get_params_fit
 
     psf_fit = psf.copy()
@@ -1567,15 +1569,18 @@ def make_psf_from_fit(fit_res, psf, image_size=600, n_cutoff=4, theta_cutoff=120
     else:
         N_n = n_spline
         N_theta = n_spline - 1
+        
+        n_c = psf.n_c
+        theta_c = psf.theta_c
     
         if psf.aureole_model == "power":
             n_fit = params[0]
             param_update = {'n':n_fit}
 
         elif psf.aureole_model == "multi-power":
-            n_s_fit = np.concatenate([params[:N_n], [n_cutoff]])
+            n_s_fit = np.concatenate([params[:N_n], [n_c]])
             theta_s_fit = np.concatenate([[psf.theta_0],
-                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_cutoff]])
+                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_c]])
 
             param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
 
