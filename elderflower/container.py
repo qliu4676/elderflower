@@ -58,7 +58,6 @@ class Container:
                        psf, stars,
                        norm='brightness',
                        psf_range=[None, None],
-                       theta_cutoff=1200,
                        image_base=None):
         """ Setup likelihood function for fitting """
         from .modeling import set_likelihood
@@ -73,7 +72,6 @@ class Container:
                                  psf, stars,
                                  norm=norm,
                                  psf_range=psf_range,
-                                 theta_cutoff=theta_cutoff,
                                  image_base=image_base,
                                  n_spline=self.n_spline,
                                  leg2d=self.leg2d,
