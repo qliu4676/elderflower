@@ -219,7 +219,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         s = plt.scatter(x_data, y_data, c=color,
                         s=5, cmap='viridis', alpha=0.4)
         plt.scatter(x_data[clip], y_data[clip], lw=2, s=20,
-                    fc='none', ec='orange', alpha=0.7)
+                    facecolors='none', edgecolors='orange', alpha=0.7)
         plt.plot(x_test, func(x_test, *popt), color='r')
         
         if color is not None: plt.colorbar(s, label=c_lab)
@@ -1308,7 +1308,7 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
     popt, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
-                                    piecewise_linear, x_max=15,
+                                    piecewise_linear, x_max=15, n_iter=5,
                                     p0=(1, 2, mag_saturate, mag_saturate),
                                     x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
 
