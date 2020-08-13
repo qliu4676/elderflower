@@ -641,6 +641,7 @@ def Run_PSF_Fitting(hdu_path,
     # Copy stars
     stars_tri = stars.copy()
 
+    # develop mode
     proceed = input('Is the Mask Reasonable?[y/n]')
     if proceed == 'n': sys.exit("Reset the Mask.")
     

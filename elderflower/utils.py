@@ -3,6 +3,9 @@ import re
 import sys
 import math
 import time
+import string
+import random
+
 import numpy as np
 from scipy import stats
 from scipy.optimize import curve_fit
@@ -14,7 +17,7 @@ from astropy import units as u
 from astropy.io import fits, ascii
 from astropy.table import Table, Column, join
 from astropy.coordinates import SkyCoord
-from astropy.stats import mad_std, median_absolute_deviation, gaussian_fwhm_to_sigma
+from astropy.stats import mad_std, biweight_location, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 
 from photutils import detect_sources, deblend_sources
@@ -222,12 +225,12 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
                     facecolors='none', edgecolors='orange', alpha=0.7)
         plt.plot(x_test, func(x_test, *popt), color='r')
         
-        if color is not None: plt.colorbar(s, label=c_lab)
+        if color is not None: plt.colorbar(s, label=c_lab.replace('_','\_'))
         
         plt.xlim(x_max, x_min)
         plt.gca().invert_yaxis()
-        plt.xlabel(x_lab)
-        plt.ylabel(y_lab)
+        plt.xlabel(x_lab.replace('_','\_'))
+        plt.ylabel(y_lab.replace('_','\_'))
         
     return popt, clip_func
     
@@ -718,9 +721,6 @@ def measure_Rnorm_all(table, bounds,
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
-    import random
-    import string
-
     if chars is None:
         chars = string.ascii_letters + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
@@ -764,17 +764,14 @@ def crop_image(data, bounds, seg_map=None,
                                  linewidth=2.5, edgecolor=color, facecolor='none')
         ax.add_patch(rect)
         
-        plt.plot([Xmin+width[0]//2-360,Xmin+width[0]//2+360], [450,450],"whitesmoke",lw=3)
-        plt.plot([Xmin+width[0]//2+360,Xmin+width[0]//2+360], [420,480],"whitesmoke",lw=3)
-        plt.plot([Xmin+width[0]//2-360,Xmin+width[0]//2-360], [420,480],"whitesmoke",lw=3)
-        plt.text(Xmin+width[0]//2, 220, r"$\bf 0.5\,deg$", color='whitesmoke', ha='center', fontsize=18)
-        
         if sub_bounds is not None:
-            for bounds in sub_bounds:
+            for bounds, l in zip(sub_bounds, string.ascii_uppercase):
                 Xmin, Ymin, Xmax, Ymax = bounds
                 width = Xmax-Xmin, Ymax-Ymin
                 rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
                                          linewidth=2.5, edgecolor='indianred', facecolor='none')
+                ax.text(Xmin+80, Ymin+80, r"$\bf %s$"%l, color='indianred',
+                        ha='center', va='center', fontsize=20)
                 ax.add_patch(rect)
         plt.show()
         
@@ -1319,7 +1316,7 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     # Remove rows with uncanny matched magnitude
     loc_rm = np.where(abs(tab['MAG_AUTO_corr']-mag_corr)>2)
     if draw: plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
-                         marker='s', s=40, fc='none', ec='lime'); plt.show()
+                         marker='s', s=40, facecolors='none', edgecolors='lime'); plt.show()
     tab.remove_rows(loc_rm[0])
 
     # Below are new lines to add back supplementary (unmatched bright) stars
@@ -1370,7 +1367,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     mag = mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
 
     d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
-    CT = np.mean(d_mag_clip)
+    CT = biweight_location(d_mag_clip)
     print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
     if draw:
@@ -1380,8 +1377,8 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
         plt.xlim(mag_range[0]-0.5, mag_range[1]+0.5)
-        plt.xlabel("MAG_AUTO (SE)")
-        plt.ylabel("MAG_AUTO - %s"%mag_name)
+        plt.xlabel(r"MAG\_AUTO (SE)")
+        plt.ylabel(r"MAG\_AUTO - %s"%mag_name.replace('_','\_'))
         plt.show()
         
     return np.around(CT,5)
@@ -1447,7 +1444,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
         plt.scatter(mag, logr, s=3, alpha=0.2, color='gold')
 
-        plt.xlabel("%s (catalog)"%mag_name)
+        plt.xlabel("%s (catalog)"%mag_name.replace('_','\_'))
         plt.ylabel(r"$\log_{10}\,R$")
         plt.xlim(7,23)
         plt.ylim(0.15,2.2)
