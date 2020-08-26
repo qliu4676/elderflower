@@ -7,9 +7,11 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.utils import lazyproperty
 
-from .utils import crop_image
 from .plotting import AsinhNorm
 
+# Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
+DF_pixel_scale = 2.5
+DF_raw_pixel_scale = 2.85
 
 class ImageButler:
     """
@@ -27,17 +29,19 @@ class ImageButler:
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
+    pad : int
+        padding size of the image for fitting (default: 100)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-    pad : int
-        padding size of the image for fitting (default: 100)
+    
     
     """
     
     def __init__(self, hdu_path, obj_name='', band='G',
-                 pixel_scale=2.5, ZP=None, bkg=None, pad=100, verbose=True):
+                 pixel_scale=DF_pixel_scale, pad=100,
+                 ZP=None, bkg=None, verbose=True):
         
         self.verbose = verbose
         self.obj_name = obj_name
@@ -84,26 +88,28 @@ class Image(ImageButler):
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
+    pad : int
+        padding size of the image for fitting (default: 100)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-    pad : int
-        padding size of the image for fitting (default: 100)
+
     
     """
         
     def __init__(self, hdu_path, bounds0,
-                 obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, bkg=None, pad=100, verbose=True):
+                 obj_name='', band='G', pixel_scale=DF_pixel_scale,
+                 pad=100, ZP=None, bkg=None, verbose=True):
         """ 
         
         
         
         """
+        from .utils import crop_image
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, bkg, pad, verbose)
+                         pixel_scale, pad, ZP, bkg, verbose)
         
         self.bounds0 = bounds0
         
@@ -149,25 +155,26 @@ class ImageList(ImageButler):
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
+    pad : int
+        padding size of the image for fitting (default: 100)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-    pad : int
-        padding size of the image for fitting (default: 100)
+    
     
     """
     
     def __init__(self, hdu_path, bounds0_list,
-                 obj_name='', band='G', pixel_scale=2.5,
-                 ZP=None, bkg=None, pad=100, verbose=False):
+                 obj_name='', band='G', pixel_scale=DF_pixel_scale,
+                 pad=100, ZP=None, bkg=None, verbose=False):
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, ZP, bkg, pad, verbose)
+                         pixel_scale, pad, ZP, bkg, verbose)
         
         self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
-                             ZP, bkg, pad, verbose)
+                             pad, ZP, bkg, verbose)
                        for bounds0 in np.atleast_2d(bounds0_list)]
         self.N_Image = len(self.Images)
     

@@ -9,22 +9,92 @@ from functools import partial
 from astropy.table import Table
 from astropy.io import fits
 
-from .io import find_keyword_header
+from .io import find_keyword_header, config_dir
+from .image import DF_pixel_scale, DF_raw_pixel_scale
 
 
 SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO','MU_MAX','CLASS_STAR','ELLIPTICITY']
 SE_executable = '/opt/local/bin/source-extractor'
 
-apass_dir = '/Users/qliu/Data/apass/'
 
-
-def Run_Detection(hdu_path, obj_name, band='g',
-                  threshold=3, work_dir='./',
+def Run_Detection(hdu_path, obj_name, band,
+                  threshold=5, work_dir='./',
+                  config_path='default.sex',
+                  executable=SE_executable,
                   ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
-                  apass_dir=apass_dir,
-                  config_path='default.sex',
-                  executable=SE_executable, **kwargs):
+                  apass_dir='~/Data/apass/', **kwargs):
+                  
+    """
+    
+    Run a first-step source detection with SExtractor. This step
+    generates a SExtractor catalog and segementation map for the
+    cross-match and measurement in Match_Mask_Measure.
+    
+    Magnitudes are converted using the zero-point stored in the
+    header ('ZP_keyname'). If not stored in the header, it will
+    try to compute the zero-point by cross-match with the APASS
+    catalog. In this case, the directory to the APASS catalogs
+    is needed ('apass_dir'). If a reference catalog already exists,
+    it can be provided ('ref_cat') to save time.
+    
+    
+    Parameters
+    ----------
+    
+    hdu_path : str
+        Full path of hdu data
+    obj_name : str
+        Object name
+    band : str
+        Filter name ('G', 'g' or 'R', 'r')
+    threshold : int, optional, default 5
+        Detection & analysis threshold of SExtractor
+    work_dir : str, optional, default current directory
+        Full path of directory for saving
+    config_path : str, optional, 'default.sex'
+        Full path of configuration file of running SExtractor.
+        By default it uses the one stored in configs/
+    executable : str, optional, SE_executable
+        Full path of the SExtractor executable.
+        If SExtractor is installed this can be retrieved by typing:
+            'which sex'  or  'which source-extractor'
+        in the shell.
+    ZP_keyname : str, optional, default REFZP
+        Keyword names of zero point in the header.
+        If not found, a value can be passed by ZP.
+    ZP : float or None, optional, default None
+        Zero point value. If None, it finds ZP_keyname in the
+        header. If not provided either, it will compute a zero
+        point by cross-match with the APASS catalog.
+    ref_cat : str, optional, default 'APASSref.cat'
+        Full path file name of the APASS reference catalog.
+        If not found, it will generate a reference catalog.
+    apass_dir : str, optional, default '~/Data/apass/'
+        Full path of the diectory of the APASS catalogs.
+
+
+    Returns
+    -------
+    None:
+        None
+    
+    Notes
+    -----
+    
+    SExtractor must to be installed and the local executable path
+    needs to be correct. Check if XX.cat and XX_seg.fits exist in
+    work_dir.
+    
+    A configuration file can be passed by config_path than default,
+    but parameters can be overwritten by passing them as **kwargs,
+    e.g.:
+    
+        Run_Detection(..., DETECT_THRESH=10)
+    
+    Note the keywords are case-sensitive.
+    
+    """
                 
     from dfreduce.detection import sextractor
     
@@ -64,10 +134,12 @@ def Run_Detection(hdu_path, obj_name, band='g',
 
                 minra, maxra = sorted([header['CRVAL1'] - ra_range, header['CRVAL1'] + ra_range])
                 mindec, maxdec = sorted([header['CRVAL2'] - dec_range, header['CRVAL2'] + dec_range])
-
-                refcat = load_apass_in_region(apass_dir,
-                                              bounds=[mindec, maxdec, minra, maxra])
-                refcat.write(ref_cat, format='ascii')
+                if os.path.exists(apass_dir):
+                    refcat = load_apass_in_region(apass_dir,
+                                                  bounds=[mindec, maxdec, minra, maxra])
+                    refcat.write(ref_cat, format='ascii')
+                else:
+                    sys.exit('APASS directory not available. Exit.')
 
             # Crossmatch SE catalog with reference catalog
             imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=3.)
@@ -97,9 +169,9 @@ def Run_Detection(hdu_path, obj_name, band='g',
 
 def Match_Mask_Measure(hdu_path,
                        bounds_list,
-                       obj_name='DFfield',
-                       band="G",
-                       pixel_scale=2.5,
+                       obj_name,
+                       band,
+                       pixel_scale=DF_pixel_scale,
                        ZP=None,
                        bkg=None,
                        field_pad=100,
@@ -138,36 +210,42 @@ def Match_Mask_Measure(hdu_path,
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         Object name
-    band : str, default 'G'
+    band : str
         Filter name ('G', 'g' or 'R', 'r')
-    pixel_scale : float, default 2.5
+    pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
-    ZP : float or None, default None
-        Zero point value (if None, read from header)
-    bkg : float or None, default None
-        Background value (if None, read from header)
-    field_pad : int, default 100
+    ZP : float or None, optional, default None
+        Zero point value (if None, read ZP from header)
+    bkg : float or None, optional, default None
+        Background estimated value (if None, read BACKVAL from header)
+    field_pad : int, optional, default 100
         Padding size (in pix) of the field for crossmatch. Only used
         if use_PS1_DR2=False
-    r_scale : int, default 12
+    r_scale : int, optional, default 12
         Radius (in pix) at which the brightness is measured
         Default is 30" for Dragonfly.
-    mag_limit : float, default 15
+    mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured
-    mag_saturate : float, default 13
+    mag_saturate : float, optional, default 13
         Estimate of magnitude at which the image is saturated.
         The exact value will be fit if ZP provided
-    draw : bool, default True
+    draw : bool, optional, default True
         Whether to draw diagnostic plots
-    save : bool, default True
+    save : bool, optional, default True
         Whether to save results
-    use_PS1_DR2 : bool, default False
+    use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2
         Crossmatch with DR2 is done by MAST query, which might fail
         if a field is too large (> 1 deg^2)
-    work_dir : str, default current directory
+    work_dir : str, optional, default current directory
         Full path of directory for saving
     
+    
+    Returns
+    -------
+    None
+        None
+        
     """
     
     print("""Measure the intensity at R = %d for stars < %.1f
@@ -387,9 +465,9 @@ def Match_Mask_Measure(hdu_path,
         
 def Run_PSF_Fitting(hdu_path,
                     bounds_list,
-                    obj_name='DFfield',
-                    band="G",
-                    pixel_scale=2.5,
+                    obj_name,
+                    band,
+                    pixel_scale=DF_pixel_scale,
                     ZP=None,
                     bkg=None,
                     pad=100,
@@ -434,93 +512,95 @@ def Run_PSF_Fitting(hdu_path,
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         Object name
-    band : str, default 'G'
+    band : str
         Filter name ('G', 'g' or 'R', 'r')
-    pixel_scale : float, default 2.5
+    pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
-    ZP : float or None, default None
-        Zero point value (if None, read from header)
-    bkg : float or None, default None
-        Background value (if None, read from header)
-    pad : int, default 50
+    ZP : float or None, optional, default None
+        Zero point value (if None, read ZP from header)
+    bkg : float or None, optional, default None
+        Background estimated value (if None, read BACKVAL from header)
+    pad : int, optional, default 50
         Padding size of the field for fitting
-    r_scale : int, default 12
+    r_scale : int, optional, default 12
         Radius (in pix) at which the brightness is measured.
         Default is 30" for Dragonfly.
-    mag_limit : float, default 15
+    mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured
     mag_threshold : [float, float], default: [14, 11]
         Magnitude theresholds to classify faint stars, medium bright
         stars and very bright stars.
         The conversion from brightness is using a static PSF.
         (* will change to stacked profiles)
-    mask_type : 'aper' or 'brightness', default 'aper'
+    mask_type : 'aper' or 'brightness', optional, default 'aper'
             "aper": aperture masking
             "brightness": brightness-limit masking
-    wid_strip : int, default 24
+    wid_strip : int, optional, default 24
         Width of strip for masks of very bright stars.
-    n_strip : int, default 48
+    n_strip : int, optional, default 48
         Number of strip for masks of very bright stars.
-    SB_threshold : float, default 24.5
+    SB_threshold : float, optional, default 24.5
         Surface brightness upper limit for masking.
         Only used if mask_type = 'brightness'.
-    n_spline : int, default 3
+    n_spline : int, optional, default 3
         Number of power-law component for the aureole models.
         The speed goes down as n_spline goes up. Default is 3.
-    r_core : int or [int, int], default 24
+    r_core : int or [int, int], optional, default 24
         Radius (in pix) for the inner mask of [very, medium]
         bright stars. Default is 1' for Dragonfly.
-    r_out : int or [int, int] or None, default None
+    r_out : int or [int, int] or None, optional, default None
         Radius (in pix) for the outer mask of [very, medium]
         bright stars. If None, turn off outer mask.
-    theta_cutoff : float, default 1200
+    theta_cutoff : float, optional, default 1200
         Cutoff range (in arcsec) for the aureole model. The model
         is cut off beyond it wit n=4. Default is 20' for Dragonfly.
-    fit_sigma : bool, default False
+    fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
         If False, will use the estimated value
-    fit_frac : bool, default False
+    fit_frac : bool, optional, default False
         Whether to fit the fraction of the aureole.
         If False, use a static value
         (* will change to values from stacked profiles)
-    leg2d : bool, default False
+    leg2d : bool, optional, default False
         Whether to fit a varied background with 2D Legendre
         polynomial. Currently only support 1st order.
-    draw_real : bool, default True
+    draw_real : bool, optional, default True
         Whether to draw very bright stars in real space.
         Recommended to be turned on.
-    brightest_only : bool, default False
+    brightest_only : bool, optional, default False
         Whether to draw very bright stars only.
         If turned on the fitting will ignore medium bright stars.
-    parallel : bool, default True
+    parallel : bool, optional, default True
         Whether to run drawing for medium bright stars in parallel.
-    n_cpu : int, default None
+    n_cpu : int, optional, default None
         Number of cpu used for fitting and/or drawing.
-    nlive_init : int, default None
+    nlive_init : int, optional, default None
         Number of initial live points in dynesty. If None will
         use nlive_init = ndim*10.
     sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice',
-                    'rslice', 'hslice', callable}, default 'auto'
+                    'rslice', 'hslice', callable},
+                    optional, default is 'auto'
         Samplimg method in dynesty.
         If 'auto', the method is 'unif' for ndim < 10, 'rwalk' for
         10 <= ndim <= 20, 'slice' for ndim > 20.
-    print_progress : bool, default True
+    print_progress : bool, optional, default True
         Whether to turn on the progress bar of dynesty
-    draw : bool, default True
+    draw : bool, optional, default True
         Whether to draw diagnostic plots
-    save : bool, default True
+    save : bool, optional, default True
         Whether to save results
-    use_PS1_DR2 : bool, default False
+    use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2.
         Crossmatch with DR2 is done by MAST query, which might fail
         if a field is too large (> 1 deg^2)
-    work_dir : str, default current directory
+    work_dir : str, optional, default current directory
         Full Path of directory for saving
         
         
     Returns
-    ----------
-    dsamplers : A list of sampler class which contains fitting results.
+    -------
+    dsamplers : list
+        A list of sampler class which contains fitting results.
         
     """
     
@@ -538,7 +618,8 @@ def Run_PSF_Fitting(hdu_path,
     # Construct Image List
     DF_Images = ImageList(hdu_path, bounds_list,
                           obj_name, band,
-                          pixel_scale, ZP, bkg, pad)
+                          pixel_scale=pixel_scale,
+                          pad=pad, ZP=ZP, bkg=bkg)
     
     # Read faint stars info and brightness measurement
     if use_PS1_DR2:
@@ -742,11 +823,14 @@ def Run_PSF_Fitting(hdu_path,
 
 
 
+default_config = os.path.join(config_dir, './config.yaml')
+
 class berry:
     
     """
     
-    Fruit of elderflower
+    Fruit of elderflower.
+    A class wrapper for running the package.
     
     Parameters
     ----------
@@ -759,14 +843,34 @@ class berry:
         object name
     band : str
         filter name
-    config_file : yaml
+    work_dir : str, optional, default current directory
+        Full Path of directory for saving
+    config_file : yaml, optional, default 'configs/config.yaml'
         configuration file which contains keyword arguments
+        
+    Example:
+        
+    # Initialize the task
+
+        from elderflower.task import berry
+        elder = berry(hdu_path, bounds, obj_name, filt='g',
+                      work_dir='...', config_file='...')
+                  
+    # Check keywords listed in the configuration:
+        elder.kwargs
     
+    # Run the task
+        elder.run()
+        
     """
 
-    def __init__(self, hdu_path, bounds_list,
-                 obj_name='DFfield', band='g',
-                 work_dir='./', config_file="./config.yaml"):
+    def __init__(self,
+                 hdu_path,
+                 bounds_list,
+                 obj_name,
+                 band,
+                 work_dir='./',
+                 config_file=default_config):
         
         self.hdu_path = hdu_path
         self.bounds_list = bounds_list
@@ -781,6 +885,7 @@ class berry:
     
     @property
     def kwargs(self):
+        """ Keyword list in the configuration file """
         @self.config_func
         def _kwargs(**kwargs):
             return kwargs
@@ -788,10 +893,13 @@ class berry:
         return _kwargs()
     
     def detection(self, **kwargs):
-        Run_Detection(self.hdu_path, self.obj_name, band=self.band,
+        """ Run the source detection """
+        
+        Run_Detection(self.hdu_path, self.obj_name, self.band,
                       work_dir=self.work_dir, **kwargs)
         
     def run(self):
+        """ Run the task (Match_Mask_Measure + Run_PSF_Fitting) """
             
         @self.config_func
         def _run(func, **kwargs):
@@ -799,7 +907,7 @@ class berry:
             pars = {key: kwargs[key] for key in keys}
             
             return func(self.hdu_path, self.bounds_list,
-                        self.obj_name, band=self.band,
+                        self.obj_name, self.band,
                         work_dir=self.work_dir, **pars)
                         
         _ = _run(Match_Mask_Measure)

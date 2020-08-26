@@ -1,9 +1,12 @@
 import os
 import math
 import numpy as np
+
 from astropy.io import fits
+
 from .modeling import Stars
 from .utils import background_sub_SE
+from .image import DF_pixel_scale
 
 class Mask:
     """ Class for masking sources """
@@ -301,7 +304,7 @@ def make_mask_detection(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
 
 
 def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
-                       k=3, pixel_scale=2.5):
+                       k=3, pixel_scale=DF_pixel_scale):
     
     """ Make mask map with elliptical apertures.
     

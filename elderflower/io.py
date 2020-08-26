@@ -6,6 +6,10 @@ import yaml
 import numpy as np
 from functools import partial, wraps
 
+package_dir = os.path.dirname(__file__)
+config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
+
+
 def check_save_path(dir_name, make_new=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
         If yes, clear the content if make_new=True. """

@@ -25,6 +25,7 @@ from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 from photutils.segmentation import SegmentationImage
     
 from .io import save_pickle, load_pickle, check_save_path
+from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .plotting import LogNorm, AsinhNorm, colorbar
 
 # default SE columns for cross_match
@@ -51,7 +52,7 @@ def gamma_to_fwhm(gamma, beta):
     """ in arcsec """
     return gamma / fwhm_to_gamma(1, beta)
 
-def Intensity2SB(I, BKG, ZP, pixel_scale=2.5):
+def Intensity2SB(I, BKG, ZP, pixel_scale=DF_pixel_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
     I = np.atleast_1d(I)
     I[np.isnan(I)] = BKG
@@ -60,7 +61,7 @@ def Intensity2SB(I, BKG, ZP, pixel_scale=2.5):
     I_SB = -2.5*np.log10(I - BKG) + ZP + 2.5 * math.log10(pixel_scale**2)
     return I_SB
 
-def SB2Intensity(SB, BKG, ZP, pixel_scale=2.5):
+def SB2Intensity(SB, BKG, ZP, pixel_scale=DF_pixel_scale):
     """ Convert surface brightness (mag/arcsec^2)to intensity given the background value, zero point and pixel scale """ 
     SB = np.atleast_1d(SB)
     I = 10** ((SB - ZP - 2.5 * math.log10(pixel_scale**2))/ (-2.5)) + BKG
@@ -279,11 +280,16 @@ def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
         
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="Intensity",
-                   seeing=2.5, pixel_scale=2.5, ZP=27.1, sky_mean=884, sky_std=3, dr=1.5, 
-                   lw=2, alpha=0.7, markersize=5, I_shift=0, figsize=None,
-                   core_undersample=False, label=None, plot_line=False, mock=False,
-                   plot=True, scatter=False, fill=False, errorbar=False, verbose=False):
+                   seeing=2.5, pixel_scale=DF_pixel_scale, ZP=27.1,
+                   sky_mean=884, sky_std=3, dr=1.5,
+                   lw=2, alpha=0.7, markersize=5, I_shift=0,
+                   core_undersample=False, figsize=None,
+                   label=None, plot_line=False, mock=False,
+                   plot=True, scatter=False, fill=False,
+                   errorbar=False, verbose=False):
+                   
     """Calculate 1d radial profile of a given star postage"""
+    
     if mask is None:
         mask =  np.zeros_like(img, dtype=bool)
     if back is None:     
@@ -956,7 +962,7 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     return stars_0, stars_all
 
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
-                pixel_scale=2.5, mag_limit=15, sep=4*u.arcsec,
+                pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
                 clean_catalog=True, mag_name='rmag',
                 catalog={'Pan-STARRS': 'II/349/ps1'},
                 columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
@@ -1095,7 +1101,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=2.5, mag_limit=15, sep=2.5*u.arcsec,
+                        pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
                         verbose=True):
     """
     Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
@@ -1513,12 +1519,13 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
         if star_ma is not None:
             seg_map[star_ma.astype(bool)] = k+2
+    
     if draw:
         from .plotting import make_rand_cmap
-        plt.figure(figsize=(5,5))
+        plt.figure(figsize=(6,6), dpi=100)
         plt.imshow(seg_map, vmin=1, cmap=make_rand_cmap(int(seg_map.max())))
         plt.show()
-        
+    
     # Save segmentation map built from catalog
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)

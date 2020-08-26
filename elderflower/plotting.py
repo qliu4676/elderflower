@@ -114,7 +114,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     if vmax is None:
         vmax = mu + 10*std
     
-    fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
+    fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6), dpi=100)
     
     im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(), vmin=vmin, vmax=1e4)
     ax1.set_title("Image")
@@ -156,7 +156,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     plt.tight_layout()
     
     if save:
-        plt.savefig(os.path.join(save_dir, "Mask_dual.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Mask_dual.png"), dpi=100)
         plt.show()
         plt.close()
     else:
@@ -182,7 +182,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     if vmax is None:
         vmax = mu + 10*std
         
-    fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6))
+    fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6), dpi=100)
     
     mask_strip[mask_cross.astype(bool)]=0.5
     ax1.imshow(mask_strip, cmap="gray_r")
@@ -198,7 +198,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     image3[mask_comb] = 0
     im3 = ax3.imshow(image3, norm=LogNorm(), aspect='auto', vmin=vmin, vmax=vmax) 
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
-    ax3.set_title("'Sky'")
+    ax3.set_title("Sky")
     colorbar(im3)
     
     if r_core is not None:
@@ -218,7 +218,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(save_dir, "Mask_strip.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Mask_strip.png"), dpi=100)
         plt.show()
         plt.close()
     else:
@@ -352,7 +352,7 @@ def plot_PSF_model_galsim(psf, image_size=800, contrast=None,
     
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(save_dir, "Model_PSF.png"), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Model_PSF.png"), dpi=100)
         plt.close()
         
     return img_star
@@ -542,7 +542,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
         
     plt.tight_layout()
     if save:
-        plt.savefig(os.path.join(save_dir, "Comparison_fit_data2D%s.png"%suffix), dpi=120)
+        plt.savefig(os.path.join(save_dir, "Comparison_fit_data2D%s.png"%suffix), dpi=100)
         plt.show()
         plt.close()
     else:
@@ -687,7 +687,7 @@ def plot_fit_PSF1D(results, psf,
     plt.tight_layout()
     
     if save:
-        plt.savefig("%s/Fit_PSF1D%s.png"%(save_dir, suffix),dpi=150)
+        plt.savefig("%s/Fit_PSF1D%s.png"%(save_dir, suffix),dpi=100)
         plt.show()
         plt.close()
     
