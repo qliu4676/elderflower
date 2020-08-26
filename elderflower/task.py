@@ -860,6 +860,7 @@ class berry:
         elder.kwargs
     
     # Run the task
+        elder.detection()
         elder.run()
         
     """
