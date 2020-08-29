@@ -1655,7 +1655,8 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, theta_in=50, theta_out=240, 
+              n_min=1, d_n0=0.3, d_n=0.2,
+              theta_in=50, theta_out=240,
               std_poi=None, leg2d=False,
               fit_sigma=True, fit_frac=False, **kwargs):
     
@@ -1671,6 +1672,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     n_spline : number of power-law component for modeling the aureole
     n_min : minium power index allowed in fitting
     d_n0 : stddev of noraml prior of n_0
+    d_n : minimum length of prior jump in n_k for n_spline>=3
     theta_in : inner boundary of the first transition radius
     theta_out : outer boundary of the first transition radius
     std_poi : poisson noise as minimum noise
@@ -1810,17 +1812,18 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
         else:
             prior_tf = partial(prior_tf_sp, Priors=[Prior_n, Prior_mu, Prior_logsigma],
-                               n_spline=n_spline, leg2d=leg2d, n_min=n_min,
+                               n_spline=n_spline, n_min=n_min, d_n=d_n,
                                log_t_in=log_t_in, log_t_out=log_t_out,
-                               fit_sigma=fit_sigma, fit_frac=fit_frac, K=K)
+                               leg2d=leg2d, K=K, fit_sigma=fit_sigma, fit_frac=fit_frac)
 
             return prior_tf
 
 
 def prior_tf_sp(u, Priors,
-                n_spline=3, n_min=1, leg2d=False,
+                n_spline=3, n_min=1, n_max=4, d_n=0.2,
                 log_t_in=1.7, log_t_out=2.4,
-                fit_sigma=True, fit_frac=False, K=1):
+                leg2d=False, K=1, flexible=True,
+                fit_sigma=True, fit_frac=False):
                 
     """ Prior Transform function for n_spline """
 
@@ -1828,13 +1831,22 @@ def prior_tf_sp(u, Priors,
     Prior_n, Prior_mu, Prior_logsigma = Priors
 
     v[0] = Prior_n.ppf(u[0])
-
-    for k in range(n_spline-1):
-        v[k+1] = u[k+1] * max(-1.2, n_min+0.3-v[k]) + (v[k]-0.3)
-        # n_k+1 : max{n_min, n_k-1.5} - n_k-0.3 (new, much slower?)
+    
+    if flexible:
+        for k in range(n_spline-2):
+            v[k+1] = u[k+1] * max(-1.5+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
+            # n_k+1 : max{n_min, n_k-1.5} - n_k-d_n
+        
+        v[k+2] = u[k+2] * min(n_max-(v[k+1]-d_n), n_max-n_min) + max(n_min, v[k+1]-d_n)
+        # n_last : max(n_min, n_k-d_n) - n_max
+        
+    else:
+        for k in range(n_spline-1):
+            v[k+1] = u[k+1] * max(-1.5+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
+            # n_k+1 : max{n_min, n_k-1.5} - n_k-d_n
         
 #        v[k+1] = u[k+1] * max(-0.3, n_min+0.3-v[k]) + (v[k]-0.3)
-#        # n_k+1 : max{1, n_k-0.6} - n_k-0.3 (old)
+#        # n_k+1 : max{n_min, n_k-0.6} - n_k-0.3 (old)
 
     v[n_spline] = u[n_spline] * (log_t_out - log_t_in) + log_t_in
     # log theta1 : t_in-t_out  arcsec

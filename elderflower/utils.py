@@ -690,12 +690,12 @@ def measure_Rnorm_all(table, bounds,
         
     """
     
-    Xmin, Ymin = bounds[:2]
+    Xmin, Ymin, Xmax, Ymax = bounds
     
-    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X%sY%s.txt'\
-                                    %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Ymin))
-    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X%sY%s'\
-                                  %(obj_name, mag_name[0], mag_limit, Xmin, Ymin))
+    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X[%d-%d]Y[%d-%d].txt'\
+                                    %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
+    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X[%d-%d]Y[%d-%d].pkl'\
+                                  %(obj_name, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
     if read:
         table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
         res_thumb = load_pickle(res_thumb_name)
@@ -876,9 +876,9 @@ def read_measurement_tables(dir_name, bounds0_list,
         
         ## Read measurement for bright stars
         # Catalog name
-        fname_res_Rnorm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X%dY%d.txt"\
-                                       %(obj_name, r_scale, b_name,
-                                         mag_limit, patch_Xmin0, patch_Ymin0))
+        fname_res_Rnorm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
+                                       %(obj_name, r_scale, b_name, mag_limit,
+                                       patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
         # Check if the file exist
         if os.path.isfile(fname_res_Rnorm):
             table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
@@ -1487,7 +1487,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     """
     
     image_size = bounds[2] - bounds[0]
-    Xmin, Ymin = bounds[:2]
+    Xmin, Ymin, Xmax, Ymax = bounds
     X_key, Y_key = 'X_IMAGE'+'_'+cat_name, 'Y_IMAGE'+'_'+cat_name
     
     try:
@@ -1532,7 +1532,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         hdu_seg = fits.PrimaryHDU(seg_map.astype(int))
         
         b_name = band.lower()
-        file_name = os.path.join(dir_name, "%s-segm_%smag_catalog_X%dY%d.fits" %(obj_name, b_name, Xmin, Ymin))
+        file_name = os.path.join(dir_name, "%s-segm_%smag_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, b_name, Xmin, Xmax, Ymin, Ymax))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         

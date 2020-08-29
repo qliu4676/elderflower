@@ -27,16 +27,13 @@ def Run_Detection(hdu_path, obj_name, band,
                   
     """
     
-    Run a first-step source detection with SExtractor. This step
-    generates a SExtractor catalog and segementation map for the
-    cross-match and measurement in Match_Mask_Measure.
+    Run a first-step source detection with SExtractor. This step generates a SExtractor catalog
+     and segementation map for the cross-match and measurement in Match_Mask_Measure.
     
-    Magnitudes are converted using the zero-point stored in the
-    header ('ZP_keyname'). If not stored in the header, it will
-    try to compute the zero-point by cross-match with the APASS
-    catalog. In this case, the directory to the APASS catalogs
-    is needed ('apass_dir'). If a reference catalog already exists,
-    it can be provided ('ref_cat') to save time.
+    Magnitudes are converted using the zero-point stored in the header ('ZP_keyname'). If not
+    stored in the header, it will try to compute the zero-point by cross-match with the APASS
+    catalog. In this case, the directory to the APASS catalogs is needed ('apass_dir'). If a
+    reference catalog already exists, it can be provided ('ref_cat') to save time.
     
     
     Parameters
@@ -49,50 +46,42 @@ def Run_Detection(hdu_path, obj_name, band,
     band : str
         Filter name ('G', 'g' or 'R', 'r')
     threshold : int, optional, default 5
-        Detection & analysis threshold of SExtractor
+        Detection and analysis threshold of SExtractor
     work_dir : str, optional, default current directory
         Full path of directory for saving
     config_path : str, optional, 'default.sex'
         Full path of configuration file of running SExtractor.
         By default it uses the one stored in configs/
     executable : str, optional, SE_executable
-        Full path of the SExtractor executable.
-        If SExtractor is installed this can be retrieved by typing:
-            'which sex'  or  'which source-extractor'
-        in the shell.
+        Full path of the SExtractor executable. If SExtractor is installed this can be retrieved
+        by typing '$which sex'  or  '$which source-extractor' in the shell.
     ZP_keyname : str, optional, default REFZP
         Keyword names of zero point in the header.
         If not found, a value can be passed by ZP.
     ZP : float or None, optional, default None
-        Zero point value. If None, it finds ZP_keyname in the
-        header. If not provided either, it will compute a zero
-        point by cross-match with the APASS catalog.
+        Zero point value. If None, it finds ZP_keyname in the header. If not provided either,
+        it will compute a zero point by cross-match with the APASS catalog.
     ref_cat : str, optional, default 'APASSref.cat'
         Full path file name of the APASS reference catalog.
         If not found, it will generate a reference catalog.
     apass_dir : str, optional, default '~/Data/apass/'
         Full path of the diectory of the APASS catalogs.
-
-
+        
     Returns
     -------
-    None:
-        None
-    
+    ZP: float
+        Zero point value from the header, or a crossmatch with APASS, or a user-input.
+        
     Notes
     -----
     
-    SExtractor must to be installed and the local executable path
-    needs to be correct. Check if XX.cat and XX_seg.fits exist in
-    work_dir.
+    SExtractor must be installed and the local executable path needs to be correct.
+    To check if it works, check if XX.cat and XX_seg.fits exist in work_dir.
     
-    A configuration file can be passed by config_path than default,
-    but parameters can be overwritten by passing them as **kwargs,
-    e.g.:
+    A configuration file can be passed by config_path than default, but parameters can be
+    overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in capital):
     
         Run_Detection(..., DETECT_THRESH=10)
-    
-    Note the keywords are case-sensitive.
     
     """
                 
@@ -162,9 +151,14 @@ def Run_Detection(hdu_path, obj_name, band,
                                 CHECKIMAGE_TYPE='SEGMENTATION',
                                 CHECKIMAGE_NAME=segname,
                                 MAG_ZEROPOINT=ZP, **kwargs)
-                                
+    
+    if not (os.path.isfile(catname)) & (os.path.isfile(catname)):
+        sys.exit('SE catalog/segmentation not saved properly. Exit.')
+        
     print(f"CATALOG saved as {catname}")
     print(f"SEGMENTATION saved as {segname}")
+    
+    return ZP
 
 
 def Match_Mask_Measure(hdu_path,
@@ -174,7 +168,7 @@ def Match_Mask_Measure(hdu_path,
                        pixel_scale=DF_pixel_scale,
                        ZP=None,
                        bkg=None,
-                       field_pad=100,
+                       field_pad=50,
                        r_scale=12,
                        mag_limit=15,
                        mag_saturate=13,
@@ -192,8 +186,7 @@ def Match_Mask_Measure(hdu_path,
     2) Crossmatch the SExtractor table with the PANSTARRS catalog.
     3) Correct the catalogued magnitudes to the used filter.
     4) Add saturated stars missing in the crossmatch by a correction.
-    5) Make mask maps for dim stars with empirical apertures enlarged
-    from SExtractor.
+    5) Make mask maps for dim stars with empirical apertures enlarged from SExtractor.
     6) Measure brightness in annuli around bright stars
     
     The output files are saved in:
@@ -219,8 +212,8 @@ def Match_Mask_Measure(hdu_path,
     bkg : float or None, optional, default None
         Background estimated value (if None, read BACKVAL from header)
     field_pad : int, optional, default 100
-        Padding size (in pix) of the field for crossmatch. Only used
-        if use_PS1_DR2=False
+        Padding size (in pix) of the field for crossmatch.
+        Only used if use_PS1_DR2=False
     r_scale : int, optional, default 12
         Radius (in pix) at which the brightness is measured
         Default is 30" for Dragonfly.
@@ -228,15 +221,14 @@ def Match_Mask_Measure(hdu_path,
         Magnitude upper limit below which are measured
     mag_saturate : float, optional, default 13
         Estimate of magnitude at which the image is saturated.
-        The exact value will be fit if ZP provided
+        The exact value will be fit if ZP provided.
     draw : bool, optional, default True
         Whether to draw diagnostic plots
     save : bool, optional, default True
-        Whether to save results
+        Whether to save results.
     use_PS1_DR2 : bool, optional, default False
-        Whether to use PANSTARRS DR2
-        Crossmatch with DR2 is done by MAST query, which might fail
-        if a field is too large (> 1 deg^2)
+        Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query, which
+        could easily fail if a field is too large (> 1 deg^2)
     work_dir : str, optional, default current directory
         Full path of directory for saving
     
@@ -263,7 +255,7 @@ def Match_Mask_Measure(hdu_path,
     from astropy import wcs
     
     # Read hdu
-    if os.path.isfile(hdu_path) is False:
+    if not os.path.isfile(hdu_path):
         sys.exit("Image does not exist. Check path.")
         
     with fits.open(hdu_path) as hdul:
@@ -528,13 +520,11 @@ def Run_PSF_Fitting(hdu_path,
     mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured
     mag_threshold : [float, float], default: [14, 11]
-        Magnitude theresholds to classify faint stars, medium bright
-        stars and very bright stars.
-        The conversion from brightness is using a static PSF.
-        (* will change to stacked profiles)
+        Magnitude theresholds to classify faint stars, medium bright stars and very bright stars.
+        The conversion from brightness is using a static PSF. (* will change to stacked profiles)
     mask_type : 'aper' or 'brightness', optional, default 'aper'
-            "aper": aperture masking
-            "brightness": brightness-limit masking
+        "aper": aperture masking
+        "brightness": brightness-limit masking
     wid_strip : int, optional, default 24
         Width of strip for masks of very bright stars.
     n_strip : int, optional, default 48
@@ -552,18 +542,18 @@ def Run_PSF_Fitting(hdu_path,
         Radius (in pix) for the outer mask of [very, medium]
         bright stars. If None, turn off outer mask.
     theta_cutoff : float, optional, default 1200
-        Cutoff range (in arcsec) for the aureole model. The model
-        is cut off beyond it wit n=4. Default is 20' for Dragonfly.
+        Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n=4.
+        Default is 20' for Dragonfly.
     fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
         If False, will use the estimated value
     fit_frac : bool, optional, default False
         Whether to fit the fraction of the aureole.
-        If False, use a static value
+        If False, use a static value.
         (* will change to values from stacked profiles)
     leg2d : bool, optional, default False
-        Whether to fit a varied background with 2D Legendre
-        polynomial. Currently only support 1st order.
+        Whether to fit a varied background with 2D Legendre polynomial.
+        Currently only support 1st order.
     draw_real : bool, optional, default True
         Whether to draw very bright stars in real space.
         Recommended to be turned on.
@@ -577,11 +567,9 @@ def Run_PSF_Fitting(hdu_path,
     nlive_init : int, optional, default None
         Number of initial live points in dynesty. If None will
         use nlive_init = ndim*10.
-    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice',
-                    'rslice', 'hslice', callable},
+    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice', 'rslice', 'hslice', callable},
                     optional, default is 'auto'
-        Samplimg method in dynesty.
-        If 'auto', the method is 'unif' for ndim < 10, 'rwalk' for
+        Samplimg method in dynesty. If 'auto', the method is 'unif' for ndim < 10, 'rwalk' for
         10 <= ndim <= 20, 'slice' for ndim > 20.
     print_progress : bool, optional, default True
         Whether to turn on the progress bar of dynesty
@@ -599,8 +587,8 @@ def Run_PSF_Fitting(hdu_path,
         
     Returns
     -------
-    dsamplers : list
-        A list of sampler class which contains fitting results.
+    samplers : list
+        A list of Sampler class which contains fitting results.
         
     """
     
@@ -614,6 +602,8 @@ def Run_PSF_Fitting(hdu_path,
     header = fits.getheader(hdu_path)
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
+    
+    bounds_list = np.atleast_2d(bounds_list)
     
     # Construct Image List
     DF_Images = ImageList(hdu_path, bounds_list,
@@ -722,9 +712,9 @@ def Run_PSF_Fitting(hdu_path,
     # Copy stars
     stars_tri = stars.copy()
 
-    # develop mode
-    proceed = input('Is the Mask Reasonable?[y/n]')
-    if proceed == 'n': sys.exit("Reset the Mask.")
+    # (a stop for developer)
+#    proceed = input('Is the Mask Reasonable?[y/n]')
+#    if proceed == 'n': sys.exit("Reset the Mask.")
     
     ############################################
     # Estimate Background
@@ -747,9 +737,10 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     # Run Sampling
     ############################################
-    from .sampler import DynamicNestedSampler
+    from .sampler import Sampler
+    from .io import DateToday
     
-    dsamplers = []
+    samplers = []
     
     for i in range(DF_Images.N_Image):
         
@@ -757,61 +748,60 @@ def Run_PSF_Fitting(hdu_path,
         
         ndim = container.ndim
 
-        ds = DynamicNestedSampler(container,
-                                  n_cpu=n_cpu,
-                                  sample=sample_method)
+        s = Sampler(container, n_cpu=n_cpu, sample=sample_method)
                                   
         if nlive_init is None: nlive_init = ndim*10
-        ds.run_fitting(nlive_init=nlive_init,
-                       nlive_batch=5*ndim+5, maxbatch=2,
-                       print_progress=print_progress)
+        s.run_fitting(nlive_init=nlive_init,
+                      nlive_batch=5*ndim+5, maxbatch=2,
+                      print_progress=print_progress)
     
-#         if save:
-#             fit_info = {'n_spline':n_spline, 'image_size':image_size,
-#                         'bounds_list':bounds_list, 'leg2d':leg2d,
-#                         'r_core':r_core, 'r_scale':r_scale}
+        if save:
+            fit_info = {'obj_name':obj_name,
+                        'band':band,
+                        'n_spline':n_spline,
+                        'bounds':bounds_list[i],
+                        'r_scale':r_scale,
+                        'date':DateToday()}
+                        
+            suffix = str(n_spline)+'p'
+            fname=f'{obj_name}-{band}-fit{suffix}'
+            if leg2d: fname+='l'
+            if brightest_only: fname += 'b'
 
-#             method = str(n_spline)+'p'
-#             fname='NGC5907-%s-fit_best_%s'\
-#                         %(band, method)
-#             if leg2d: fname+='l'
-#             if brightest_only: fname += 'b'
-
-#             ds.save_results(fname+'.res', fit_info, save_dir=work_dir)
+            s.save_results(fname+'.res', fit_info, save_dir=work_dir)
         
         ############################################
         # Plot Results
         ############################################
         from .plotting import AsinhNorm
-        method = str(n_spline)+'p'
         
-        ds.cornerplot(figsize=(18, 16),
-                      save=save, save_dir=work_dir,
-                      suffix='_'+method)
+        suffix = str(n_spline)+'p'
+        
+        s.cornerplot(figsize=(18, 16),
+                     save=save, save_dir=work_dir, suffix=suffix)
 
         # Plot recovered PSF
-        ds.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
-                          save=save, save_dir=work_dir, suffix='_'+method)
+        s.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
+                         save=save, save_dir=work_dir, suffix=suffix)
 
         # Recovered 1D PSF
-        psf_fit, params = ds.generate_fit(psf, stars_tri[i])
+        psf_fit, params = s.generate_fit(psf, stars_tri[i])
 
         # Calculate Chi^2
-        ds.calculate_reduced_chi2()
+        s.calculate_reduced_chi2()
 
         # Draw 2D compaison
-        ds.draw_comparison_2D(r_core=r_core,
-                              norm=AsinhNorm(a=0.01),
-                              vmin=DF_Images.bkg-psf_fit.bkg_std,
-                              vmax=DF_Images.bkg+50, 
-                              save=save, save_dir=work_dir,
-                              suffix='_'+method)
+        s.draw_comparison_2D(r_core=r_core,
+                             norm=AsinhNorm(a=0.01),
+                             vmin=DF_Images.bkg-psf_fit.bkg_std,
+                             vmax=DF_Images.bkg+50,
+                             save=save, save_dir=work_dir, suffix=suffix)
 
         if leg2d:
-            ds.draw_background(save=save, save_dir=work_dir,
-                               suffix='_'+method)
+            s.draw_background(save=save, save_dir=work_dir,
+                              suffix=suffix)
 
-        dsamplers += [ds]
+        samplers += [s]
         
     
     # Delete Stars to avoid pickling error in rerun
@@ -819,11 +809,9 @@ def Run_PSF_Fitting(hdu_path,
         if 'stars' in variable:
             del locals()[variable]
         
-    return dsamplers
-
-
-
-default_config = os.path.join(config_dir, './config.yaml')
+    return samplers
+    
+    
 
 class berry:
     
@@ -837,7 +825,7 @@ class berry:
     
     hdu_path : str
         path of hdu data
-    bounds0_list : list [[X min, Y min, X max, Y max],[...],...]
+    bounds_list : list [[X min, Y min, X max, Y max],[...],...]
         list of boundaries of regions to be fit (Nx4)
     obj_name : str
         object name
@@ -845,22 +833,25 @@ class berry:
         filter name
     work_dir : str, optional, default current directory
         Full Path of directory for saving
-    config_file : yaml, optional, default 'configs/config.yaml'
-        configuration file which contains keyword arguments
+    config_file : yaml, optional, default None
+        configuration file which contains keyword arguments.
+        If None, use the default configuration file.
         
-    Example:
+        
+    Example
+    -------
         
     # Initialize the task
-
         from elderflower.task import berry
-        elder = berry(hdu_path, bounds, obj_name, filt='g',
-                      work_dir='...', config_file='...')
+        
+        elder = berry(hdu_path, bounds, obj_name, filt='g', work_dir='...', config_file='...')
                   
-    # Check keywords listed in the configuration:
-        elder.kwargs
+    # Check keyword parameters listed in the configuration:
+        elder.parameters
     
     # Run the task
         elder.detection()
+
         elder.run()
         
     """
@@ -871,7 +862,7 @@ class berry:
                  obj_name,
                  band,
                  work_dir='./',
-                 config_file=default_config):
+                 config_file=None):
         
         self.hdu_path = hdu_path
         self.bounds_list = bounds_list
@@ -880,13 +871,14 @@ class berry:
         
         self.work_dir = work_dir
         
-        from elderflower.io import config_kwargs
+        from elderflower.io import config_kwargs, default_config
+        if config_file is None: config_file=default_config
         self.config_func = partial(config_kwargs, config_file=config_file)
     
     
     @property
-    def kwargs(self):
-        """ Keyword list in the configuration file """
+    def parameters(self):
+        """ Keyword parameter list in the configuration file """
         @self.config_func
         def _kwargs(**kwargs):
             return kwargs
@@ -894,13 +886,13 @@ class berry:
         return _kwargs()
     
     def detection(self, **kwargs):
-        """ Run the source detection """
+        """ Run the source detection. """
         
         Run_Detection(self.hdu_path, self.obj_name, self.band,
                       work_dir=self.work_dir, **kwargs)
         
     def run(self):
-        """ Run the task (Match_Mask_Measure + Run_PSF_Fitting) """
+        """ Run the task (Match_Mask_Measure + Run_PSF_Fitting). """
             
         @self.config_func
         def _run(func, **kwargs):

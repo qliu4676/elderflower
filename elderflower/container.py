@@ -32,6 +32,7 @@ class Container:
             return f"{self.__class__.__name__} p={self.ndim}"
         else:
             return f"{self.__class__.__name__}"
+            
         
     def set_prior(self, n_est, mu_est, std_est,
                   n_min=1, theta_in=50, theta_out=240):

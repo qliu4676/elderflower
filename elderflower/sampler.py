@@ -15,42 +15,53 @@ import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 
+from .io import save_pickle, load_pickle
 from .plotting import colorbar
 
-class DynamicNestedSampler:
+
+class Sampler:
 
     def __init__(self, container,
                  sample='auto', bound='multi',
-                 n_cpu=None, n_thread=None):
-        
-        if n_cpu is None:
-            n_cpu = mp.cpu_count()
-            
-        if n_thread is not None:
-            n_thread = max(n_thread, n_cpu-1)
-        
-        if n_cpu > 1:
-            self.open_pool(n_cpu)
-            self.use_pool = {'update_bound': False}
-        else:
-            self.pool = None
-            self.use_pool = None
+                 n_cpu=None, n_thread=None,
+                 run=True, results=None):
+                 
+        """ A class for runnning the sampling and plotting results """
+                 
+        # False if a previous run is read
+        self.run = run
         
         self.container = container
-        
-        self.prior_tf = container.prior_transform
-        self.loglike = container.loglikelihood
         self.ndim = container.ndim
-        
         self.labels = container.labels
         
-        dsampler = dynesty.DynamicNestedSampler(self.loglike, self.prior_tf, self.ndim,
-                                                sample=sample, bound=bound,
-                                                pool=self.pool, queue_size=n_thread,
-                                                use_pool=self.use_pool)
-        self.dsampler = dsampler
+        if run:
+            if n_cpu is None:
+                n_cpu = mp.cpu_count()
+                
+            if n_thread is not None:
+                n_thread = max(n_thread, n_cpu-1)
+            
+            if n_cpu > 1:
+                self.open_pool(n_cpu)
+                self.use_pool = {'update_bound': False}
+            else:
+                self.pool = None
+                self.use_pool = None
+            
+            self.prior_tf = container.prior_transform
+            self.loglike = container.loglikelihood
+            
+            dsampler = dynesty.DynamicNestedSampler(self.loglike, self.prior_tf, self.ndim,
+                                                    sample=sample, bound=bound,
+                                                    pool=self.pool, queue_size=n_thread,
+                                                    use_pool=self.use_pool)
+            self.dsampler = dsampler
+            
+        else:
+            self._results = results # use existed results
         
-        
+
     def run_fitting(self,
                     nlive_init=100,
                     maxiter=10000,
@@ -59,7 +70,9 @@ class DynamicNestedSampler:
                     wt_kwargs={'pfrac': 0.8},
                     close_pool=True,
                     print_progress=True):
-    
+        
+        if not self.run: return None
+        
         print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
         start = time.time()
    
@@ -90,36 +103,52 @@ class DynamicNestedSampler:
         print("\nPool Closed.")
         self.pool.close()
         self.pool.join()
-    
+
     @property
     def results(self):
-        res = getattr(self.dsampler, 'results', {})
-        return res
+        """ Results of the dynesty dynamic sampler class """
+        if self.run:
+            return getattr(self.dsampler, 'results', {})
+        else:
+             return self._results
     
     def get_params(self, return_sample=False):
         return get_params_fit(self.results, return_sample)
     
     def save_results(self, filename, fit_info=None, save_dir='.'):
+        """ Save fitting results """
+        if not self.run: return None
+        
         res = {}
         if fit_info is not None:
+            res['fit_info'] = {'run_time': round(self.run_time,2)}
             for key, val in fit_info.items():
-                res[key] = val
-
-        res['run_time'] = self.run_time
-        res['fit_res'] = self.results
+                res['fit_info'][key] = val
         
-        fname = os.path.join(save_dir, filename)
-        save_nested_fitting_result(res, fname)
+        res['fit_res'] = self.results         # fitting results
+        res['container'] = self.container     # a container for prior and likelihood
         
-        self.res = res
+        # Delete local prior and loglikelihood function which can't be pickled
+        for attr in ['prior_transform', 'loglikelihood']:
+            delattr(res['container'], attr)
+        
+        save_pickle(res, os.path.join(save_dir, filename))
+        
+    @classmethod
+    def read_results(cls, filename):
+        """ Read saved fitting results """
+        res = load_pickle(filename, printout=False)
+        print(f"Read fitting results {filename}\n", res['fit_info'])
+        return cls(res['container'], run=False, results=res['fit_res'])
+        
     
     def cornerplot(self, truths=None, figsize=(16,15),
-                   save=False, save_dir='.', suffix=''):
+                   save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
         
         draw_cornerplot(self.results, self.ndim,
                         labels=self.labels, truths=truths, figsize=figsize,
-                        save=save, save_dir=save_dir, suffix=suffix)
+                        save=save, save_dir=save_dir, suffix=suffix, **kwargs)
         
     def cornerbound(self, figsize=(10,10),
                     save=False, save_dir='.', suffix=''):
@@ -134,11 +163,13 @@ class DynamicNestedSampler:
     
     def plot_fit_PSF1D(self, psf, **kwargs):
         from .plotting import plot_fit_PSF1D
-        ct = self.container
+        n_spline = self.container.n_spline
         
-        plot_fit_PSF1D(self.results, psf, n_spline=ct.n_spline, **kwargs)
+        plot_fit_PSF1D(self.results, psf, n_spline=n_spline, **kwargs)
     
     def generate_fit(self, psf, stars, norm='brightness'):
+    
+        """ Build psf from fitting results """
         
         from .utils import make_psf_from_fit
         from .modeling import generate_image_fit
@@ -203,7 +234,8 @@ class DynamicNestedSampler:
         else:
             plt.show()
 
-            
+
+# (Old) functional way
 def Run_Dynamic_Nested_Fitting(loglikelihood, prior_transform, ndim,
                                nlive_init=100, sample='auto', 
                                nlive_batch=50, maxbatch=2,
@@ -249,16 +281,7 @@ def get_params_fit(results, return_sample=False):
         return pmed, pmean, pcov, samples_eq
     else:
         return pmed, pmean, pcov
-
-def save_nested_fitting_result(res, filename='fit.res'):
-    with open(filename,'wb') as file:
-        pickle.dump(res, file, pickle.HIGHEST_PROTOCOL)
         
-def load_nested_fitting_result(filename='fit.res'):        
-    with open(filename, "rb") as file:
-        res = pickle.load(file)
-        
-    return res
 
     
 def merge_run(res_list):

@@ -4,10 +4,13 @@ import sys
 import pickle
 import yaml
 import numpy as np
+from datetime import datetime
 from functools import partial, wraps
 
 package_dir = os.path.dirname(__file__)
+
 config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
+default_config = os.path.join(config_dir, './config.yaml')
 
 
 def check_save_path(dir_name, make_new=True, verbose=True):
@@ -44,20 +47,21 @@ def find_keyword_header(header, keyword):
     return val
     
     
-def save_pickle(data, filename):
-    """ Save data as pickle file. """
+def DateToday():
+    """ Today's date in YYYY-MM-DD """
+    return datetime.today().strftime('%Y-%m-%d')
     
-    fname = filename+'.pkl'
-    print("Save data to %s"%fname)
-    with open(fname, 'wb') as f:
+    
+def save_pickle(data, filename, printout=True):
+    """ Save data as pickle file. """
+    if printout: print("Save to %s"%filename)
+    with open(filename, 'wb') as f:
         pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
 
-def load_pickle(filename):
+def load_pickle(filename, printout=True):
     """ Load data as pickle file. """
-
-    fname = filename+'.pkl'
-    print("Read data from %s"%fname)
-    with open(fname, 'rb') as f:
+    if printout: print("Read from %s"%filename)
+    with open(filename, 'rb') as f:
         return pickle.load(f)
 
 

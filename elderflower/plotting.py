@@ -414,7 +414,7 @@ def draw_independent_priors(priors, xlabels=None, plabels=None,
 
         
 def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
-                    save=False, save_dir='.', suffix=''):
+                    save=False, save_dir='.', suffix='', **kwargs):
     from dynesty import plotting as dyplot
     
     fig = plt.subplots(ndim, ndim, figsize=figsize)
@@ -422,10 +422,10 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                       color="royalblue", truth_color="indianred",
                       title_kwargs={'fontsize':18, 'y': 1.04},
                       label_kwargs={'fontsize':16}, 
-                      show_titles=True, fig=fig)
+                      show_titles=True, fig=fig, **kwargs)
     
     if save:
-        plt.savefig(os.path.join(save_dir, "Cornerplot%s.png"%suffix), dpi=150)
+        plt.savefig(os.path.join(save_dir, "Cornerplot%s.png"%suffix), dpi=120)
         plt.show()
         plt.close()
     else:
@@ -503,7 +503,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
         
     norm2 = deepcopy(norm)
     
-    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(16,9))
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(17,9))
     
     im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
