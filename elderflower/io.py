@@ -10,7 +10,7 @@ from functools import partial, wraps
 package_dir = os.path.dirname(__file__)
 
 config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
-default_config = os.path.join(config_dir, './config.yaml')
+default_config = os.path.join(config_dir, './config.yml')
 
 
 def check_save_path(dir_name, make_new=True, verbose=True):
@@ -68,7 +68,7 @@ def load_pickle(filename, printout=True):
 def load_config(filename):
     """ Read a yaml configuration. """
     
-    if not filename.endswith('.yaml'):
+    if not filename.endswith('.yml'):
         sys.exit(f"Table {filename} is not a yaml file. Exit.")
     
     with open(filename, 'r') as f:
