@@ -592,6 +592,9 @@ def Run_PSF_Fitting(hdu_path,
         
     """
     
+    plot_dir = os.path.join(work_dir, '/plot')
+    check_save_path(plot_dir)
+    
     ############################################
     # Read Image and Table
     ############################################
@@ -674,7 +677,7 @@ def Run_PSF_Fitting(hdu_path,
                                      r_scale=r_scale,
                                      mag_threshold=mag_threshold,
                                      verbose=True, draw=False,
-                                     save=save, save_dir=work_dir)
+                                     save=save, save_dir=plot_dir)
     
     #breakpoint()
     
@@ -701,7 +704,7 @@ def Run_PSF_Fitting(hdu_path,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
                         sn_thre=2.5, n_dilation=5, draw=True,
-                        save=save, save_dir=work_dir)
+                        save=save, save_dir=plot_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
     if brightest_only:
@@ -761,6 +764,8 @@ def Run_PSF_Fitting(hdu_path,
                         'n_spline':n_spline,
                         'bounds':bounds_list[i],
                         'r_scale':r_scale,
+                        'n_c': n_c,
+                        'theta_cutoff': theta_cutoff,
                         'date':DateToday()}
                         
             suffix = str(n_spline)+'p'
@@ -782,7 +787,7 @@ def Run_PSF_Fitting(hdu_path,
 
         # Plot recovered PSF
         s.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
-                         save=save, save_dir=work_dir, suffix=suffix)
+                         save=save, save_dir=plot_dir, suffix=suffix)
 
         # Recovered 1D PSF
         psf_fit, params = s.generate_fit(psf, stars_tri[i])
@@ -795,10 +800,10 @@ def Run_PSF_Fitting(hdu_path,
                              norm=AsinhNorm(a=0.01),
                              vmin=DF_Images.bkg-psf_fit.bkg_std,
                              vmax=DF_Images.bkg+50,
-                             save=save, save_dir=work_dir, suffix=suffix)
+                             save=save, save_dir=plot_dir, suffix=suffix)
 
         if leg2d:
-            s.draw_background(save=save, save_dir=work_dir,
+            s.draw_background(save=save, save_dir=plot_dir,
                               suffix=suffix)
 
         samplers += [s]

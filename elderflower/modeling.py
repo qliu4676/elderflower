@@ -82,6 +82,14 @@ class PSF_Model:
             
         self.gsparams = galsim.GSParams(folding_threshold=1e-10)
         
+        if aureole_model == "power":
+            self.n0 = params['n0']
+            self.theta_0 = self.theta_0 = params['theta_0']
+
+        elif aureole_model == "multi-power":
+            self.n0 = params['n_s'][0]
+            self.theta_0 = params['theta_s'][0]
+        
     def __str__(self):
         return "A PSF Model Class"
 
@@ -200,18 +208,9 @@ class PSF_Model:
             psf_size = round_good_fft(2 * psf_range // psf_scale)   
     
         else:
-            if self.aureole_model == "power":
-                n0 = self.n0
-                theta_0 = self.theta_0
-
-            elif self.aureole_model == "multi-power":
-                n_s = self.n_s
-                theta_s = self.theta_s
-                self.n0 = n0 = n_s[0]
-                self.theta_0 = theta_0 = theta_s[0]
 
             if psf_range is None:
-                psf_size = calculate_psf_size(n0, theta_0, contrast,
+                psf_size = calculate_psf_size(self.n0, self.theta_0, contrast,
                                               psf_scale, min_psf_range, max_psf_range)
             else:
                 psf_size = round_good_fft(psf_range) 
@@ -225,14 +224,14 @@ class PSF_Model:
             
         else:
             if self.aureole_model == "power":
-                theta_0_pix = theta_0 / psf_scale
+                theta_0_pix = self.theta_0 / psf_scale
                 psf_model = trunc_power2d(xx_psf, yy_psf,
-                                          n0, theta_0_pix, I_theta0=1, cen=cen_psf) 
+                                          self.n0, theta_0_pix, I_theta0=1, cen=cen_psf)
 
             elif self.aureole_model == "multi-power":
-                theta_s_pix = theta_s / psf_scale
+                theta_s_pix = self.theta_s / psf_scale
                 psf_model =  multi_power2d(xx_psf, yy_psf,
-                                           n_s, theta_s_pix, 1, cen=cen_psf) 
+                                           self.n_s, theta_s_pix, 1, cen=cen_psf) 
 
             # Parse the image to Galsim PSF model by interpolation
             image_psf = galsim.ImageF(psf_model)

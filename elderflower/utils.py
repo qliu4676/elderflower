@@ -1547,19 +1547,49 @@ def build_independent_priors(priors):
         for i in range(len(u)):
             v[i] = priors[i].ppf(u[i])
         return v
-    return prior_transform    
-
-
-### Recostruct PSF from fit ###    
+    return prior_transform
     
-def make_psf_from_fit(fit_res, psf,
-                      image_size=600, n_spline=2,
+    
+def make_psf_from_fit(fit_res, psf=None, n_spline=2,
+                      pixel_scale=DF_pixel_scale,
+                      n_cutoff=4, theta_cutoff=1200,
                       leg2d=False, sigma=None,
                       fit_sigma=True, fit_frac=False):
-    from .sampler import get_params_fit
-
-    psf_fit = psf.copy()
+                      
+    """
     
+    Recostruct PSF from fit.
+    
+    Parameters
+    ----------
+    fit_res : dynesty.results.Results
+        Results of the dynesty dynamic sampler class
+    psf : PSF_Model class, optional, default None
+        Dummy PSF model. If None, create a new one.
+    n_spline : int, optional, default 3
+        Number of power-law component for the aureole models.
+    pixel_scale : float, optional, default 2.5
+        Pixel scale in arcsec/pixel
+    theta_cutoff : float, optional, default 1200
+        Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n_cutoff. Default is 20' for Dragonfly.
+    
+    Returns
+    -------
+    psf_fit : PSF_Model class
+        Recostructed PSF.
+    params : list
+    
+    """
+    
+    from .modeling import PSF_Model
+    from .sampler import get_params_fit
+    
+    if psf is None:
+        params = {"fwhm":2.28 * pixel_scale, "beta":10, "frac":0.3,
+                  "n_s":np.array([3.3, 2.5]), "theta_s":np.array([5, 72])}
+        psf = PSF_Model(params, aureole_model='multi-power')
+        psf.pixelize(pixel_scale)
+
     params, _, _ = get_params_fit(fit_res)
         
     K = 0
@@ -1574,8 +1604,12 @@ def make_psf_from_fit(fit_res, psf,
         N_n = n_spline
         N_theta = n_spline - 1
         
-        n_c = psf.n_c
-        theta_c = psf.theta_c
+        try:
+            n_c = psf.n_c
+            theta_c = psf.theta_c
+        except AttributeError:
+            n_c = n_cutoff
+            theta_c = theta_cutoff
     
         if psf.aureole_model == "power":
             n_fit = params[0]
@@ -1591,7 +1625,8 @@ def make_psf_from_fit(fit_res, psf,
     if fit_frac:
         frac = 10**params[-1]
         param_update['frac'] = frac
-
+        
+    psf_fit = psf.copy()
     psf_fit.update(param_update)
 
     mu_fit = params[-K-1]
@@ -1607,7 +1642,7 @@ def make_psf_from_fit(fit_res, psf,
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
-    _, _ = psf_fit.generate_aureole(psf_range=image_size)
+    _, _ = psf_fit.generate_aureole(psf_range=theta_cutoff)
     
     return psf_fit, params
 

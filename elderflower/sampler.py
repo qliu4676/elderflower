@@ -150,16 +150,15 @@ class Sampler:
                         labels=self.labels, truths=truths, figsize=figsize,
                         save=save, save_dir=save_dir, suffix=suffix, **kwargs)
         
-    def cornerbound(self, figsize=(10,10),
-                    save=False, save_dir='.', suffix=''):
+    def cornerbounds(self, figsize=(10,10),
+                    save=False, save_dir='.', suffix='', **kwargs):
+        from .plotting import draw_cornerbounds
         
-        fig, axes = plt.subplots(self.ndim-1, self.ndim-1, figsize=figsize)
-        fg, ax = dyplot.cornerbound(self.results, it=1000, labels=self.labels,
-                                    prior_transform=self.prior_tf,
-                                    show_live=True, fig=(fig, axes))
-        if save:
-            plt.savefig(os.path.join(save_dir, "Cornerbound%s.png"%suffix), dpi=120)
-            plt.close()
+        if hasattr(self, 'prior_tf'):
+            draw_cornerbounds(self.results, self.ndim, self.prior_tf,
+                              labels=self.labels, figsize=figsize,
+                              save=save, save_dir=save_dir, suffix=suffix, **kwargs)
+                                    
     
     def plot_fit_PSF1D(self, psf, **kwargs):
         from .plotting import plot_fit_PSF1D
@@ -194,13 +193,16 @@ class Sampler:
             
         image_fit = image_star + image_base + bkg_image
         
-        # Information after fitting
+        # Images constructed from fitting
         self.image_fit = image_fit
         self.image_star = image_star
         self.bkg_image = bkg_image
         self.noise_image = noise_image
         
-        return psf_fit, params
+        # PSF constructed from fitting
+        self.psf_fit = psf_fit
+        
+        return psf_fit
     
     def calculate_reduced_chi2(self):
         
@@ -223,14 +225,16 @@ class Sampler:
         image = ct.image
         mask = ct.mask
         
-        draw_comparison_2D(self.image_fit, image, mask, self.image_star,
-                           self.noise_image, **kwargs)
+        if hasattr(self, 'image_fit'):
+            draw_comparison_2D(self.image_fit, image, mask, self.image_star,
+                               self.noise_image, **kwargs)
         
     def draw_background(self, save=False, save_dir='.', suffix=''):
         plt.figure()
-        im = plt.imshow(self.bkg_image); colorbar(im)
+        if hasattr(self, 'bkg_image'):
+            im = plt.imshow(self.bkg_image); colorbar(im)
         if save:
-            plt.savefig(os.path.join(save_dir,'Legendre2D%s.png'%(suffix)), dpi=80)
+            plt.savefig(os.path.join(save_dir,'Background2D%s.png'%(suffix)), dpi=80)
         else:
             plt.show()
 

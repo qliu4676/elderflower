@@ -418,15 +418,30 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
     from dynesty import plotting as dyplot
     
     fig = plt.subplots(ndim, ndim, figsize=figsize)
-    dyplot.cornerplot(results, truths=truths, labels=labels, 
-                      color="royalblue", truth_color="indianred",
-                      title_kwargs={'fontsize':18, 'y': 1.04},
-                      label_kwargs={'fontsize':16}, 
-                      show_titles=True, fig=fig, **kwargs)
+    plot_kw = {'color':"royalblue", 'truth_color':"indianred",
+               'truths':truths, 'labels':labels,
+               'title_kwargs':{'fontsize':18, 'y': 1.04},
+               'title_fmt':'.3f', 'show_titles':True,
+               'label_kwargs':{'fontsize':16}}
+    plot_kw.update(kwargs)
+    fg, ax = dyplot.cornerplot(results, fig=fig, **plot_kw)
     
     if save:
         plt.savefig(os.path.join(save_dir, "Cornerplot%s.png"%suffix), dpi=120)
         plt.show()
+        plt.close()
+    else:
+        plt.show()
+
+def draw_cornerbounds(results, nidm, prior_transform, labels=None, figsize=(10,10),
+                      save=False, save_dir='.', suffix='', **kwargs):
+    fig, axes = plt.subplots(ndim-1, ndim-1, figsize=figsize)
+    plot_kw = {'labels':labels, 'it':1000, 'show_live':True}
+    plot_kw.update(kwargs)
+    fg, ax = dyplot.cornerbound(self.results, prior_transform=self.prior_tf,
+                                fig=(fig, axes), **plot_kw)
+    if save:
+        plt.savefig(os.path.join(save_dir, "Cornerbound%s.png"%suffix), dpi=120)
         plt.close()
     else:
         plt.show()
