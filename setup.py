@@ -33,7 +33,7 @@ setup(
 
     keywords='astronomy PSF fitting LSB',
 
-    packages=find_packages(include='elderflower'),
+    packages=find_packages(include=['elderflower','elderflower.']),
 
     python_requires='>=3.5',
 
