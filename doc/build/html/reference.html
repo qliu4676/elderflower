@@ -1,0 +1,327 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>API reference &#8212; elderflower 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Configuration" href="config.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="api-reference">
+<h1>API reference<a class="headerlink" href="#api-reference" title="Permalink to this headline">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">elderflower.task</span></code></p>
+<dl class="function">
+<dt id="elderflower.task.Run_Detection">
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_Detection</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">threshold=5</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_path='default.sex'</em>, <em class="sig-param">executable='/opt/local/bin/source-extractor'</em>, <em class="sig-param">ZP_keyname='REFZP'</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">ref_cat='APASSref.cat'</em>, <em class="sig-param">apass_dir='~/Data/apass/'</em>, <em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_Detection" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>Run a first-step source detection with SExtractor. This step generates a SExtractor catalog</dt><dd><p>and segementation map for the cross-match and measurement in Match_Mask_Measure.</p>
+</dd>
+</dl>
+<p>Magnitudes are converted using the zero-point stored in the header (‘ZP_keyname’). If not
+stored in the header, it will try to compute the zero-point by cross-match with the APASS
+catalog. In this case, the directory to the APASS catalogs is needed (‘apass_dir’). If a
+reference catalog already exists, it can be provided (‘ref_cat’) to save time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hdu_path</strong> (<em>str</em>) – Full path of hdu data</p></li>
+<li><p><strong>obj_name</strong> (<em>str</em>) – Object name</p></li>
+<li><p><strong>band</strong> (<em>str</em>) – Filter name (‘G’, ‘g’ or ‘R’, ‘r’)</p></li>
+<li><p><strong>threshold</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 5</em>) – Detection and analysis threshold of SExtractor</p></li>
+<li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full path of directory for saving</p></li>
+<li><p><strong>config_path</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>'default.sex'</em>) – Full path of configuration file of running SExtractor.
+By default it uses the one stored in configs/</p></li>
+<li><p><strong>executable</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>SE_executable</em>) – Full path of the SExtractor executable. If SExtractor is installed this can be retrieved
+by typing ‘$which sex’  or  ‘$which source-extractor’ in the shell.</p></li>
+<li><p><strong>ZP_keyname</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default REFZP</em>) – Keyword names of zero point in the header.
+If not found, a value can be passed by ZP.</p></li>
+<li><p><strong>ZP</strong> (<em>float</em><em> or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Zero point value. If None, it finds ZP_keyname in the header. If not provided either,
+it will compute a zero point by cross-match with the APASS catalog.</p></li>
+<li><p><strong>ref_cat</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default 'APASSref.cat'</em>) – Full path file name of the APASS reference catalog.
+If not found, it will generate a reference catalog.</p></li>
+<li><p><strong>apass_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default '~/Data/apass/'</em>) – Full path of the diectory of the APASS catalogs.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ZP</strong> – Zero point value from the header, or a crossmatch with APASS, or a user-input.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>SExtractor must be installed and the local executable path needs to be correct.
+To check if it works, check if XX.cat and XX_seg.fits exist in work_dir.</p>
+<p>A configuration file can be passed by config_path than default, but parameters can be
+overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in capital):</p>
+<blockquote>
+<div><p>Run_Detection(…, DETECT_THRESH=10)</p>
+</div></blockquote>
+</dd></dl>
+
+<dl class="function">
+<dt id="elderflower.task.Match_Mask_Measure">
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Match_Mask_Measure</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">bounds_list</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">pixel_scale=2.5</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">bkg=None</em>, <em class="sig-param">field_pad=50</em>, <em class="sig-param">r_scale=12</em>, <em class="sig-param">mag_limit=15</em>, <em class="sig-param">mag_saturate=13</em>, <em class="sig-param">draw=True</em>, <em class="sig-param">save=True</em>, <em class="sig-param">use_PS1_DR2=False</em>, <em class="sig-param">work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Match_Mask_Measure" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a series of files as preparations for the fitting.</p>
+<p>The function completes by the following steps:
+1) Identify bright extended sources empirically and mask them.
+2) Crossmatch the SExtractor table with the PANSTARRS catalog.
+3) Correct the catalogued magnitudes to the used filter.
+4) Add saturated stars missing in the crossmatch by a correction.
+5) Make mask maps for dim stars with empirical apertures enlarged from SExtractor.
+6) Measure brightness in annuli around bright stars</p>
+<p>The output files are saved in:
+work_dir/obj_name/Measure-PS1 or work_dir/obj_name/Measure-PS2</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hdu_path</strong> (<em>str</em>) – Full path of hdu data</p></li>
+<li><p><strong>bounds_list</strong> (<em>2D list / turple</em>) – List of boundaries of regions to be fit (Nx4)
+[[X min, Y min, X max, Y max],[…],…]</p></li>
+<li><p><strong>obj_name</strong> (<em>str</em>) – Object name</p></li>
+<li><p><strong>band</strong> (<em>str</em>) – Filter name (‘G’, ‘g’ or ‘R’, ‘r’)</p></li>
+<li><p><strong>pixel_scale</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 2.5</em>) – Pixel scale in arcsec/pixel</p></li>
+<li><p><strong>ZP</strong> (<em>float</em><em> or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Zero point value (if None, read ZP from header)</p></li>
+<li><p><strong>bkg</strong> (<em>float</em><em> or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Background estimated value (if None, read BACKVAL from header)</p></li>
+<li><p><strong>field_pad</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 100</em>) – Padding size (in pix) of the field for crossmatch.
+Only used if use_PS1_DR2=False</p></li>
+<li><p><strong>r_scale</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 12</em>) – Radius (in pix) at which the brightness is measured
+Default is 30” for Dragonfly.</p></li>
+<li><p><strong>mag_limit</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 15</em>) – Magnitude upper limit below which are measured</p></li>
+<li><p><strong>mag_saturate</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 13</em>) – Estimate of magnitude at which the image is saturated.
+The exact value will be fit if ZP provided.</p></li>
+<li><p><strong>draw</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to draw diagnostic plots</p></li>
+<li><p><strong>save</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to save results.</p></li>
+<li><p><strong>use_PS1_DR2</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query, which
+could easily fail if a field is too large (&gt; 1 deg^2)</p></li>
+<li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full path of directory for saving</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="function">
+<dt id="elderflower.task.Run_PSF_Fitting">
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, pad=100, r_scale=12, mag_limit=15, mag_threshold=[14, 11], mask_type='aper', wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, theta_cutoff=1200, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
+<dd><p>Run the wide-angle PSF fitting.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hdu_path</strong> (<em>str</em>) – Full path of hdu data</p></li>
+<li><p><strong>bounds_list</strong> (<em>2D int list / turple</em>) – List of boundaries of regions to be fit (Nx4)
+[[X min, Y min, X max, Y max],[…],…]</p></li>
+<li><p><strong>obj_name</strong> (<em>str</em>) – Object name</p></li>
+<li><p><strong>band</strong> (<em>str</em>) – Filter name (‘G’, ‘g’ or ‘R’, ‘r’)</p></li>
+<li><p><strong>pixel_scale</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 2.5</em>) – Pixel scale in arcsec/pixel</p></li>
+<li><p><strong>ZP</strong> (<em>float</em><em> or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Zero point value (if None, read ZP from header)</p></li>
+<li><p><strong>bkg</strong> (<em>float</em><em> or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Background estimated value (if None, read BACKVAL from header)</p></li>
+<li><p><strong>pad</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 50</em>) – Padding size of the field for fitting</p></li>
+<li><p><strong>r_scale</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 12</em>) – Radius (in pix) at which the brightness is measured.
+Default is 30” for Dragonfly.</p></li>
+<li><p><strong>mag_limit</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 15</em>) – Magnitude upper limit below which are measured</p></li>
+<li><p><strong>mag_threshold</strong> (<em>[</em><em>float</em><em>, </em><em>float</em><em>]</em><em>, </em><em>default:</em><em> [</em><em>14</em><em>, </em><em>11</em><em>]</em>) – Magnitude theresholds to classify faint stars, medium bright stars and very bright stars.
+The conversion from brightness is using a static PSF. (* will change to stacked profiles)</p></li>
+<li><p><strong>mask_type</strong> (<em>'aper'</em><em> or </em><em>'brightness'</em><em>, </em><em>optional</em><em>, </em><em>default 'aper'</em>) – “aper”: aperture masking
+“brightness”: brightness-limit masking</p></li>
+<li><p><strong>wid_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 24</em>) – Width of strip for masks of very bright stars.</p></li>
+<li><p><strong>n_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 48</em>) – Number of strip for masks of very bright stars.</p></li>
+<li><p><strong>SB_threshold</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 24.5</em>) – Surface brightness upper limit for masking.
+Only used if mask_type = ‘brightness’.</p></li>
+<li><p><strong>n_spline</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 3</em>) – Number of power-law component for the aureole models.
+The speed goes down as n_spline goes up. Default is 3.</p></li>
+<li><p><strong>r_core</strong> (<em>int</em><em> or </em><em>[</em><em>int</em><em>, </em><em>int</em><em>]</em><em>, </em><em>optional</em><em>, </em><em>default 24</em>) – Radius (in pix) for the inner mask of [very, medium]
+bright stars. Default is 1’ for Dragonfly.</p></li>
+<li><p><strong>r_out</strong> (<em>int</em><em> or </em><em>[</em><em>int</em><em>, </em><em>int</em><em>] or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Radius (in pix) for the outer mask of [very, medium]
+bright stars. If None, turn off outer mask.</p></li>
+<li><p><strong>theta_cutoff</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 1200</em>) – Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n=4.
+Default is 20’ for Dragonfly.</p></li>
+<li><p><strong>fit_sigma</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to fit the background stddev.
+If False, will use the estimated value</p></li>
+<li><p><strong>fit_frac</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to fit the fraction of the aureole.
+If False, use a static value.
+(* will change to values from stacked profiles)</p></li>
+<li><p><strong>leg2d</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to fit a varied background with 2D Legendre polynomial.
+Currently only support 1st order.</p></li>
+<li><p><strong>draw_real</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to draw very bright stars in real space.
+Recommended to be turned on.</p></li>
+<li><p><strong>brightest_only</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to draw very bright stars only.
+If turned on the fitting will ignore medium bright stars.</p></li>
+<li><p><strong>parallel</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to run drawing for medium bright stars in parallel.</p></li>
+<li><p><strong>n_cpu</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Number of cpu used for fitting and/or drawing.</p></li>
+<li><p><strong>nlive_init</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Number of initial live points in dynesty. If None will
+use nlive_init = ndim*10.</p></li>
+<li><p><strong>sample_method</strong> (<em>{'auto'</em><em>, </em><em>'unif'</em><em>, </em><em>'rwalk'</em><em>, </em><em>'rstagger'</em><em>, </em><em>'slice'</em><em>, </em><em>'rslice'</em><em>, </em><em>'hslice'</em><em>, </em><em>callable}</em><em>,</em>) – optional, default is ‘auto’
+Samplimg method in dynesty. If ‘auto’, the method is ‘unif’ for ndim &lt; 10, ‘rwalk’ for
+10 &lt;= ndim &lt;= 20, ‘slice’ for ndim &gt; 20.</p></li>
+<li><p><strong>print_progress</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to turn on the progress bar of dynesty</p></li>
+<li><p><strong>draw</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to draw diagnostic plots</p></li>
+<li><p><strong>save</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to save results</p></li>
+<li><p><strong>use_PS1_DR2</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to use PANSTARRS DR2.
+Crossmatch with DR2 is done by MAST query, which might fail
+if a field is too large (&gt; 1 deg^2)</p></li>
+<li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full Path of directory for saving</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>samplers</strong> – A list of Sampler class which contains fitting results.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="class">
+<dt id="elderflower.task.berry">
+<em class="property">class </em><code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">berry</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">bounds_list</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_file=None</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry" title="Permalink to this definition">¶</a></dt>
+<dd><p>Fruit of elderflower.
+A class wrapper for running the package.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hdu_path</strong> (<em>str</em>) – path of hdu data</p></li>
+<li><p><strong>bounds_list</strong> (<em>list</em><em> [</em><em>[</em><em>X min</em><em>, </em><em>Y min</em><em>, </em><em>X max</em><em>, </em><em>Y max</em><em>]</em><em>,</em><em>[</em><em>..</em><em>]</em><em>,</em><em>..</em><em>]</em>) – list of boundaries of regions to be fit (Nx4)</p></li>
+<li><p><strong>obj_name</strong> (<em>str</em>) – object name</p></li>
+<li><p><strong>band</strong> (<em>str</em>) – filter name</p></li>
+<li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full Path of directory for saving</p></li>
+<li><p><strong>config_file</strong> (<em>yaml</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – configuration file which contains keyword arguments.
+If None, use the default configuration file.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<dl>
+<dt># Initialize the task</dt><dd><p>from elderflower.task import berry</p>
+<p>elder = berry(hdu_path, bounds, obj_name, filt=’g’, work_dir=’…’, config_file=’…’)</p>
+</dd>
+<dt># Check keyword parameters listed in the configuration:</dt><dd><p>elder.parameters</p>
+</dd>
+<dt># Run the task</dt><dd><p>elder.detection()</p>
+<p>elder.run()</p>
+</dd>
+</dl>
+<dl class="method">
+<dt id="elderflower.task.berry.detection">
+<code class="sig-name descname">detection</code><span class="sig-paren">(</span><em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.detection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Run the source detection.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="elderflower.task.berry.parameters">
+<em class="property">property </em><code class="sig-name descname">parameters</code><a class="headerlink" href="#elderflower.task.berry.parameters" title="Permalink to this definition">¶</a></dt>
+<dd><p>Keyword parameter list in the configuration file</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="elderflower.task.berry.run">
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Run the task (Match_Mask_Measure + Run_PSF_Fitting).</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">elderflower</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="config.html" title="previous chapter">Configuration</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Q. Liu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/reference.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

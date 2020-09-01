@@ -1,0 +1,46 @@
+Configuration
+=============
+
+An example configuration file looks as follows:
+
+.. code-block:: yaml
+	
+	---
+	    # Match_Mask_Measure
+	    pixel_scale: 2.5
+	    r_scale: 12
+	    field_pad: 200
+	    mag_limit: 15
+	    mag_saturate: 13
+	    draw: True
+	    save: True
+	    use_PS1_DR2: False
+	    ZP: 27.116
+	    
+	    # Run_PSF_Fitting
+	    n_spline: 3
+	    use_PS1_DR2: False
+	    pixel_scale: 2.5
+	    r_scale: 12
+	    pad: 100
+	    mag_limit: 15
+	    mag_threshold: [14,11]
+	    mask_type: 'aper'
+	    SB_threshold: 24.5
+	    r_core: 24
+	    r_out: ~
+	    theta_cutoff: 1200
+	    fit_sigma: True
+	    fit_frac: False
+	    leg2d: False
+	    wid_strip: 24
+	    n_strip: 48
+	    n_cpu: 4
+	    parallel: False
+	    brightest_only: False
+	    draw_real: True
+	    nlive_init: ~
+	    sample_method: 'auto'
+	    draw: True
+	    print_progress: True
+	    ZP: 27.116

@@ -1,0 +1,8 @@
+Introduction
+============
+
+``elderflower`` is a python package to fit the wide-angle point spread function (PSF) in wide-field low-surface brightness images, especially developed for the `Dragonfly telescope <https://www.dragonflytelescope.org/>`__. 
+
+It mainly utilizes Galsim and Dynesty to generate forward models of PSF for bright stars in the image and fit the parameters of the PSF wing in a Bayesian way. 
+
+The package can be run in a functional way or through a configuration file. Examples are referred in tutorial.

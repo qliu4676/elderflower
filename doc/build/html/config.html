@@ -1,0 +1,153 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>Configuration &#8212; elderflower 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API reference" href="reference.html" />
+    <link rel="prev" title="Examples" href="example.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="configuration">
+<h1>Configuration<a class="headerlink" href="#configuration" title="Permalink to this headline">¶</a></h1>
+<p>An example configuration file looks as follows:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">---</span>
+    <span class="c1"># Match_Mask_Measure</span>
+    <span class="nt">pixel_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">2.5</span>
+    <span class="nt">r_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">12</span>
+    <span class="nt">field_pad</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">200</span>
+    <span class="nt">mag_limit</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">15</span>
+    <span class="nt">mag_saturate</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">13</span>
+    <span class="nt">draw</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">save</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">use_PS1_DR2</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">ZP</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">27.116</span>
+
+    <span class="c1"># Run_PSF_Fitting</span>
+    <span class="nt">n_spline</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">3</span>
+    <span class="nt">use_PS1_DR2</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">pixel_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">2.5</span>
+    <span class="nt">r_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">12</span>
+    <span class="nt">pad</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">100</span>
+    <span class="nt">mag_limit</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">15</span>
+    <span class="nt">mag_threshold</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">14</span><span class="p p-Indicator">,</span><span class="nv">11</span><span class="p p-Indicator">]</span>
+    <span class="nt">mask_type</span><span class="p">:</span> <span class="s">&#39;aper&#39;</span>
+    <span class="nt">SB_threshold</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">24.5</span>
+    <span class="nt">r_core</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">24</span>
+    <span class="nt">r_out</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+    <span class="nt">theta_cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">1200</span>
+    <span class="nt">fit_sigma</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">fit_frac</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">leg2d</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">wid_strip</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">24</span>
+    <span class="nt">n_strip</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">48</span>
+    <span class="nt">n_cpu</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">4</span>
+    <span class="nt">parallel</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">brightest_only</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+    <span class="nt">draw_real</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">nlive_init</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+    <span class="nt">sample_method</span><span class="p">:</span> <span class="s">&#39;auto&#39;</span>
+    <span class="nt">draw</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">print_progress</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+    <span class="nt">ZP</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">27.116</span>
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">elderflower</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="example.html">Examples</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reference.html">API reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="example.html" title="previous chapter">Examples</a></li>
+      <li>Next: <a href="reference.html" title="next chapter">API reference</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Q. Liu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/config.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

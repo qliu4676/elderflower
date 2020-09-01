@@ -1,0 +1,149 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>Examples &#8212; elderflower 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Configuration" href="config.html" />
+    <link rel="prev" title="Tutorial" href="tutorial.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="examples">
+<h1>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h1>
+<p>Here we show some examples of how <code class="docutils literal notranslate"><span class="pre">elderflower</span></code> works. The data is from the Dragonfly telescope. The examples below are run in the functional way, but they can be run in the same manner by feeding a configuration file with the keyword parameters replaced.</p>
+<div class="section" id="ngc3432">
+<h2>NGC3432<a class="headerlink" href="#ngc3432" title="Permalink to this headline">¶</a></h2>
+<p>This example illustrates fitting multiple regions in an image. The data is the combined image of the NGC3432 field as part of the Dragonfly nearby edge-on galaxy survey.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">obj_name</span> <span class="o">=</span> <span class="s1">&#39;NGC3432&#39;</span>
+<span class="n">work_dir</span> <span class="o">=</span> <span class="s1">&#39;./NGC3432/&#39;</span>
+<span class="n">filt</span> <span class="o">=</span> <span class="s1">&#39;r&#39;</span>
+
+<span class="n">fn</span>  <span class="o">=</span> <span class="s1">&#39;NGC3432/coadd_SloanR_NGC_3432_new.fits&#39;</span>
+<span class="n">bounds</span> <span class="o">=</span> <span class="p">((</span><span class="mi">3400</span><span class="p">,</span> <span class="mi">3000</span><span class="p">,</span> <span class="mi">4400</span><span class="p">,</span> <span class="mi">4000</span><span class="p">),</span>
+          <span class="p">(</span><span class="mi">1600</span><span class="p">,</span> <span class="mi">2000</span><span class="p">,</span> <span class="mi">2400</span><span class="p">,</span> <span class="mi">2800</span><span class="p">),</span>
+          <span class="p">(</span><span class="mi">3000</span><span class="p">,</span> <span class="mi">600</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">1600</span><span class="p">))</span>
+
+
+<span class="n">Run_Detection</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">obj_name</span><span class="p">,</span> <span class="n">filt</span><span class="p">,</span>
+              <span class="n">threshold</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">work_dir</span><span class="o">=</span><span class="n">work_dir</span><span class="p">,</span>
+              <span class="n">ZP_keyname</span><span class="o">=</span><span class="s1">&#39;REFZP&#39;</span><span class="p">,</span> <span class="n">ZP</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+
+
+<span class="n">Match_Mask_Measure</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span> <span class="n">obj_name</span><span class="p">,</span> <span class="n">band</span><span class="o">=</span><span class="s2">&quot;R&quot;</span><span class="p">,</span>
+                                <span class="n">ZP</span><span class="o">=</span><span class="mf">27.15</span><span class="p">,</span> <span class="n">field_pad</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">pixel_scale</span><span class="o">=</span><span class="mf">2.5</span><span class="p">,</span>
+                                <span class="n">use_PS1_DR2</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">work_dir</span><span class="o">=</span><span class="n">work_dir</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="_images/NGC3432_panoram.png" class="align-center" src="_images/NGC3432_panoram.png" />
+<img alt="_images/NGC3432A_pdf.png" class="align-center" src="_images/NGC3432A_pdf.png" />
+<img alt="_images/NGC3432A_2d.png" class="align-center" src="_images/NGC3432A_2d.png" />
+</div>
+<div class="section" id="m44">
+<h2>M44<a class="headerlink" href="#m44" title="Permalink to this headline">¶</a></h2>
+<img alt="_images/M44_example.png" class="align-center" src="_images/M44_example.png" />
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">elderflower</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#ngc3432">NGC3432</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#m44">M44</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reference.html">API reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="tutorial.html" title="previous chapter">Tutorial</a></li>
+      <li>Next: <a href="config.html" title="next chapter">Configuration</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Q. Liu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/example.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
