@@ -1,14 +1,9 @@
-matplotlib
 numpy
 scipy
-astroquery
+matplotlib
 multiprocess
 requests
 astropy
-dynesty
-galsim
-photutils
-scikit_image
 autodoc
 sphinx-autodoc-annotation
 sphinxcontrib-napoleon
