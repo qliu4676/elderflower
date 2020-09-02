@@ -8,5 +8,5 @@ astropy
 photutils
 dynesty
 autodoc
+numpydoc
 sphinxcontrib-napoleon
-elderflower

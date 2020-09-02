@@ -20,7 +20,7 @@ Introduction
    tutorial.rst
    example.rst
    config.rst
-   reference.rst
+   api.rst
 
 
 
