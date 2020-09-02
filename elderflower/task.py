@@ -9,7 +9,7 @@ from functools import partial
 from astropy.table import Table
 from astropy.io import fits
 
-from .io import find_keyword_header, config_dir
+from .io import find_keyword_header, config_dir, check_save_path
 from .image import DF_pixel_scale, DF_raw_pixel_scale
 
 
@@ -370,7 +370,6 @@ def Match_Mask_Measure(hdu_path,
     ##################################################
     # Save matched table and catalog
     ##################################################
-    from .io import check_save_path
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
         tab_target_name = os.path.join(dir_name,
@@ -592,7 +591,7 @@ def Run_PSF_Fitting(hdu_path,
         
     """
     
-    plot_dir = os.path.join(work_dir, '/plot')
+    plot_dir = os.path.join(work_dir, 'plot')
     check_save_path(plot_dir)
     
     ############################################
