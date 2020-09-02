@@ -49,6 +49,7 @@ M44
 ---
 
 .. image:: images/M44_panoram.png
+	:scale: 50
 	:align: center
 
 .. image:: images/M44_example.png
