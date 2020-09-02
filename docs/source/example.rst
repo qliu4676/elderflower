@@ -48,6 +48,9 @@ This example illustrates fitting multiple regions in an image. The data is the c
 M44
 ---
 
+.. image:: images/M44_panoram.png
+	:align: center
+
 .. image:: images/M44_example.png
 	:align: center
 
