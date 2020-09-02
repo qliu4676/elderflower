@@ -4,6 +4,8 @@ matplotlib
 multiprocess
 requests
 astropy
+photutils
+dynesty
 autodoc
 sphinx-autodoc-annotation
 sphinxcontrib-napoleon
