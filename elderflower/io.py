@@ -1,8 +1,14 @@
 import os
 import re
 import sys
-import pickle
 import yaml
+import string
+
+try:
+    import dill as pickle
+except ImportError:
+    import pickle
+
 import numpy as np
 from datetime import datetime
 from functools import partial, wraps
@@ -50,7 +56,10 @@ def find_keyword_header(header, keyword):
 def DateToday():
     """ Today's date in YYYY-MM-DD """
     return datetime.today().strftime('%Y-%m-%d')
-    
+
+def AsciiUpper():
+    """ ascii uppercase letters """
+    return string.ascii_uppercase
     
 def save_pickle(data, filename, printout=True):
     """ Save data as pickle file. """

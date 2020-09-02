@@ -139,7 +139,7 @@ Stars with magnitudes 13.5 ~ 10.5 will be modelled as MB ('Meidum bright') stars
 
 Below shows the output cornerplot of the fitted parameters of the PSF aureole.
 
-.. image:: images/Cornerplot_test.png
+.. image:: images/Cornerplot2p_test.png
 	:align: center
 
 Below shows the output of the fitting (stars + background), the fitted bright stars and the data after subtraction of bright stars.

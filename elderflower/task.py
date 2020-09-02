@@ -740,14 +740,13 @@ def Run_PSF_Fitting(hdu_path,
     # Run Sampling
     ############################################
     from .sampler import Sampler
-    from .io import DateToday
+    from .io import DateToday, AsciiUpper
     
     samplers = []
     
-    for i in range(DF_Images.N_Image):
+    for i, reg in enumerate(AsciiUpper()[:DF_Images.N_Image]):
         
         container = DF_Images.containers[i]
-        
         ndim = container.ndim
 
         s = Sampler(container, n_cpu=n_cpu, sample=sample_method)
@@ -768,10 +767,11 @@ def Run_PSF_Fitting(hdu_path,
                         'date':DateToday()}
                         
             suffix = str(n_spline)+'p'
-            fname=f'{obj_name}-{band}-fit{suffix}'
-            if leg2d: fname+='l'
-            if brightest_only: fname += 'b'
-
+            if leg2d: suffix+='l'
+            if brightest_only: suffix += 'b'
+            
+            fname=f'{obj_name}{reg}-{band}-fit{suffix}'
+    
             s.save_results(fname+'.res', fit_info, save_dir=work_dir)
         
         ############################################
@@ -779,7 +779,7 @@ def Run_PSF_Fitting(hdu_path,
         ############################################
         from .plotting import AsinhNorm
         
-        suffix = str(n_spline)+'p'
+        suffix = str(n_spline)+'p'+'_'+obj_name
         
         s.cornerplot(figsize=(18, 16),
                      save=save, save_dir=work_dir, suffix=suffix)

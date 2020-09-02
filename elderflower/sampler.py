@@ -1,14 +1,9 @@
 import os
 import time
+import warnings
+
 import numpy as np
-
-try:
-    import dill as pickle
-except ImportError:
-    import pickle
-    
 import matplotlib.pyplot as plt
-
 import multiprocess as mp
 
 import dynesty
@@ -117,6 +112,7 @@ class Sampler:
     
     def save_results(self, filename, fit_info=None, save_dir='.'):
         """ Save fitting results """
+        
         if not self.run: return None
         
         res = {}
@@ -137,8 +133,13 @@ class Sampler:
     @classmethod
     def read_results(cls, filename):
         """ Read saved fitting results """
-        res = load_pickle(filename, printout=False)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = load_pickle(filename, printout=False)
+            
         print(f"Read fitting results {filename}\n", res['fit_info'])
+        
         return cls(res['container'], run=False, results=res['fit_res'])
         
     

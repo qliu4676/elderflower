@@ -728,7 +728,7 @@ def measure_Rnorm_all(table, bounds,
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
     if chars is None:
-        chars = string.ascii_letters + string.digits
+        chars = string.ascii_uppercase + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
     
     
