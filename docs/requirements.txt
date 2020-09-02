@@ -1,3 +1,14 @@
+matplotlib
+numpy
+scipy
+astroquery
+multiprocess
+requests
+astropy
+dynesty
+galsim
+photutils
+scikit_image
 autodoc
 sphinx-autodoc-annotation
 sphinxcontrib-napoleon
