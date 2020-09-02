@@ -592,7 +592,7 @@ def Run_PSF_Fitting(hdu_path,
     """
     
     plot_dir = os.path.join(work_dir, 'plot')
-    check_save_path(plot_dir)
+    check_save_path(plot_dir, make_new=False, verbose=False)
     
     ############################################
     # Read Image and Table
@@ -789,7 +789,7 @@ def Run_PSF_Fitting(hdu_path,
                          save=save, save_dir=plot_dir, suffix=suffix)
 
         # Recovered 1D PSF
-        psf_fit, params = s.generate_fit(psf, stars_tri[i])
+        psf_fit = s.generate_fit(psf, stars_tri[i])
 
         # Calculate Chi^2
         s.calculate_reduced_chi2()
