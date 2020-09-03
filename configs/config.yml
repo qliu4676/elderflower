@@ -2,16 +2,16 @@
     # Match_Mask_Measure
     pixel_scale: 2.5
     r_scale: 12
-    field_pad: 200
+    field_pad: 50
     mag_limit: 15
     mag_saturate: 13
     draw: True
     save: True
     use_PS1_DR2: False
-    ZP: 27.116
+    ZP: 27.15
     
     # Run_PSF_Fitting
-    n_spline: 3
+    n_spline: 2
     use_PS1_DR2: False
     pixel_scale: 2.5
     r_scale: 12
@@ -36,4 +36,4 @@
     sample_method: 'auto'
     draw: True
     print_progress: True
-    ZP: 27.116
+    ZP: 27.15

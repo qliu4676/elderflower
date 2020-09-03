@@ -63,7 +63,7 @@ def AsciiUpper():
     
 def save_pickle(data, filename, printout=True):
     """ Save data as pickle file. """
-    if printout: print("Save to %s"%filename)
+    if printout: print("Saved to %s"%filename)
     with open(filename, 'wb') as f:
         pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
 

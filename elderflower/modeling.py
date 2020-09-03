@@ -235,6 +235,7 @@ class PSF_Model:
 
             # Parse the image to Galsim PSF model by interpolation
             image_psf = galsim.ImageF(psf_model)
+            self.image_psf = image_psf
             psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
                                                    scale=psf_scale,
                                                    x_interpolant=interpolant,
@@ -612,6 +613,11 @@ class Stars:
         remove = remove_A | remove_B
         return Stars(star_pos[~remove], Flux[~remove], self.Flux_threshold,
                      self.z_norm[~remove], r_scale=self.r_scale, BKG=self.BKG)
+     
+    def save(self, name='stars', save_dir='./'):
+        from .io import save_pickle
+        save_pickle(self, os.path.join(save_dir, name+'.pkl'))
+        
         
 
 ############################################

@@ -139,7 +139,7 @@ Stars with magnitudes 13.5 ~ 10.5 will be modelled as MB ('Meidum bright') stars
 
 Below shows the output cornerplot of the fitted parameters of the PSF aureole.
 
-.. image:: images/Cornerplot_test.png
+.. image:: images/Cornerplot2p_test.png
 	:align: center
 
 Below shows the output of the fitting (stars + background), the fitted bright stars and the data after subtraction of bright stars.
@@ -183,19 +183,24 @@ One can then plot the PDF by::
 
 	sampler.cornerplot(figsize=(12,12), title_fmt='.3f')
 
-Plotting options can be changed by passing them as ``**kwargs`` of the function in ``dynesty.plotting``.
+Plotting options can be changed by passing them as ``**kwargs`` of the function in ``dynesty.plotting``. See https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot.
 
 To reconstruct the PSF, one can run::
 
 	from elderflower.utils import make_psf_from_fit
+	psf, params = make_psf_from_fit(sampler.results)
+
+	psf_core = psf.generate_core()
+	psf_aureole, psf_size = psf.generate_aureole(psf_range=1200) # arcsec
 
 The psf can be visualized in 1D or 2D::
 
 	# Draw PSF in 1D
-	psf_fit.plot_PSF_model_galsim()
+	psf.plot_PSF_model_galsim()
 
 	# Draw PSF in 2D
-	image_psf = psf_fit.image_psf.array
+	image_psf = psf.image_psf.array
+
 	from eldeflower.plotting import LogNorm
 	plt.imshow(image_psf, norm=LogNorm(), vmin=1e-8, vmax=1e-5, cmap='viridis')
 
@@ -206,3 +211,16 @@ The psf can be visualized in 1D or 2D::
 .. image:: images/reconstruct_psf_test_2d.png
 	:scale: 50
 	:align: center
+
+
+The 2D PSF model can be saved by::
+
+	psf.write_psf_image(image_psf, filename='test/PSF_model_test-R.fits')
+
+To regenerate the fitted image and bright stars::
+
+	from elderflower.io import load_pickle
+	stars = load_pickle('test/starsA.pkl')
+	sampler.generate_fit(psf, stars)
+
+The fitted image is stored as ``sampler.image_fit`` and image of bright stars is saved as ``sampler.image_star``. The original image is stored as ``sampler.image``.

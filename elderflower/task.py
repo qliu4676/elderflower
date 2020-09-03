@@ -740,12 +740,12 @@ def Run_PSF_Fitting(hdu_path,
     # Run Sampling
     ############################################
     from .sampler import Sampler
-    from .io import DateToday, AsciiUpper
+    from .io import DateToday, AsciiUpper, save_pickle
     
     samplers = []
     
     for i, reg in enumerate(AsciiUpper()[:DF_Images.N_Image]):
-        
+
         container = DF_Images.containers[i]
         ndim = container.ndim
 
@@ -773,6 +773,7 @@ def Run_PSF_Fitting(hdu_path,
             fname=f'{obj_name}{reg}-{band}-fit{suffix}'
     
             s.save_results(fname+'.res', fit_info, save_dir=work_dir)
+            stars[i].save(f'stars{reg}', save_dir=work_dir)
         
         ############################################
         # Plot Results
@@ -789,7 +790,7 @@ def Run_PSF_Fitting(hdu_path,
                          save=save, save_dir=plot_dir, suffix=suffix)
 
         # Recovered 1D PSF
-        psf_fit = s.generate_fit(psf, stars_tri[i])
+        s.generate_fit(psf, stars_tri[i])
 
         # Calculate Chi^2
         s.calculate_reduced_chi2()
@@ -797,7 +798,7 @@ def Run_PSF_Fitting(hdu_path,
         # Draw 2D compaison
         s.draw_comparison_2D(r_core=r_core,
                              norm=AsinhNorm(a=0.01),
-                             vmin=DF_Images.bkg-psf_fit.bkg_std,
+                             vmin=DF_Images.bkg-s.bkg_std_fit,
                              vmax=DF_Images.bkg+50,
                              save=save, save_dir=plot_dir, suffix=suffix)
 

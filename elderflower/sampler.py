@@ -27,6 +27,7 @@ class Sampler:
         self.run = run
         
         self.container = container
+        self.image = container.image
         self.ndim = container.ndim
         self.labels = container.labels
         
@@ -203,7 +204,6 @@ class Sampler:
         # PSF constructed from fitting
         self.psf_fit = psf_fit
         
-        return psf_fit
     
     def calculate_reduced_chi2(self):
         

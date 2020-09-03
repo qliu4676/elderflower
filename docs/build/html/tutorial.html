@@ -137,7 +137,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">ncpu</span></code> specifies the number of CPU in use (<code class="docutils literal notranslate"><span class="pre">ncpu</span></code>-1) when parallelization is available.</p>
 <p><code class="docutils literal notranslate"><span class="pre">pad</span></code> is the padding size accounting for bright stars near or outside borders. The actual region in fit is therefore [X min + pad, Y min + pad, X max - pad, Y max - pad].</p>
 <p>Below shows the output cornerplot of the fitted parameters of the PSF aureole.</p>
-<img alt="_images/Cornerplot_test.png" class="align-center" src="_images/Cornerplot_test.png" />
+<img alt="_images/Cornerplot2p_test.png" class="align-center" src="_images/Cornerplot2p_test.png" />
 <p>Below shows the output of the fitting (stars + background), the fitted bright stars and the data after subtraction of bright stars.</p>
 <img alt="_images/Comparison_fit_data2D2p_test.png" class="align-center" src="_images/Comparison_fit_data2D2p_test.png" />
 <p><em>Run_PSF_Fitting</em> returns a list of <code class="docutils literal notranslate"><span class="pre">Sampler</span></code> class which contains all the fitting info. Each item corresponds to the region specified in <code class="docutils literal notranslate"><span class="pre">bounds</span></code> in sequence.</p>
@@ -171,23 +171,39 @@
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sampler</span><span class="o">.</span><span class="n">cornerplot</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span><span class="mi">12</span><span class="p">),</span> <span class="n">title_fmt</span><span class="o">=</span><span class="s1">&#39;.3f&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Plotting options can be changed by passing them as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> of the function in <code class="docutils literal notranslate"><span class="pre">dynesty.plotting</span></code>.</p>
+<p>Plotting options can be changed by passing them as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> of the function in <code class="docutils literal notranslate"><span class="pre">dynesty.plotting</span></code>. See <a class="reference external" href="https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot">https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot</a>.</p>
 <p>To reconstruct the PSF, one can run:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.utils</span> <span class="kn">import</span> <span class="n">make_psf_from_fit</span>
+<span class="n">psf</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_psf_from_fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">.</span><span class="n">results</span><span class="p">)</span>
+
+<span class="n">psf_core</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">generate_core</span><span class="p">()</span>
+<span class="n">psf_aureole</span><span class="p">,</span> <span class="n">psf_size</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">generate_aureole</span><span class="p">(</span><span class="n">psf_range</span><span class="o">=</span><span class="mi">1200</span><span class="p">)</span> <span class="c1"># arcsec</span>
 </pre></div>
 </div>
 <p>The psf can be visualized in 1D or 2D:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Draw PSF in 1D</span>
-<span class="n">psf_fit</span><span class="o">.</span><span class="n">plot_PSF_model_galsim</span><span class="p">()</span>
+<span class="n">psf</span><span class="o">.</span><span class="n">plot_PSF_model_galsim</span><span class="p">()</span>
 
 <span class="c1"># Draw PSF in 2D</span>
-<span class="n">image_psf</span> <span class="o">=</span> <span class="n">psf_fit</span><span class="o">.</span><span class="n">image_psf</span><span class="o">.</span><span class="n">array</span>
+<span class="n">image_psf</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">image_psf</span><span class="o">.</span><span class="n">array</span>
+
 <span class="kn">from</span> <span class="nn">eldeflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">image_psf</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(),</span> <span class="n">vmin</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
 <a class="reference internal image-reference" href="_images/reconstruct_psf_test_1d.png"><img alt="_images/reconstruct_psf_test_1d.png" class="align-center" src="_images/reconstruct_psf_test_1d.png" style="width: 412.8px; height: 332.0px;" /></a>
 <a class="reference internal image-reference" href="_images/reconstruct_psf_test_2d.png"><img alt="_images/reconstruct_psf_test_2d.png" class="align-center" src="_images/reconstruct_psf_test_2d.png" style="width: 223.0px; height: 225.0px;" /></a>
+<p>The 2D PSF model can be saved by:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">psf</span><span class="o">.</span><span class="n">write_psf_image</span><span class="p">(</span><span class="n">image_psf</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;test/PSF_model_test-R.fits&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>To regenerate the fitted image and bright stars:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.io</span> <span class="kn">import</span> <span class="n">load_pickle</span>
+<span class="n">stars</span> <span class="o">=</span> <span class="n">load_pickle</span><span class="p">(</span><span class="s1">&#39;test/starsA.pkl&#39;</span><span class="p">)</span>
+<span class="n">sampler</span><span class="o">.</span><span class="n">generate_fit</span><span class="p">(</span><span class="n">psf</span><span class="p">,</span> <span class="n">stars</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The fitted image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image_fit</span></code> and image of bright stars is saved as <code class="docutils literal notranslate"><span class="pre">sampler.image_star</span></code>. The original image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image</span></code>.</p>
 </div>
 </div>
 
