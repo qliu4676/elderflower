@@ -8,6 +8,7 @@ try:
     import dill as pickle
 except ImportError:
     import pickle
+from pickle import PicklingError
 
 import numpy as np
 from datetime import datetime
@@ -35,7 +36,7 @@ def check_save_path(dir_name, make_new=True, verbose=True):
     if verbose: print("Results will be saved in %s\n"%dir_name)
     
     
-def find_keyword_header(header, keyword):
+def find_keyword_header(header, keyword, input_val=False):
     """ Search keyword value in header (converted to float).
         Input a value by user if keyword is not found. """
         
@@ -45,10 +46,13 @@ def find_keyword_header(header, keyword):
     except KeyError:
         print("%s missing in header --->"%keyword)
         
-        try:
-            val = np.float(input("Input a value of %s :"%keyword))
-        except ValueError:
-            sys.exit("Invalid %s values!"%keyword)
+        if input_val:
+            try:
+                val = np.float(input("Input a value of %s :"%keyword))
+            except ValueError:
+                sys.exit("Invalid %s values!"%keyword)
+        else:
+            sys.exit("%s needs to be specified in the keywords."%keyword)
             
     return val
     
@@ -63,9 +67,12 @@ def AsciiUpper():
     
 def save_pickle(data, filename, printout=True):
     """ Save data as pickle file. """
-    if printout: print("Saved to %s"%filename)
-    with open(filename, 'wb') as f:
-        pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+    try:
+        if printout: print("Saved to %s"%filename)
+        with open(filename, 'wb') as f:
+            pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+    except PicklingError:
+        if printout: print("Saving %s failed"%filename)
 
 def load_pickle(filename, printout=True):
     """ Load data as pickle file. """

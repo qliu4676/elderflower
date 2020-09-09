@@ -10,7 +10,7 @@ from astropy.table import Table
 from astropy.io import fits
 
 from .io import find_keyword_header, config_dir, check_save_path
-from .image import DF_pixel_scale, DF_raw_pixel_scale
+from .image import DF_pixel_scale
 
 
 SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO','MU_MAX','CLASS_STAR','ELLIPTICITY']
@@ -299,7 +299,7 @@ def Match_Mask_Measure(hdu_path,
                           origin=0, draw=draw)
     
     # Crop parent SE catalog
-    SE_cat_field = crop_catalog(SE_cat_full, field_bounds)
+    SE_cat = crop_catalog(SE_cat_full, field_bounds)
 
     ##################################################
     # Crossmatch with Star Catalog (across the field)
@@ -313,8 +313,7 @@ def Match_Mask_Measure(hdu_path,
     from urllib.error import HTTPError
     
     # Identify bright extended sources and enlarge their mask
-    ext_cat = identify_extended_source(SE_cat_field, draw=draw)
-    SE_cat_target = setdiff(SE_cat_field, ext_cat)
+    SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
 
     # Crossmatch with PANSTRRS mag < mag_limit
     if use_PS1_DR2:
@@ -399,7 +398,7 @@ def Match_Mask_Measure(hdu_path,
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
                                              mag_range=[mag_saturate,22], K=3,
-                                             degree=3, draw=draw)
+                                             degree=2, draw=draw)
     
     for bounds in bounds_list:
         
@@ -461,6 +460,7 @@ def Run_PSF_Fitting(hdu_path,
                     pixel_scale=DF_pixel_scale,
                     ZP=None,
                     bkg=None,
+                    G_eff=None,
                     pad=100,
                     r_scale=12,
                     mag_limit=15,
@@ -511,6 +511,8 @@ def Run_PSF_Fitting(hdu_path,
         Zero point value (if None, read ZP from header)
     bkg : float or None, optional, default None
         Background estimated value (if None, read BACKVAL from header)
+    G_eff : float or None (default)
+        Effective gain (e-/ADU)
     pad : int, optional, default 50
         Padding size of the field for fitting
     r_scale : int, optional, default 12
@@ -597,13 +599,16 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     # Read Image and Table
     ############################################
-    from .image import ImageList
+    from .image import ImageList, DF_Gain
     from .utils import read_measurement_tables
     
     # Read global background model ZP from header
     header = fits.getheader(hdu_path)
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
+    if G_eff is None:
+        N_frames = find_keyword_header(header, "NFRAMES")
+        G_eff = DF_Gain * N_frames
     
     bounds_list = np.atleast_2d(bounds_list)
     
@@ -611,7 +616,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images = ImageList(hdu_path, bounds_list,
                           obj_name, band,
                           pixel_scale=pixel_scale,
-                          pad=pad, ZP=ZP, bkg=bkg)
+                          pad=pad, ZP=ZP, bkg=bkg, G_eff=G_eff)
     
     # Read faint stars info and brightness measurement
     if use_PS1_DR2:

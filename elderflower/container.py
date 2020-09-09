@@ -38,27 +38,34 @@ class Container:
                   n_min=1, theta_in=50, theta_out=240):
         """ Setup priors for fitting and labels for displaying the results"""
         from .modeling import set_prior
+        
+        fit_sigma = self.fit_sigma
+        fit_frac = self.fit_frac
+        
+        n_spline = self.n_spline
+        leg2d = self.leg2d
     
         prior_tf = set_prior(n_est, mu_est, std_est,
-                             n_spline=self.n_spline, leg2d=self.leg2d,
-                             fit_sigma=self.fit_sigma, fit_frac=self.fit_frac,
+                             n_spline=n_spline, leg2d=leg2d,
+                             fit_sigma=fit_sigma, fit_frac=fit_frac,
                              n_min=1, theta_in=50, theta_out=240)
         
         self.prior_transform = prior_tf
 
-        labels = set_labels(n_spline=self.n_spline, leg2d=self.leg2d,
-                            fit_sigma=self.fit_sigma, fit_frac=self.fit_frac)
+        labels = set_labels(n_spline=n_spline, leg2d=leg2d,
+                            fit_sigma=fit_sigma, fit_frac=fit_frac)
         
         self.labels = labels
-
-        ndim = len(labels)
-        self.ndim = ndim
+        self.ndim = len(labels)
+        
+        self.std_est = std_est
     
     def set_likelihood(self,
                        data, mask_fit,
                        psf, stars,
                        norm='brightness',
                        psf_range=[None, None],
+                       G_eff=None,
                        image_base=None):
         """ Setup likelihood function for fitting """
         from .modeling import set_likelihood
@@ -73,6 +80,8 @@ class Container:
                                  psf, stars,
                                  norm=norm,
                                  psf_range=psf_range,
+                                 std_est=self.std_est,
+                                 G_eff=G_eff,
                                  image_base=image_base,
                                  n_spline=self.n_spline,
                                  leg2d=self.leg2d,

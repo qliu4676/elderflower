@@ -195,14 +195,23 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
                 n_iter=3, k_std=5, draw=True):
     """ Iterative curve_fit """
     
+    # min-max cutoff
     if x_min is None: x_min = x_data.min()
     if x_max is None: x_max = x_data.max()
+    cut = (x_data>x_min) & (x_data<x_max)
+    x_data = x_data[cut]
+    y_data = y_data[cut]
+    if color is not None: color = color[cut]
+    
+    # initialize
     x_test = np.linspace(x_min, x_max)
     clip = np.zeros_like(x_data, dtype='bool')
-
+    
+    # fitst curve_fit
     popt, pcov = curve_fit(func, x_data, y_data, p0=p0)
     
     if draw: plt.figure()
+    
     # Iterative sigma clip
     for i in range(n_iter):
         if draw: plt.plot(x_test, func(x_test, *popt),
@@ -250,7 +259,7 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     # Fit a flattened linear
     popt, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
                                     p0=(1, MAG_saturate, MU_saturate),
-                                    x_max=mag_limit, c_lab='CLASS_STAR',
+                                    x_max=mag_limit, x_min=7, c_lab='CLASS_STAR',
                                     color=SE_bright['CLASS_STAR'],
                                     x_lab='MAG_AUTO',y_lab='MU_MAX', draw=draw)
 
@@ -263,7 +272,13 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     # (3) lie out of MU_MAX vs MAG_AUTO relation
     is_extend = ((SE_catalog['ELLIPTICITY']>0.7)|(SE_catalog['CLASS_STAR']<0.5)) & bright & outlier
     
-    return SE_catalog[is_extend]
+    SE_catalog_extend = SE_catalog[is_extend]
+    
+    if len(SE_catalog_extend)>0:
+        SE_catalog_point = setdiff(SE_catalog, SE_catalog_extend)
+        return SE_catalog_point, SE_catalog_extend
+    else:
+        return SE_catalog, None
     
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
@@ -1343,9 +1358,11 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
                         
     # Join the two tables by common keys
     keys = set(tab.colnames).intersection(tab_sup.colnames)
-    tab_join = join(tab, tab_sup, keys=keys, join_type='outer')
-    
-    return tab_join
+    if len(tab_sup) > 0:
+        tab_join = join(tab, tab_sup, keys=keys, join_type='outer')
+        return tab_join
+    else:
+        return tab
     
     
 def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
@@ -1390,7 +1407,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           mag_range=[13, 22], K=3, degree=3, draw=True):
+                           mag_range=[13, 22], K=3, degree=2, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
@@ -1402,7 +1419,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     mag_name : column name of magnitude in tab_target 
     mag_range : range of magnitude for stars to be used
     K : enlargement factor on the original segm map
-    degree : degree of polynomial (default 3)
+    degree : degree of polynomial (default 2)
     draw : whether to draw log R vs mag
     
     Returns

@@ -420,7 +420,7 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
     fig = plt.subplots(ndim, ndim, figsize=figsize)
     plot_kw = {'color':"royalblue", 'truth_color':"indianred",
                'truths':truths, 'labels':labels,
-               'title_kwargs':{'fontsize':18, 'y': 1.04},
+               'title_kwargs':{'fontsize':16, 'y': 1.04},
                'title_fmt':'.3f', 'show_titles':True,
                'label_kwargs':{'fontsize':16}}
     plot_kw.update(kwargs)

@@ -1660,9 +1660,8 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, d_n=0.2,
-              theta_in=50, theta_out=240,
-              std_poi=None, leg2d=False,
+              n_min=1, d_n0=0.3, d_n=0.2, std_min=3,
+              theta_in=50, theta_out=240, leg2d=False,
               fit_sigma=True, fit_frac=False, **kwargs):
     
     """
@@ -1680,8 +1679,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     d_n : minimum length of prior jump in n_k for n_spline>=3
     theta_in : inner boundary of the first transition radius
     theta_out : outer boundary of the first transition radius
-    std_poi : poisson noise as minimum noise
     leg2d : whether a legendre polynomial background will be fit
+    std_min : estimated (expected to be poisson) noise as minimum noise
     fit_frac : whether the aureole fraction will be fit
     fit_sigma : whether the sky uncertainty will be fit
     
@@ -1702,14 +1701,12 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     if fit_frac: K += 1
     if fit_sigma: K += 1
         
-    # logsigma : [std_poi, std_est]
-    if std_poi is None:
-        Prior_logsigma = stats.truncnorm(a=-2, b=1,
-                                         loc=np.log10(std_est), scale=0.3)   
-    else:
-        bound_a = (np.log10(std_poi)+0.3-np.log10(std_est))/0.3
-        Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
-                                         loc=np.log10(std_est), scale=0.3)   
+        # logsigma : [std_min, std_est]   # need modified!
+#        bound_a = (np.log10(std_min)+0.3-np.log10(std_est))/0.3
+#        Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
+#                                         loc=np.log10(std_est), scale=0.3)
+    Prior_logsigma = stats.truncnorm(a=-2, b=1,
+                                     loc=np.log10(std_est), scale=0.3)
     
     if n_spline == 'm':
         Prior_gamma = stats.uniform(loc=0., scale=10.)       
@@ -1779,8 +1776,9 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                                                 loc=leg_amp-1.3, scale=1.3)  # log A01
                 if fit_frac:
                     v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-                return v
 
+                return v
+            
             return prior_tf_2p
 
 #        elif n_spline==3:
@@ -1937,8 +1935,9 @@ class Legendre2D:
 
 def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                    norm='brightness', n_spline=2,
-                   image_base=None, psf_range=[None,None],
-                   leg2d=False, fit_sigma=True, fit_frac=False, 
+                   psf_range=[None,None], leg2d=False,
+                   std_est=None, G_eff=None, image_base=None,
+                   fit_sigma=True, fit_frac=False,
                    brightest_only=False, parallel=False, draw_real=False):
     
     """
@@ -1977,12 +1976,12 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         subtract_external = False
         
     p_draw_func = partial(draw_func, xx=xx, yy=yy,
-                            psf_range=psf_range,
-                            psf_scale=psf.pixel_scale,
-                            max_psf_range=psf.theta_c,
-                            brightest_only=brightest_only,
-                            subtract_external=subtract_external,
-                            parallel=parallel, draw_real=draw_real)
+                          psf_range=psf_range,
+                          psf_scale=psf.pixel_scale,
+                          max_psf_range=psf.theta_c,
+                          brightest_only=brightest_only,
+                          subtract_external=subtract_external,
+                          parallel=parallel, draw_real=draw_real)
         
     if image_base is None:
         image_base = np.zeros((image_size, image_size))
@@ -2048,6 +2047,8 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 
                 if fit_sigma:
                     sigma = 10**v[-K]
+                else:
+                    sigma = std_est
 
                 param_update = {'n':n}
 
@@ -2083,9 +2084,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
 
-                if fit_sigma:
-                    sigma = 10**v[-K]
-
                 if fit_frac:
                     frac = 10**v[-1]
                     param_update['frac'] = frac
@@ -2103,9 +2101,17 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
                 if leg2d:
                     A10, A01 = 10**v[-K-2], 10**v[-K-3]
-                    image_tri += A10 * H10 + A01 * H01
-
+                    bkg_leg = A10 * H10 + A01 * H01
+                    image_tri += bkg_leg
+                    
                 ypred = image_tri[~mask_fit].ravel()
+                
+                if fit_sigma:
+                    # sigma = 10**v[-K]
+                    sigma = np.sqrt((10**v[-K])**2+(ypred-mu)/G_eff)
+                else:
+                    #sigma = std_est
+                    sigma = np.sqrt(std_est**2+(ypred-mu)/G_eff)
 
                 loglike = calculate_likelihood(ypred, data, sigma)
 
@@ -2123,9 +2129,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 mu = v[-K-1]
 
                 param_update ={'n_s':n_s, 'theta_s':theta_s}
-
-                if fit_sigma:
-                    sigma = 10**v[-K]
 
                 if fit_frac:
                     frac = 10**v[-1]  
@@ -2145,6 +2148,13 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                     image_tri += A10 * H10 + A01 * H01
         
                 ypred = image_tri[~mask_fit].ravel()
+                
+                if fit_sigma:
+                    # sigma = 10**v[-K]
+                    sigma = np.sqrt((10**v[-K])**2+(ypred-mu)/G_eff)
+                else:
+                    #sigma = std_est
+                    sigma = np.sqrt(std_est**2+(ypred-mu)/G_eff)
 
                 loglike = calculate_likelihood(ypred, data, sigma)
                 
@@ -2163,9 +2173,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 mu = v[-K-1]
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
 
-                if fit_sigma:
-                    sigma = 10**v[-K]
-
                 if fit_frac:
                     frac = 10**v[-1]
                     param_update['frac'] = frac
@@ -2181,6 +2188,14 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                                           K=K, leg=leg)
                 
                 ypred = image_tri[~mask_fit].ravel()
+                
+                if fit_sigma:
+                    #sigma = 10**v[-K]
+                    sigma = np.sqrt((10**v[-K])**2+(ypred-mu)/G_eff)
+                else:
+                    #sigma = std_est
+                    sigma = np.sqrt(std_est**2+(ypred-mu)/G_eff)
+                
                 loglike = calculate_likelihood(ypred, data, sigma)
 
                 return loglike

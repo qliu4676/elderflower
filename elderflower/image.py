@@ -13,6 +13,9 @@ from .plotting import AsinhNorm
 DF_pixel_scale = 2.5
 DF_raw_pixel_scale = 2.85
 
+# Gain (e-/ADU) of Dragonfly
+DF_Gain = 0.37
+
 class ImageButler:
     """
     
@@ -35,13 +38,14 @@ class ImageButler:
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-    
+    G_eff : float or None (default)
+        effective gain (e-/ADU)
     
     """
     
     def __init__(self, hdu_path, obj_name='', band='G',
                  pixel_scale=DF_pixel_scale, pad=100,
-                 ZP=None, bkg=None, verbose=True):
+                 ZP=None, bkg=None, G_eff=None, verbose=True):
         
         self.verbose = verbose
         self.obj_name = obj_name
@@ -62,6 +66,7 @@ class ImageButler:
             
         self.bkg = bkg
         self.ZP = ZP
+        self.G_eff = G_eff
             
     def __str__(self):
         return "An ImageButler Class"
@@ -94,13 +99,14 @@ class Image(ImageButler):
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-
+    G_eff : float or None (default)
+        effective gain (e-/ADU)
     
     """
         
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=100, ZP=None, bkg=None, verbose=True):
+                 pad=100, ZP=None, bkg=None, G_eff=None, verbose=True):
         """ 
         
         
@@ -109,7 +115,7 @@ class Image(ImageButler):
         from .utils import crop_image
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, pad, ZP, bkg, verbose)
+                         pixel_scale, pad, ZP, bkg, G_eff, verbose)
         
         self.bounds0 = bounds0
         
@@ -161,20 +167,21 @@ class ImageList(ImageButler):
         zero point (if None, read from header)
     bkg : float or None (default)
         background (if None, read from header)
-    
+    G_eff : float or None (default)
+        effective gain (e-/ADU)
     
     """
     
     def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=100, ZP=None, bkg=None, verbose=False):
+                 pad=100, ZP=None, bkg=None, G_eff=None, verbose=False):
         
         super().__init__(hdu_path, obj_name, band,
-                         pixel_scale, pad, ZP, bkg, verbose)
+                         pixel_scale, pad, ZP, bkg, G_eff, verbose)
         
         self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
-                             pad, ZP, bkg, verbose)
+                             pad, ZP, bkg, G_eff, verbose)
                        for bounds0 in np.atleast_2d(bounds0_list)]
         self.N_Image = len(self.Images)
     
@@ -346,8 +353,12 @@ class ImageList(ImageButler):
                                 n_min=n_min, theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
-            container.set_likelihood(self.data[i], self.mask_fit[i], psf, stars[i],
-                                     psf_range=[None, None], norm='brightness',
+            container.set_likelihood(self.data[i],
+                                     self.mask_fit[i],
+                                     psf, stars[i],
+                                     psf_range=[None, None],
+                                     norm='brightness',
+                                     G_eff=self.G_eff,
                                      image_base=self.image_base[i])
             
             # Set a few attributes to container for convenience

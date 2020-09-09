@@ -132,7 +132,7 @@ class Sampler:
         save_pickle(res, os.path.join(save_dir, filename))
         
     @classmethod
-    def read_results(cls, filename):
+    def load_results(cls, filename):
         """ Read saved fitting results """
         
         with warnings.catch_warnings():
@@ -180,17 +180,21 @@ class Sampler:
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
                                             n_spline=ct.n_spline,
-                                            leg2d=ct.leg2d, 
+                                            leg2d=ct.leg2d,
+                                            sigma=ct.std_est,
                                             fit_sigma=ct.fit_sigma,
                                             fit_frac=ct.fit_frac)
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std
         
-        image_star, noise_image, bkg_image = generate_image_fit(psf_fit, stars, image_size,
-                                                                norm=norm, leg2d=ct.leg2d,
-                                                                brightest_only=ct.brightest_only,
-                                                                draw_real=ct.draw_real)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            image_star, noise_image, bkg_image \
+                       = generate_image_fit(psf_fit, stars, image_size,
+                                            norm=norm, leg2d=ct.leg2d,
+                                            brightest_only=ct.brightest_only,
+                                            draw_real=ct.draw_real)
         image_base = ct.image_base
             
         image_fit = image_star + image_base + bkg_image
@@ -205,7 +209,7 @@ class Sampler:
         self.psf_fit = psf_fit
         
     
-    def calculate_reduced_chi2(self):
+    def calculate_reduced_chi2(self, Gain=456.95):
         
         """Calculate reduced Chi^2"""
         
@@ -215,9 +219,11 @@ class Sampler:
         mask_fit = getattr(ct.mask, 'mask_comb', ct.mask.mask_deep)
         data = ct.data
         
-        data_pred = (self.image_fit[~mask_fit]).ravel(),
+        data_pred = (self.image_fit[~mask_fit]).ravel()
         
-        calculate_reduced_chi2(data_pred, data, self.bkg_std_fit)
+        uncertainty = np.sqrt(self.bkg_std_fit**2+(data-self.bkg_fit)/Gain)
+        
+        calculate_reduced_chi2(data_pred, data, uncertainty)
         
     def draw_comparison_2D(self, **kwargs):
         from .plotting import draw_comparison_2D
