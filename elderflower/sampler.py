@@ -91,9 +91,9 @@ class Sampler:
             self.close_pool()
         
     def open_pool(self, n_cpu):
-        print("\nOpening new pool: # of CPU used: %d"%(n_cpu - 1))
-        self.pool = mp.Pool(processes=n_cpu - 1)
-        self.pool.size = n_cpu - 1
+        print("\nOpening new pool: # of CPU used: %d"%(n_cpu))
+        self.pool = mp.Pool(processes=n_cpu)
+        self.pool.size = n_cpu
     
     def close_pool(self):
         print("\nPool Closed.")
@@ -190,14 +190,15 @@ class Sampler:
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            image_star, noise_image, bkg_image \
+            image_star, image_fit, bkg_image \
                        = generate_image_fit(psf_fit, stars, image_size,
                                             norm=norm, leg2d=ct.leg2d,
                                             brightest_only=ct.brightest_only,
                                             draw_real=ct.draw_real)
-        image_base = ct.image_base
-            
-        image_fit = image_star + image_base + bkg_image
+
+        noise_image = image_fit - image_star
+
+        image_fit += ct.image_base + bkg_image
         
         # Images constructed from fitting
         self.image_fit = image_fit

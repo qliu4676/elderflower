@@ -133,7 +133,7 @@ Stars with magnitudes 13.5 ~ 10.5 will be modelled as MB ('Meidum bright') stars
 
 ``r_scale`` and ``pixel_scale`` should be consistent with the previous step. The core part (within ``r_core`` =24 pix) of bright stars will be masked. 
 
-``ncpu`` specifies the number of CPU in use (``ncpu``-1) when parallelization is available.
+``n_cpu`` specifies the number of CPU in use when parallelization is available.
 
 ``pad`` is the padding size accounting for bright stars near or outside borders. The actual region in fit is therefore [X min + pad, Y min + pad, X max - pad, Y max - pad].
 

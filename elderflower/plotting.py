@@ -468,7 +468,6 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
         theta_s_fit = psf.theta_s
     
     mu_fit, sigma_fit = fits[-2], 10**fits[-1]
-    noise_fit = make_noise_image(psf.image_size, sigma_fit)
     
     psf_fit = psf.copy()
     psf_fit.update({'n_s':n_s_fit, 'theta_s': theta_s_fit})
@@ -476,10 +475,10 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
     psf_range = psf.image_size * psf.pixel_scale
     image_fit = generate_image_by_flux(psf_fit, stars, draw_real=True,
                                        psf_range=[psf_range//2, psf_range])
-    image_fit = image_fit + mu_fit + noise_fit
-    
     if image_base is not None:
         image_fit += image_base
+    image_fit += mu_fit
+    image_fit_noise = add_image_noise(image_fit, sigma_fit)
         
     if vmin is None:
         vmin = mu_fit - 0.3 * sigma_fit
@@ -487,9 +486,9 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
         vmax = vmin + 11
         
     fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
-    im = ax1.imshow(image_fit, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
+    im = ax1.imshow(image_fit_noise, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
     im = ax2.imshow(image, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
-    Diff = (image_fit-image)/image
+    Diff = (image_fit_noise-image)/image
     im = ax3.imshow(Diff, vmin=-0.1, vmax=0.1, cmap='seismic'); colorbar(im)
     ax1.set_title("Fit: I$_f$")
     ax2.set_title("Original: I$_0$")
@@ -523,13 +522,13 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
     im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax2.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
     im = ax3.imshow(image_star, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)    
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
-    frac_diff = (image_fit-data)/data
+    frac_diff = (image_fit-noise_fit-data)/data
 #     frac_diff[mask_fit] = 0
     im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="seismic")
     ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)

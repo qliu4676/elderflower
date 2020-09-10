@@ -9,17 +9,20 @@ from functools import partial
 from astropy.table import Table
 from astropy.io import fits
 
-from .io import find_keyword_header, config_dir, check_save_path
+from .io import (find_keyword_header, get_SExtractor_path,
+                 default_SE_config, check_save_path)
 from .image import DF_pixel_scale
 
 
-SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO','MU_MAX','CLASS_STAR','ELLIPTICITY']
-SE_executable = '/opt/local/bin/source-extractor'
+SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
+             'MU_MAX','CLASS_STAR','ELLIPTICITY']
+SE_config_path = default_SE_config
+SE_executable = get_SExtractor_path()
 
 
 def Run_Detection(hdu_path, obj_name, band,
                   threshold=5, work_dir='./',
-                  config_path='default.sex',
+                  config_path=SE_config_path,
                   executable=SE_executable,
                   ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
@@ -76,8 +79,6 @@ def Run_Detection(hdu_path, obj_name, band,
     -----
     
     SExtractor must be installed and the local executable path needs to be correct.
-    To check if it works, check if XX.cat and XX_seg.fits exist in work_dir.
-    
     A configuration file can be passed by config_path than default, but parameters can be
     overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in capital):
     
@@ -140,7 +141,7 @@ def Run_Detection(hdu_path, obj_name, band,
     else:
         ZP = np.float(header[ZP_keyname])
         print("Read zero-point from header : ZP = {:.3f}".format(ZP))
-    
+
     SE_catalog = sextractor.run(hdu_path,
                                 extra_params=SE_params,
                                 config_path=config_path,
@@ -152,7 +153,7 @@ def Run_Detection(hdu_path, obj_name, band,
                                 CHECKIMAGE_NAME=segname,
                                 MAG_ZEROPOINT=ZP, **kwargs)
     
-    if not (os.path.isfile(catname)) & (os.path.isfile(catname)):
+    if not (os.path.isfile(catname)) & (os.path.isfile(segname)):
         sys.exit('SE catalog/segmentation not saved properly. Exit.')
         
     print(f"CATALOG saved as {catname}")
@@ -707,7 +708,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_0, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
-                        sn_thre=2.5, n_dilation=5, draw=True,
+                        sn_thre=2.5, n_dilation=5, draw=draw,
                         save=save, save_dir=plot_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
@@ -787,29 +788,30 @@ def Run_PSF_Fitting(hdu_path,
         
         suffix = str(n_spline)+'p'+'_'+obj_name
         
-        s.cornerplot(figsize=(18, 16),
-                     save=save, save_dir=work_dir, suffix=suffix)
-
-        # Plot recovered PSF
-        s.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
-                         save=save, save_dir=plot_dir, suffix=suffix)
-
         # Recovered 1D PSF
         s.generate_fit(psf, stars_tri[i])
+        
+        if draw:
+            s.cornerplot(figsize=(18, 16),
+                         save=save, save_dir=plot_dir, suffix=suffix)
 
-        # Calculate Chi^2
-        s.calculate_reduced_chi2()
-
-        # Draw 2D compaison
-        s.draw_comparison_2D(r_core=r_core,
-                             norm=AsinhNorm(a=0.01),
-                             vmin=DF_Images.bkg-s.bkg_std_fit,
-                             vmax=DF_Images.bkg+50,
+            # Plot recovered PSF
+            s.plot_fit_PSF1D(psf, n_bootstrap=500, r_core=r_core,
                              save=save, save_dir=plot_dir, suffix=suffix)
 
-        if leg2d:
-            s.draw_background(save=save, save_dir=plot_dir,
-                              suffix=suffix)
+            # Calculate Chi^2
+            s.calculate_reduced_chi2()
+
+            # Draw 2D compaison
+            s.draw_comparison_2D(r_core=r_core,
+                                 norm=AsinhNorm(a=0.01),
+                                 vmin=DF_Images.bkg-s.bkg_std_fit,
+                                 vmax=DF_Images.bkg+50,
+                                 save=save, save_dir=plot_dir, suffix=suffix)
+
+            if leg2d:
+                s.draw_background(save=save, save_dir=plot_dir,
+                                  suffix=suffix)
 
         samplers += [s]
         

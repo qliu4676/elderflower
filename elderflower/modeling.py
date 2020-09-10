@@ -1232,18 +1232,18 @@ def get_stamp_bounds(k, star_pos, Flux,
 # Functions for making mock images
 ############################################
 
-def make_noise_image(image_size, noise_std, random_seed=42, verbose=True):
-    """ Make noise image """
+def add_image_noise(image, noise_std, random_seed=42, verbose=True):
+    """ Add Gaussian noise image """
     if verbose:
         print("Generate noise background w/ stddev = %.3g"%noise_std)
     
-    noise_image = galsim.ImageF(image_size, image_size)
+    Image = galsim.ImageF(image)
     rng = galsim.BaseDeviate(random_seed)
     
     gauss_noise = galsim.GaussianNoise(rng, sigma=noise_std)
-    noise_image.addNoise(gauss_noise)  
+    Image.addNoise(gauss_noise)
     
-    return noise_image.array
+    return Image.array
 
 
 def make_base_image(image_size, stars, psf_base, pad=100, psf_size=64, verbose=True):
@@ -1625,19 +1625,19 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     
     yy, xx = np.mgrid[:image_size, :image_size]
     
-    noise_fit = make_noise_image(image_size, psf_fit.bkg_std, verbose=False)
-    
     if norm=='brightness':
         draw_func = generate_image_by_znorm
     elif norm=='flux':
         draw_func = generate_image_by_flux
     
-    image_fit = draw_func(psf_fit, stars, xx, yy,
-                          psf_range=[900,image_size],
-                          psf_scale=psf_fit.pixel_scale,
-                          brightest_only=brightest_only,
-                          draw_real=draw_real)
-
+    image_star = draw_func(psf_fit, stars, xx, yy,
+                           psf_range=[900,image_size],
+                           psf_scale=psf_fit.pixel_scale,
+                           brightest_only=brightest_only,
+                           draw_real=draw_real)
+                          
+    image_fit = add_image_noise(image_star, psf_fit.bkg_std, verbose=False)
+    
     bkg_fit = psf_fit.bkg * np.ones((image_size, image_size))
     
     if leg2d:
@@ -1652,7 +1652,7 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     
     print("Bakground : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     
-    return image_fit, noise_fit, bkg_fit
+    return image_star, image_fit, bkg_fit
 
 
 ############################################

@@ -3,6 +3,10 @@ import re
 import sys
 import yaml
 import string
+import subprocess
+import numpy as np
+from datetime import datetime
+from functools import partial, wraps
 
 try:
     import dill as pickle
@@ -10,15 +14,16 @@ except ImportError:
     import pickle
 from pickle import PicklingError
 
-import numpy as np
-from datetime import datetime
-from functools import partial, wraps
 
 package_dir = os.path.dirname(__file__)
 
 config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
-default_config = os.path.join(config_dir, './config.yml')
 
+# Default file path
+default_config = os.path.join(config_dir, './config.yml')
+default_SE_config = os.path.join(config_dir, './default.sex')
+default_SE_conv = os.path.join(config_dir, './default.conv')
+default_SE_nnw = os.path.join(config_dir, './default.nnw')
 
 def check_save_path(dir_name, make_new=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
@@ -34,8 +39,31 @@ def check_save_path(dir_name, make_new=True, verbose=True):
             os.makedirs(dir_name)
             
     if verbose: print("Results will be saved in %s\n"%dir_name)
+
+
+def get_executable_path(executable):
+    check_exe_path = subprocess.Popen(f'which {executable}', stdout=subprocess.PIPE, shell=True)
+    exe_path = check_exe_path.stdout.read().decode("utf-8").rstrip('\n')
+    return exe_path
+
+
+def get_SExtractor_path():
+    """ Get the execuable path of SExtractor.
+        Possible alias: source-extractor, sex, sextractor """
+        
+    # Check_path
+    SE_paths = list(map(get_executable_path,
+                        ['source-extractor', 'sex', 'sextractor']))
+                        
+    # return the first availble path
+    try:
+        SE_executable = next(path for path in SE_paths if len(path)>0)
+        return SE_executable
+    except StopIteration:
+        print('SExtractor path is not found automatically.')
+        return ''
     
-    
+
 def find_keyword_header(header, keyword, input_val=False):
     """ Search keyword value in header (converted to float).
         Input a value by user if keyword is not found. """
