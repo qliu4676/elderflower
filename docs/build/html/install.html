@@ -49,11 +49,19 @@
 <li><p>galsim&gt;=2.2.3</p></li>
 <li><p>photutils&gt;=0.7.2</p></li>
 <li><p>scikit_image&gt;=0.14.2</p></li>
+<li><p>pyyaml&gt;=5.3</p></li>
+<li><p>psutil&gt;=5.6.7</p></li>
+<li><p>joblib&gt;=0.14</p></li>
 </ul>
-<p>The above dependencies can be installed by <code class="docutils literal notranslate"><span class="pre">pip</span></code> or by <code class="docutils literal notranslate"><span class="pre">requirement.txt</span></code> in the Github repo of <code class="docutils literal notranslate"><span class="pre">elderflower</span></code>:</p>
+<p>The above dependencies (except <code class="docutils literal notranslate"><span class="pre">galsim</span></code>) can be installed by <code class="docutils literal notranslate"><span class="pre">pip</span></code> or by <code class="docutils literal notranslate"><span class="pre">requirement.txt</span></code> in the Github repo of <code class="docutils literal notranslate"><span class="pre">elderflower</span></code>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">r</span> <span class="n">requirement</span><span class="o">.</span><span class="n">txt</span>
 </pre></div>
 </div>
+<dl class="simple">
+<dt>To install <code class="docutils literal notranslate"><span class="pre">galsim</span></code>, try <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">galsim</span></code>. If it reports errors, it is likely because one of the dependencies (fftw) cannot be installed by <code class="docutils literal notranslate"><span class="pre">pip</span></code>. If you have <code class="docutils literal notranslate"><span class="pre">conda</span></code> installed, it is convenient to install <code class="docutils literal notranslate"><span class="pre">galsim</span></code> by::</dt><dd><p>conda install -c conda-forge galsim</p>
+</dd>
+</dl>
+<p>Or you can install it from source.</p>
 <p>To fully run from scratch, it also needs <code class="docutils literal notranslate"><span class="pre">source-extractor</span></code> to be installed.</p>
 <p>Temporarily, the newly developed Dragonfly data reduction pipeline  (author: Johnny Greco, Allison Merrit, et al.) <code class="docutils literal notranslate"><span class="pre">dfreduce</span></code> is required for running the first-step detection on the image. You can intsall it from the dfreduce Github <a class="reference external" href="https://github.com/johnnygreco/DFReduce">repository</a>.</p>
 <p>Optionally, the high performance compiler package <code class="docutils literal notranslate"><span class="pre">numba</span></code> can be installed (and recommended) to accelerate some numeric functions. This can be done by:</p>

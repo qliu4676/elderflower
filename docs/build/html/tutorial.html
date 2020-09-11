@@ -134,7 +134,7 @@
 <p>The PSF model is composed of a central Moffat core and a multi-power law aureole. We use a three component power law for the modeling of the aureole by setting <code class="docutils literal notranslate"><span class="pre">n_spline=3</span></code>. As <code class="docutils literal notranslate"><span class="pre">n_spline</span></code> increases, the time it takes to converge also increases.</p>
 <p>Stars with magnitudes 13.5 ~ 10.5 will be modelled as MB (‘Meidum bright’) stars and rendered as stamps by Galsim in Fourier space. Stars brighter than 10.5 will be modelled as VB (‘Very Bright’) stars and rendered in real space.</p>
 <p><code class="docutils literal notranslate"><span class="pre">r_scale</span></code> and <code class="docutils literal notranslate"><span class="pre">pixel_scale</span></code> should be consistent with the previous step. The core part (within <code class="docutils literal notranslate"><span class="pre">r_core</span></code> =24 pix) of bright stars will be masked.</p>
-<p><code class="docutils literal notranslate"><span class="pre">ncpu</span></code> specifies the number of CPU in use (<code class="docutils literal notranslate"><span class="pre">ncpu</span></code>-1) when parallelization is available.</p>
+<p><code class="docutils literal notranslate"><span class="pre">n_cpu</span></code> specifies the number of CPU in use when parallelization is available.</p>
 <p><code class="docutils literal notranslate"><span class="pre">pad</span></code> is the padding size accounting for bright stars near or outside borders. The actual region in fit is therefore [X min + pad, Y min + pad, X max - pad, Y max - pad].</p>
 <p>Below shows the output cornerplot of the fitted parameters of the PSF aureole.</p>
 <img alt="_images/Cornerplot2p_test.png" class="align-center" src="_images/Cornerplot2p_test.png" />
@@ -150,9 +150,9 @@
 
 <span class="n">bounds</span> <span class="o">=</span> <span class="p">([</span><span class="mi">100</span><span class="p">,</span><span class="mi">100</span><span class="p">,</span><span class="mi">700</span><span class="p">,</span><span class="mi">700</span><span class="p">])</span>
 <span class="n">elder</span> <span class="o">=</span> <span class="n">berry</span><span class="p">(</span><span class="s1">&#39;cutout.fits&#39;</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span>
-              <span class="n">obj_name</span><span class="o">=</span><span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="n">filt</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span>
-              <span class="n">work_dir</span><span class="o">=</span><span class="s1">&#39;./test&#39;</span><span class="p">,</span>
-              <span class="n">config_file</span><span class="o">=</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
+              <span class="n">obj_name</span><span class="o">=</span><span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="n">band</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span>
+              <span class="n">work_dir</span><span class="o">=</span><span class="s1">&#39;./test/&#39;</span><span class="p">,</span>
+              <span class="n">config_file</span><span class="o">=</span><span class="s1">&#39;configs/config.yaml&#39;</span><span class="p">)</span>
 
 <span class="n">elder</span><span class="o">.</span><span class="n">detection</span><span class="p">(</span><span class="n">executable</span><span class="o">=</span><span class="n">SE_executable</span><span class="p">)</span>
 <span class="n">elder</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>

@@ -28,6 +28,12 @@ Dependencies
 
 * scikit_image>=0.14.2
 
+* pyyaml>=5.3
+
+* psutil>=5.6.7
+
+* joblib>=0.14
+
 The above dependencies (except ``galsim``) can be installed by ``pip`` or by ``requirement.txt`` in the Github repo of ``elderflower``::
 
 	pip install -r requirement.txt 

@@ -17,11 +17,16 @@ def test_run_detection():
     
     # check SE path
     SE_executable = get_SExtractor_path()
-    assert len(SE_executable)>0, 'SExtractor path is not found correctly.' 
+    print(SE_executable)
+    assert len(SE_executable)>0, 'SExtractor path is not found correctly.'
     
-    print(default_SE_conv, default_SE_nnw)
-    # run
+    print(default_SE_conv, default_SE_conv)
     print(default_SE_config)
+    
+    assert (os.path.isfile(default_SE_conv)) & (os.path.isfile(default_SE_conv)), \
+            'SExtractor config files are not found correctly.'
+    
+    # run
     ZP = Run_Detection(fn, obj_name, filt,
                        threshold=10, work_dir=work_dir,
                        executable=SE_executable,
@@ -42,8 +47,8 @@ def test_run_match_mask_measure(ZP=27.116):
     
     # run
     Match_Mask_Measure(fn, bounds, obj_name, filt,
-                       ZP=ZP, bkg=519., field_pad=50, 
-                       pixel_scale=2.5, use_PS1_DR2=False, 
+                       ZP=ZP, bkg=519., field_pad=50,
+                       pixel_scale=2.5, use_PS1_DR2=False,
                        draw=False, save=True, work_dir=work_dir)
     
     assert os.path.isfile(f'Measure-PS1/{obj_name}-norm_12pix_gmag15_X[50-450]Y[50-450].txt'), \
@@ -60,11 +65,11 @@ def test_run_match_mask_measure(ZP=27.116):
 def test_run_psf_fitting(ZP=27.116):
     
     # run
-    samplers = Run_PSF_Fitting(fn, bounds, obj_name, 
-                               band="g", n_spline=2, parallel=False, 
+    samplers = Run_PSF_Fitting(fn, bounds, obj_name,
+                               band="g", n_spline=2, parallel=False,
                                r_core=24, mag_threshold=[13,10.5],
-                               theta_cutoff=1200, ZP=ZP, bkg=519., 
-                               pad=0, pixel_scale=2.5, use_PS1_DR2=False, 
+                               theta_cutoff=1200, ZP=ZP, bkg=519.,
+                               pad=0, pixel_scale=2.5, use_PS1_DR2=False,
                                draw=False, save=True, work_dir=work_dir)
     sampler = samplers[0]
     psf_fit = sampler.psf_fit
@@ -109,11 +114,11 @@ def test_parallel_run_psf_fitting(ZP=27.116):
     n_cpu = min(mp.cpu_count()-1, 4)
 
     # run
-    samplers = Run_PSF_Fitting(fn, bounds, obj_name, 
+    samplers = Run_PSF_Fitting(fn, bounds, obj_name,
                                band="g", n_spline=2, n_cpu=n_cpu,
                                r_core=24, mag_threshold=[13,10.5],
-                               theta_cutoff=1200, ZP=ZP, bkg=519., 
-                               pad=0, pixel_scale=2.5, use_PS1_DR2=False, 
+                               theta_cutoff=1200, ZP=ZP, bkg=519.,
+                               pad=0, pixel_scale=2.5, use_PS1_DR2=False,
                                draw=False, save=True, work_dir=work_dir)
     
     sampler = samplers[0]
@@ -139,7 +144,7 @@ def test_parallel_run_psf_fitting(ZP=27.116):
     
     fname_fit = f'{obj_name}A-g-fit2p.res'
     fname_star = 'starsA.pkl'
-    assert os.path.isfile(fname), \
+    assert os.path.isfile(fname_fit), \
           'Fitting result is not saved properly.'
     
     assert os.path.isfile(fname_star), \

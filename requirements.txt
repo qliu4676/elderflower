@@ -1,3 +1,4 @@
+pyyaml>=5.3
 scikit_image>=0.14.2
 matplotlib>=3.0.3
 numpy>=1.16.2
@@ -8,3 +9,5 @@ requests>=2.21.0
 astropy>=4.0
 dynesty>=0.9.7
 photutils>=0.7.2
+psutil>=5.6.7
+joblib>=0.14

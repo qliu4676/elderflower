@@ -836,7 +836,6 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
-
     c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
     idx, d2d, d3d = c_SE.match_to_catalog_sky(c_tab)
     match = d2d < sep 
