@@ -1406,30 +1406,31 @@ def generate_image_by_flux(psf, stars, xx, yy,
         psf_size = psf_size // 2 * 2
         
         psf_star = (1-frac) * psf_c + frac * psf_e               
+        
+        if stars.n_medbright > 0:
+            if (not parallel) | (parallel_enabled==False):
+                # Draw in serial
+                for k in range(stars.n_medbright):
+                    draw_star(k,
+                              star_pos=stars.star_pos_medbright,
+                              Flux=stars.Flux_medbright,
+                              psf_star=psf_star,
+                              psf_size=psf_size,
+                              full_image=full_image)
+            else:
+                # Draw in parallel, automatically back to serial computing if too few jobs 
+                p_get_stamp_bounds = partial(get_stamp_bounds,
+                                             star_pos=stars.star_pos_medbright,
+                                             Flux=stars.Flux_medbright,
+                                             psf_star=psf_star,
+                                             psf_size=psf_size,
+                                             full_image=full_image)
 
-        if (not parallel) | (parallel_enabled==False):
-            # Draw in serial
-            for k in range(stars.n_medbright):
-                draw_star(k,
-                          star_pos=stars.star_pos_medbright,
-                          Flux=stars.Flux_medbright,
-                          psf_star=psf_star,
-                          psf_size=psf_size,
-                          full_image=full_image)
-        else:
-            # Draw in parallel, automatically back to serial computing if too few jobs 
-            p_get_stamp_bounds = partial(get_stamp_bounds,
-                                         star_pos=stars.star_pos_medbright,
-                                         Flux=stars.Flux_medbright,
-                                         psf_star=psf_star,
-                                         psf_size=psf_size,
-                                         full_image=full_image)
+                results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds, 
+                                           lengthy_computation=False, verbose=False)
 
-            results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds, 
-                                       lengthy_computation=False, verbose=False)
-
-            for (stamp, bounds) in results:
-                full_image[bounds] += stamp[bounds]
+                for (stamp, bounds) in results:
+                    full_image[bounds] += stamp[bounds]
 
     if draw_real:
         # Draw aureole of very bright star (if high cost in FFT) in real space
@@ -1547,31 +1548,32 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
         # Draw medium bright stars with galsim in Fourier space
         psf_star = (1-frac) * psf_c + frac * psf_e               
-            
-        if (not parallel) | (parallel_enabled==False):
-            # Draw in serial
-            for k in range(stars.n_medbright):
-                draw_star(k,
-                          star_pos=stars.star_pos_medbright,
-                          Flux=stars.Flux_medbright,
-                          psf_star=psf_star,
-                          psf_size=psf_size,
-                          full_image=full_image)
+        
+        if stars.n_medbright > 0:
+            if (not parallel) | (parallel_enabled==False):
+                # Draw in serial
+                for k in range(stars.n_medbright):
+                    draw_star(k,
+                              star_pos=stars.star_pos_medbright,
+                              Flux=stars.Flux_medbright,
+                              psf_star=psf_star,
+                              psf_size=psf_size,
+                              full_image=full_image)
 
-        else:
-            # Draw in parallel, automatically back to serial computing if too few jobs 
-            p_get_stamp_bounds = partial(get_stamp_bounds,
-                                         star_pos=stars.star_pos_medbright,
-                                         Flux=stars.Flux_medbright,
-                                         psf_star=psf_star,
-                                         psf_size=psf_size,
-                                         full_image=full_image)
+            else:
+                # Draw in parallel, automatically back to serial computing if too few jobs
+                p_get_stamp_bounds = partial(get_stamp_bounds,
+                                             star_pos=stars.star_pos_medbright,
+                                             Flux=stars.Flux_medbright,
+                                             psf_star=psf_star,
+                                             psf_size=psf_size,
+                                             full_image=full_image)
 
-            results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds, 
-                                       lengthy_computation=False, verbose=False)
+                results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds,
+                                           lengthy_computation=False, verbose=False)
 
-            for (stamp, bounds) in results:
-                full_image[bounds] += stamp[bounds]
+                for (stamp, bounds) in results:
+                    full_image[bounds] += stamp[bounds]
                 
     if draw_real:
         # Draw very bright star in real space (high cost in convolution)
