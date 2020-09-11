@@ -28,9 +28,14 @@ Dependencies
 
 * scikit_image>=0.14.2
 
-The above dependencies can be installed by ``pip`` or by ``requirement.txt`` in the Github repo of ``elderflower``::
+The above dependencies (except ``galsim``) can be installed by ``pip`` or by ``requirement.txt`` in the Github repo of ``elderflower``::
 
 	pip install -r requirement.txt 
+
+To install ``galsim``, try ``pip install galsim``. If it reports errors, it is likely because one of the dependencies (fftw) cannot be installed by ``pip``. If you have ``conda`` installed, it is convenient to install ``galsim`` by::
+	conda install -c conda-forge galsim
+
+Or you can install it from source.
 
 To fully run from scratch, it also needs ``source-extractor`` to be installed.
 
