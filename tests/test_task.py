@@ -70,7 +70,8 @@ def test_run_psf_fitting(ZP=27.116):
                                r_core=24, mag_threshold=[13,10.5],
                                theta_cutoff=1200, ZP=ZP, bkg=519.,
                                pad=0, pixel_scale=2.5, use_PS1_DR2=False,
-                               draw=False, save=True, work_dir=work_dir)
+                               draw=False, save=True, print_progress=False,
+                               work_dir=work_dir)
     sampler = samplers[0]
     psf_fit = sampler.psf_fit
     
@@ -119,7 +120,8 @@ def test_parallel_run_psf_fitting(ZP=27.116):
                                r_core=24, mag_threshold=[13,10.5],
                                theta_cutoff=1200, ZP=ZP, bkg=519.,
                                pad=0, pixel_scale=2.5, use_PS1_DR2=False,
-                               draw=False, save=True, work_dir=work_dir)
+                               draw=False, save=True, print_progress=False,
+                               work_dir=work_dir)
     
     sampler = samplers[0]
     psf_fit = sampler.psf_fit
