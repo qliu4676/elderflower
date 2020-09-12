@@ -252,7 +252,6 @@ def Match_Mask_Measure(hdu_path,
     ##################################################
     from .utils import crop_image, crop_catalog
     from astropy.stats import mad_std
-    from astropy.table import setdiff, join
     from astropy import wcs
     
     # Read hdu
@@ -903,7 +902,7 @@ class berry:
         Run_Detection(self.hdu_path, self.obj_name, self.band,
                       work_dir=self.work_dir, **kwargs)
         
-    def run(self):
+    def run(self, **kwargs):
         """ Run the task (Match_Mask_Measure + Run_PSF_Fitting). """
             
         @self.config_func
@@ -915,5 +914,5 @@ class berry:
                         self.obj_name, self.band,
                         work_dir=self.work_dir, **pars)
                         
-        _ = _run(Match_Mask_Measure)
-        self.samplers = _run(Run_PSF_Fitting)
+        _ = _run(Match_Mask_Measure, **kwargs)
+        self.samplers = _run(Run_PSF_Fitting, **kwargs)

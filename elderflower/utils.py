@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from astropy import wcs
 from astropy import units as u
 from astropy.io import fits, ascii
-from astropy.table import Table, Column, join
+from astropy.table import Table, Column, setdiff, join
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, biweight_location, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
