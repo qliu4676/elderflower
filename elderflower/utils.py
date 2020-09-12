@@ -1522,10 +1522,17 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     # Further mask for bright extended sources
     if ext_cat is not None:
         if len(ext_cat)>0:
-            for (X_c,Y_c, r) in zip(ext_cat['X_IMAGE'],
-                                    ext_cat['Y_IMAGE'],
-                                    ext_cat['A_IMAGE']*5):
-                apers.append(CircularAperture((X_c-Xmin, Y_c-Ymin), r=r))
+            for (X_c,Y_c, a, b, theta) in zip(ext_cat['X_IMAGE'],
+                                              ext_cat['Y_IMAGE'],
+                                              ext_cat['A_IMAGE'],
+                                              ext_cat['B_IMAGE'],
+                                              ext_cat['THETA_IMAGE'],):
+                pos = (X_c-Xmin, Y_c-Ymin)
+                theta_ = np.mod(theta, 360) * np.pi/180
+                aper = EllipticalAperture(pos, a*5, b*5, theta_)
+#                aper = CircularAperture(pos, r=a*3)
+                apers.append(aper)
+                
             
     # Draw segment map generated from the catalog
     seg_map = np.zeros((image_size, image_size))

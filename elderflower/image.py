@@ -46,7 +46,8 @@ class ImageButler:
     def __init__(self, hdu_path, obj_name='', band='G',
                  pixel_scale=DF_pixel_scale, pad=100,
                  ZP=None, bkg=None, G_eff=None, verbose=True):
-        
+        from .utils import crop_image
+    
         self.verbose = verbose
         self.obj_name = obj_name
         self.band = band
@@ -107,11 +108,6 @@ class Image(ImageButler):
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
                  pad=100, ZP=None, bkg=None, G_eff=None, verbose=True):
-        """ 
-        
-        
-        
-        """
         from .utils import crop_image
         
         super().__init__(hdu_path, obj_name, band,

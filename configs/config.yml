@@ -17,7 +17,7 @@
     r_scale: 12
     pad: 100
     mag_limit: 15
-    mag_threshold: [14,11]
+    mag_threshold: [13,11]
     mask_type: 'aper'
     SB_threshold: 24.5
     r_core: 24

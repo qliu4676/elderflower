@@ -345,7 +345,7 @@ def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
         # correct PA to theta in photutils (from +x axis)
         theta =  np.mod(pa_ang+90, 360) * np.pi/180
 
-        pos = (shape[1]-1)/2., (shape[0]-1)/2.
+#        pos = (shape[1]-1)/2., (shape[0]-1)/2.
 
         # make elliptical aperture
         aper = EllipticalAperture(pos, k*a_pix, k*b_pix, theta)
