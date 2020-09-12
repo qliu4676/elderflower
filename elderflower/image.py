@@ -241,6 +241,7 @@ class ImageList(ImageButler):
         """Make Strip + Cross Mask"""
         
         from .mask import Mask
+        from .utils import crop_image
         
         masks = []
         
