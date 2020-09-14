@@ -1,6 +1,5 @@
 import os
 import time
-import warnings
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,7 +32,7 @@ class Sampler:
         
         if run:
             if n_cpu is None:
-                n_cpu = mp.cpu_count()
+                n_cpu = min(mp.cpu_count()-1, 10)
                 
             if n_thread is not None:
                 n_thread = max(n_thread, n_cpu-1)
@@ -177,6 +176,7 @@ class Sampler:
         
         ct = self.container
         image_size = ct.image_size
+        image_base = ct.image_base
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
                                             n_spline=ct.n_spline,
@@ -188,17 +188,16 @@ class Sampler:
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std
         
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            image_star, image_fit, bkg_image \
-                       = generate_image_fit(psf_fit, stars, image_size,
-                                            norm=norm, leg2d=ct.leg2d,
-                                            brightest_only=ct.brightest_only,
-                                            draw_real=ct.draw_real)
+        
+        image_star, image_fit, bkg_image \
+                   = generate_image_fit(psf_fit, stars, image_size,
+                                        norm=norm, leg2d=ct.leg2d,
+                                        brightest_only=ct.brightest_only,
+                                        draw_real=ct.draw_real)
 
         noise_image = image_fit - image_star
 
-        image_fit += ct.image_base + bkg_image
+        image_fit += image_base + bkg_image
         
         # Images constructed from fitting
         self.image_fit = image_fit

@@ -7,7 +7,7 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.utils import lazyproperty
 
-from .plotting import AsinhNorm
+from .plotting import display, AsinhNorm
 
 # Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
 DF_pixel_scale = 2.5
@@ -33,7 +33,7 @@ class ImageButler:
     pixel_scale : float
         pixel scale in arcsec/pixel
     pad : int
-        padding size of the image for fitting (default: 100)
+        padding size of the image for fitting (default: 50)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
@@ -44,7 +44,7 @@ class ImageButler:
     """
     
     def __init__(self, hdu_path, obj_name='', band='G',
-                 pixel_scale=DF_pixel_scale, pad=100,
+                 pixel_scale=DF_pixel_scale, pad=50,
                  ZP=None, bkg=None, G_eff=None, verbose=True):
         from .utils import crop_image
     
@@ -55,8 +55,7 @@ class ImageButler:
         self.pad = pad
         
         # Read hdu
-        if os.path.isfile(hdu_path) is False:
-            sys.exit("Image does not exist. Check path.")
+        assert os.path.isfile(hdu_path), "Image does not exist. Check path."
             
         with fits.open(hdu_path) as hdul:
             self.hdu_path = hdu_path
@@ -95,7 +94,7 @@ class Image(ImageButler):
     pixel_scale : float
         pixel scale in arcsec/pixel
     pad : int
-        padding size of the image for fitting (default: 100)
+        padding size of the image for fitting (default: 50)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
@@ -107,7 +106,7 @@ class Image(ImageButler):
         
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=100, ZP=None, bkg=None, G_eff=None, verbose=True):
+                 pad=50, ZP=None, bkg=None, G_eff=None, verbose=True):
         from .utils import crop_image
         
         super().__init__(hdu_path, obj_name, band,
@@ -123,7 +122,7 @@ class Image(ImageButler):
         
         # Crop image
         self.bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
-                        patch_Xmax0-pad, patch_Ymax0-pad)
+                       patch_Xmax0-pad, patch_Ymax0-pad)
 
         self.image0 = crop_image(self.full_image, bounds0, origin=0, draw=False)
         
@@ -135,7 +134,11 @@ class Image(ImageButler):
         return "An Image Class"
 
     def __repr__(self):
-        return ''.join([f"{self.__class__.__name__}", str(self.bounds0)])
+        return ''.join([f"{self.__class__.__name__} cutout", str(self.bounds0)])
+        
+    def display(self):
+        """ Display the image """
+        display(self.image)
         
         
 class ImageList(ImageButler):
@@ -158,7 +161,7 @@ class ImageList(ImageButler):
     pixel_scale : float
         pixel scale in arcsec/pixel
     pad : int
-        padding size of the image for fitting (default: 100)
+        padding size of the image for fitting (default: 50)
     ZP : float or None (default)
         zero point (if None, read from header)
     bkg : float or None (default)
@@ -170,27 +173,61 @@ class ImageList(ImageButler):
     
     def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=100, ZP=None, bkg=None, G_eff=None, verbose=False):
+                 pad=50, ZP=None, bkg=None, G_eff=None, verbose=False):
         
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, pad, ZP, bkg, G_eff, verbose)
+                         
+        
         
         self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
                              pad, ZP, bkg, G_eff, verbose)
                        for bounds0 in np.atleast_2d(bounds0_list)]
         self.N_Image = len(self.Images)
-    
+        self.bounds0_list = bounds0_list
+        
+    def __iter__(self):
+        for Img in self.Images:
+            yield Img
+            
+    def __getitem__(self, index):
+        return self.Images[index]
     
     @lazyproperty
     def images(self):
         return np.array([Image.image for Image in self.Images])
 
+    def display(self, fig=None, ax=None):
+        """ Display the image list """
+        
+        if fig is None:
+            n_row = int((self.N_Image-1)//4+1)
+            fig, axes = plt.subplots(n_row, 4, figsize=(14,4*n_row))
+            
+        # Draw
+        for i, ax in zip(range(self.N_Image), axes.ravel()):
+            display(self.images[i], fig=fig, ax=ax)
+            
+        # Delete extra ax
+        for ax in axes.ravel()[self.N_Image:]: fig.delaxes(ax)
+            
+        plt.tight_layout()
     
-    def assign_star_props(self,
-                          tables_faint,
-                          tables_res_Rnorm,
-                          *args, **kwargs):
+    def read_measurement_tables(self, dir_measure, **kwargs):
+        """ Read faint stars info and brightness measurement """
+        from .utils import read_measurement_tables
+        
+        self.tables_faint, self.tables_norm = \
+            read_measurement_tables(dir_measure,
+                                    self.bounds0_list,
+                                    obj_name=self.obj_name,
+                                    band=self.band,
+                                    pad=self.pad,
+                                    **kwargs)
+                                    
+    
+    def assign_star_props(self, *args, **kwargs):
         
         """ Assign position and flux for faint and bright stars from tables. """
     
@@ -198,13 +235,17 @@ class ImageList(ImageButler):
         
         stars0, stars_all = [], []
         
-        for Image, tab_f, tab_res in zip(self.Images,
-                                         tables_faint,
-                                         tables_res_Rnorm):
-            s0, sa = assign_star_props(tab_f, tab_res, Image,
-                                       *args, **kwargs)
-            stars0 += [s0]
-            stars_all += [sa]
+        if hasattr(self, 'tables_faint') & hasattr(self, 'tables_norm'):
+            for Image, tab_res, tab_f in zip(self.Images,
+                                             self.tables_norm,
+                                             self.tables_faint):
+                s0, sa = assign_star_props(Image, tab_res, tab_f,
+                                           *args, **kwargs)
+                stars0 += [s0]
+                stars_all += [sa]
+        else:
+            raise AttributeError(f"{self.__class__.__name__} has no stars info. \
+                                 Read measurement tables first!")
 
         return stars0, stars_all
     
@@ -250,8 +291,7 @@ class ImageList(ImageButler):
             mask = Mask(Image, stars)
             
             # Mask the main object by given shape parameters or read a map
-            obj_b_name = self.obj_name+'-'+self.band.lower()
-            mask.make_mask_object(obj_b_name)
+            mask.make_mask_object(self.obj_name)
             
             # crop the full mask map into smaller one
             if hasattr(mask, 'mask_obj_field'):

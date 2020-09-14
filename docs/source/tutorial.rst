@@ -34,8 +34,7 @@ We first import the functions from ``elderflower.task``:
 	
 	from elderflower.task import Run_Detection, Match_Mask_Measure, Run_PSF_Fitting
 
-
-The user needs to specify local path of the SExtractor executable, e.g.::
+The package will search the location of SExtractor automatically. The user can also specify the path of the SExtractor executable, e.g.::
 
     SE_executable = '/opt/local/bin/source-extractor'
 

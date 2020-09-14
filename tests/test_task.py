@@ -2,7 +2,10 @@ import os
 import math
 import shutil
 import subprocess
-from elderflower.task import Run_Detection, Match_Mask_Measure, Run_PSF_Fitting
+import multiprocess as mp
+
+from elderflower.io import get_SExtractor_path, default_SE_config, default_SE_conv, default_SE_nnw
+from elderflower.task import Run_Detection, Match_Mask_Measure, Run_PSF_Fitting, berry
 
 obj_name = 'cutout'
 filt = 'g'
@@ -13,7 +16,6 @@ bounds = ((50, 50, 450, 450))
     
     
 def test_run_detection():
-    from elderflower.io import get_SExtractor_path, default_SE_config, default_SE_conv, default_SE_nnw
     
     # check SE path
     SE_executable = get_SExtractor_path()
@@ -43,6 +45,7 @@ def test_run_detection():
     
     return None
 
+
 def test_run_match_mask_measure(ZP=27.116):
     
     # run
@@ -62,12 +65,23 @@ def test_run_match_mask_measure(ZP=27.116):
     
     return None
 
+
+def check_val_tol(values, truths, tols, names):
+    print("Values to check: ", values)
+    print("Truths: ", truths)
+    for val, truth, tol, name in zip(values, truths, tols, names):
+        assert math.fabs(val-truth) < tol, f'{name} does not agree with known solution'
+
+        
 def test_run_psf_fitting(ZP=27.116):
+    
+    # dynesty will be run in parallel
+    n_cpu = min(mp.cpu_count()-1, 4)
     
     # run
     samplers = Run_PSF_Fitting(fn, bounds, obj_name,
-                               band="g", n_spline=2, parallel=False,
-                               r_core=24, mag_threshold=[13,10.5],
+                               band="g", n_spline=2, n_cpu=n_cpu,
+                               r_core=24, mag_threshold=[13.5,10.5],
                                theta_cutoff=1200, ZP=ZP, bkg=519.,
                                pad=0, pixel_scale=2.5, use_PS1_DR2=False,
                                draw=False, save=True, print_progress=False,
@@ -75,88 +89,77 @@ def test_run_psf_fitting(ZP=27.116):
     sampler = samplers[0]
     psf_fit = sampler.psf_fit
     
-    n_tol, theta_tol = 5e-2, 10
-    mu_tol, sigma_tol = 0.5, 0.5
+    # check output values
+    vals = [psf_fit.n_s[0], psf_fit.n_s[1], psf_fit.theta_s[1],
+            sampler.bkg_fit, sampler.bkg_std_fit]
+    truths = [3.25, 1.78, 88, 519, 4.7]
+    tols = [5e-2, 5e-2, 10, 0.5, 0.5]
+    names = ['n0', 'n1', 'theta1', 'background', 'background std']
+
+    check_val_tol(vals, truths, tols, names)
     
-    assert math.fabs(psf_fit.n_s[0]-3.25) < n_tol, \
-           'n0 does not agree with known solution'
-    
-    assert math.fabs(psf_fit.n_s[1]-1.78) < n_tol, \
-           'n1 does not agree with known solution'
-    
-    assert math.fabs(psf_fit.theta_s[1]-88) < theta_tol, \
-           'theta1 does not agree with known solution'
-    
-    assert math.fabs(sampler.bkg_fit-519) < mu_tol, \
-           'background does not agree with known solution'
-    
-    assert math.fabs(sampler.bkg_std_fit-4.7) < sigma_tol, \
-           'background std does not agree with known solution'
-    
-    fname_fit = f'{obj_name}A-g-fit2p.res'
-    fname_star = 'starsA.pkl'
-    assert os.path.isfile(fname_fit), \
+    # check save
+    assert os.path.isfile(f'{obj_name}A-g-fit2p.res'), \
           'Fitting result is not saved properly.'
     
-    assert os.path.isfile(fname_star), \
+    assert os.path.isfile('starsA.pkl'), \
           'Stars pkl is not saved properly.'
-
-    os.remove(fname_fit)
-    os.remove(fname_star)
+    
+    # clean out
     shutil.rmtree('plot/')
+    shutil.rmtree('Measure-PS1/')
+    for f in [f'{obj_name}A-g-fit2p.res', 'starsA.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
+        os.remove(f)
 
     return None
 
 
-def test_parallel_run_psf_fitting(ZP=27.116):
-    import multiprocess as mp
+def test_run_berry(ZP=27.116):
     
-    # dynesty will be run in parallel
-    n_cpu = min(mp.cpu_count()-1, 4)
+    from elderflower.io import get_SExtractor_path, default_SE_config
+    
+    SE_executable = get_SExtractor_path()
+    
+    # initialize
+    elder = berry(fn, bounds, obj_name, filt, work_dir=work_dir)
 
+    # detection
+    elder.detection(threshold=10,
+                    executable=SE_executable,
+                    config_path=default_SE_config,
+                    ZP_keyname='REFZP', ZP=None,
+                    FILTER_NAME=default_SE_conv,
+                    STARNNW_NAME=default_SE_nnw)
     # run
-    samplers = Run_PSF_Fitting(fn, bounds, obj_name,
-                               band="g", n_spline=2, n_cpu=n_cpu,
-                               r_core=24, mag_threshold=[13,10.5],
-                               theta_cutoff=1200, ZP=ZP, bkg=519.,
-                               pad=0, pixel_scale=2.5, use_PS1_DR2=False,
-                               draw=False, save=True, print_progress=False,
-                               work_dir=work_dir)
+    elder.run(n_spline=2, mag_threshold=[13.5,10.5],
+              theta_cutoff=1200, ZP=ZP, bkg=519.,
+              pad=0, pixel_scale=2.5, r_core=24,
+              field_pad=50, use_PS1_DR2=False,
+              draw=False, save=True, print_progress=False)
     
-    sampler = samplers[0]
+    sampler = elder.samplers[0]
     psf_fit = sampler.psf_fit
     
-    n_tol, theta_tol = 5e-2, 10
-    mu_tol, sigma_tol = 0.5, 0.5
+    # check output values
+    vals = [psf_fit.n_s[0], psf_fit.n_s[1], psf_fit.theta_s[1],
+            sampler.bkg_fit, sampler.bkg_std_fit]
+    truths = [3.25, 1.78, 88, 519, 4.7]
+    tols = [5e-2, 5e-2, 10, 0.5, 0.5]
+    names = ['n0', 'n1', 'theta1', 'background', 'background std']
     
-    assert math.fabs(psf_fit.n_s[0]-3.25) < n_tol, \
-           'n0 does not agree with known solution'
+    check_val_tol(vals, truths, tols, names)
     
-    assert math.fabs(psf_fit.n_s[1]-1.78) < n_tol, \
-           'n1 does not agree with known solution'
-    
-    assert math.fabs(psf_fit.theta_s[1]-88) < theta_tol, \
-           'theta1 does not agree with known solution'
-    
-    assert math.fabs(sampler.bkg_fit-519) < mu_tol, \
-           'background does not agree with known solution'
-    
-    assert math.fabs(sampler.bkg_std_fit-4.7) < sigma_tol, \
-           'background std does not agree with known solution'
-    
-    fname_fit = f'{obj_name}A-g-fit2p.res'
-    fname_star = 'starsA.pkl'
-    assert os.path.isfile(fname_fit), \
+    # check save
+    assert os.path.isfile(f'{obj_name}A-g-fit2p.res'), \
           'Fitting result is not saved properly.'
     
-    assert os.path.isfile(fname_star), \
+    assert os.path.isfile('starsA.pkl'), \
           'Stars pkl is not saved properly.'
-
-    os.remove(fname_fit)
-    os.remove(fname_star)
+    
+    # clean out
     shutil.rmtree('plot/')
     shutil.rmtree('Measure-PS1/')
-    os.remove(f'{obj_name}.cat')
-    os.remove(f'{obj_name}_seg.fits')
+    for f in [f'{obj_name}A-g-fit2p.res', 'starsA.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
+        os.remove(f)
     
     return None

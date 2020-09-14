@@ -36,7 +36,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
-from astropy.stats import mad_std
+from astropy.stats import mad_std, sigma_clip
 
 from photutils import CircularAperture
 
@@ -98,6 +98,25 @@ def make_rand_color(n_color, seed=1234,
     random.seed(seed)
     rand_colours = [random.choice(colour) for i in range(n_color)]
     return rand_colours
+    
+    
+### Plotting Functions ###
+
+def display(image, mask=None,
+            k_std=10, cmap="gray_r",
+            norm=AsinhNorm(a=0.1),
+            fig=None, ax=None):
+    """ Visualize an image """
+    
+    if mask is not None:
+        sky = data[(mask==0)]
+    else:
+        sky = sigma_clip(image, 3)
+    sky_mean, sky_std = np.mean(sky), mad_std(sky)
+    
+    if ax is None: fig, ax = plt.subplots(figsize=(12,8))
+    ax.imshow(image, cmap="gray_r",
+               vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=None, r_out=None, vmin=None, vmax=None,
@@ -705,7 +724,7 @@ def plot_fit_PSF1D(results, psf,
         plt.show()
         plt.close()
     
-def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
+def plot_bright_star_profile(tab_target, table_norm, res_thumb,
                              bkg_sky=460, std_sky=2, pixel_scale=2.5, ZP=27.1,
                              mag_name='MAG_AUTO_corr', figsize=(8,6)):
     
@@ -713,8 +732,8 @@ def plot_bright_star_profile(tab_target, table_res_Rnorm, res_thumb,
     
     r = np.logspace(0.03,3,100)
     
-    z_mean_s, z_med_s = table_res_Rnorm['Imean'], table_res_Rnorm['Imed'] 
-    z_std_s, sky_mean_s = table_res_Rnorm['Istd'], table_res_Rnorm['Isky']
+    z_mean_s, z_med_s = table_norm['Imean'], table_norm['Imed']
+    z_std_s, sky_mean_s = table_norm['Istd'], table_norm['Isky']
     
     plt.figure(figsize=figsize)
     ax = plt.subplot(111)

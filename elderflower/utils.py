@@ -646,7 +646,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
     
     # Initialize
     res_thumb = {}    
-    res_Rnorm = np.empty((len(table_target), 5))
+    res_norm = np.empty((len(table_target), 5))
     
     for i, (num, mag_auto) in enumerate(zip(table_target['NUMBER'], table_target['MAG_AUTO'])):
         if verbose: counter(i, len(table_target))
@@ -667,9 +667,9 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         # Use the median value of background as the local background
         sky_mean = np.median(bkg)
         
-        res_Rnorm[i] = np.array([I_mean, I_med, I_std, sky_mean, Iflag])
+        res_norm[i] = np.array([I_mean, I_med, I_std, sky_mean, Iflag])
     
-    return res_Rnorm, res_thumb
+    return res_norm, res_thumb
 
 def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
@@ -700,45 +700,48 @@ def measure_Rnorm_all(table, bounds,
     
     Returns
     ----------
-    table_res_Rnorm : table containing measurement results
+    table_norm : table containing measurement results
     res_thumb : thumbnails of image, mask, background and center of object, stored as dictionary
         
     """
     
     Xmin, Ymin, Xmax, Ymax = bounds
     
-    table_Rnorm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X[%d-%d]Y[%d-%d].txt'\
-                                    %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
+    table_norm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X[%d-%d]Y[%d-%d].txt'\
+                                   %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
     res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X[%d-%d]Y[%d-%d].pkl'\
                                   %(obj_name, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
     if read:
-        table_res_Rnorm = Table.read(table_Rnorm_name, format="ascii")
+        table_norm = Table.read(table_norm_name, format="ascii")
         res_thumb = load_pickle(res_thumb_name)
         
     else:
         tab = table[table[mag_name]<mag_limit]
-        res_Rnorm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                   R=r_scale, wid=width,
-                                                   return_full=True, display=display, verbose=verbose)
+        res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
+                                                  R=r_scale, wid=width,
+                                                  return_full=True, display=display, verbose=verbose)
         
         
         keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', mag_name] \
-                            + [s for s in tab.colnames if 'IMAGE' in s]
-        table_res_Rnorm = tab[keep_columns].copy()
+                            + [name for name in tab.colnames if 'IMAGE' in name]
+        for name in keep_columns:
+            if name not in tab.colnames:
+                keep_columns.remove(name)
+        table_norm = tab[keep_columns].copy()
     
         for j, colname in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
             if colname=='Iflag':
-                col = res_Rnorm[:,j].astype(int)
+                col = res_norm[:,j].astype(int)
             else:
-                col = np.around(res_Rnorm[:,j], 5)
-            table_res_Rnorm[colname] = col
+                col = np.around(res_norm[:,j], 5)
+            table_norm[colname] = col
         
         if save:
             check_save_path(dir_name, make_new=False, verbose=False)
-            save_pickle(res_thumb, res_thumb_name)
-            table_res_Rnorm.write(table_Rnorm_name, overwrite=True, format='ascii')
+            #save_pickle(res_thumb, res_thumb_name)   # save star thumbnails
+            table_norm.write(table_norm_name, overwrite=True, format='ascii')
             
-    return table_res_Rnorm, res_thumb
+    return table_norm, res_thumb
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
@@ -761,7 +764,8 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
 def crop_image(data, bounds, seg_map=None,
                sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
-    from matplotlib import patches  
+    from matplotlib import patches
+    
     Xmin, Ymin, Xmax, Ymax = bounds
     xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
     xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
@@ -769,16 +773,9 @@ def crop_image(data, bounds, seg_map=None,
     patch = np.copy(data[xmin:xmax, ymin:ymax])
     
     if draw:
-        if seg_map is not None:
-            sky = data[(seg_map==0)]
-        else:
-            sky = sigma_clip(data, 3)
-        sky_mean = np.mean(sky)
-        sky_std = mad_std(sky)
-
+        from .plotting import display
         fig, ax = plt.subplots(figsize=(12,8))       
-        plt.imshow(data, norm=AsinhNorm(a=0.1), cmap="gray_r",
-                   vmin=sky_mean-sky_std, vmax=sky_mean+10*sky_std, alpha=0.95)
+        display(data, mask=seg_map)
         
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
@@ -852,7 +849,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 
 def read_measurement_tables(dir_name, bounds0_list,
                             obj_name='', band='G',
-                            pad=100, r_scale=12,
+                            pad=50, r_scale=12,
                             mag_limit=15, use_PS1_DR2=True):
     """ Read measurement tables from the directory """
     
@@ -860,7 +857,7 @@ def read_measurement_tables(dir_name, bounds0_list,
     b_name = band.lower()
     mag_name = b_name+'MeanPSFMag' if use_PS1_DR2 else b_name+'mag'
     
-    tables_res_Rnorm = []
+    tables_norm = []
     tables_faint = []
     
     for bounds0 in np.atleast_2d(bounds0_list):
@@ -874,12 +871,10 @@ def read_measurement_tables(dir_name, bounds0_list,
         # Faint star catalog name
         fname_catalog = os.path.join(dir_name, "%s-catalog_PS_%s_all.txt"%(obj_name, b_name))
 
-        # Check if the file exist
-        if os.path.isfile(fname_catalog):
-            table_catalog = Table.read(fname_catalog, format="ascii")
-            mag_catalog = table_catalog[mag_name]
-        else:
-            sys.exit(f"Table {fname_catalog} does not exist. Exit.")
+        # Check if the file exist before read
+        assert os.path.isfile(fname_catalog), f"Table {fname_catalog} does not exist!"
+        table_catalog = Table.read(fname_catalog, format="ascii")
+        mag_catalog = table_catalog[mag_name]
 
         # stars fainter than magnitude limit (fixed as background), > 22 is ignored
         table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
@@ -890,26 +885,24 @@ def read_measurement_tables(dir_name, bounds0_list,
         
         ## Read measurement for bright stars
         # Catalog name
-        fname_res_Rnorm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
+        fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
                                        %(obj_name, r_scale, b_name, mag_limit,
                                        patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
-        # Check if the file exist
-        if os.path.isfile(fname_res_Rnorm):
-            table_res_Rnorm = Table.read(fname_res_Rnorm, format="ascii")
-        else:
-            sys.exit(f"Table {fname_res_Rnorm} does not exist. Exit.")
+        # Check if the file exist before read
+        assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
+        table_norm = Table.read(fname_norm, format="ascii")
 
         # Crop the catalog
-        table_res_Rnorm = crop_catalog(table_res_Rnorm, bounds=bounds0)
+        table_norm = crop_catalog(table_norm, bounds=bounds0)
 
         # Do not use flagged measurement
-        Iflag = table_res_Rnorm["Iflag"]
-        tables_res_Rnorm += [table_res_Rnorm[Iflag==0]]
+        Iflag = table_norm["Iflag"]
+        tables_norm += [table_norm[Iflag==0]]
         
-    return tables_faint, tables_res_Rnorm
+    return tables_faint, tables_norm
     
 
-def assign_star_props(table_faint, table_res_Rnorm, Image, 
+def assign_star_props(Image, table_norm, table_faint=None,
                       r_scale=12, mag_threshold=[14,11],
                       psf=None, keys='Imed', verbose=True, 
                       draw=True, save=False, save_dir='./'):
@@ -923,26 +916,16 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
     image_size = Image.image_size
     
     pos_ref = (Image.bounds[0], Image.bounds[1])
-    
-    table_faint['FLUX_AUTO_corr'] = 10**((table_faint["MAG_AUTO_corr"]-ZP)/(-2.5))
-    
-    try:
-        ma = table_faint['FLUX_AUTO_corr'].data.mask
-    except AttributeError:
-        ma = np.isnan(table_faint['FLUX_AUTO_corr'])
 
-    # Positions & Flux of faint stars from measured norm
-    star_pos1 = np.vstack([table_faint['X_IMAGE_PS'].data[~ma],
-                           table_faint['Y_IMAGE_PS'].data[~ma]]).T - pos_ref
-    Flux1 = np.array(table_faint['FLUX_AUTO_corr'].data[~ma])
-
-    # Positions & Flux (estimate) of bright stars from catalog
-    star_pos2 = np.vstack([table_res_Rnorm['X_IMAGE_PS'],
-                           table_res_Rnorm['Y_IMAGE_PS']]).T - pos_ref
-    Flux2 = 10**((np.array(table_res_Rnorm["MAG_AUTO_corr"])-ZP)/(-2.5))
+    # Positions & Flux (estimate) of bright stars from measured norm
+    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
+                           table_norm['Y_IMAGE_PS']]).T - pos_ref
+                           
+    mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
+    Flux = 10**((np.array(mag)-ZP)/(-2.5))
 
     # Estimate of brightness I at r_scale (I = Intensity - BKG) and flux
-    z_norm = table_res_Rnorm['Imed'].data - sky_mean
+    z_norm = table_norm['Imed'].data - sky_mean
     z_norm[z_norm<=0] = z_norm[z_norm>0].min()
 
     # Convert/printout thresholds
@@ -956,24 +939,38 @@ def assign_star_props(table_faint, table_res_Rnorm, Image,
                   .format(*np.around(SB_threshold,1),r_scale))
         except:
             pass
+            
+    # Bright stars in model
+    stars_bright = Stars(star_pos, Flux, Flux_threshold=Flux_threshold,
+                         z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
+    stars_bright = stars_bright.remove_outsider(image_size, d=[36, 12])
+    
+    if table_faint is not None:
+        table_faint['FLUX_AUTO_corr'] = 10**((table_faint["MAG_AUTO_corr"]-ZP)/(-2.5))
+        
+        try:
+            ma = table_faint['FLUX_AUTO_corr'].data.mask
+        except AttributeError:
+            ma = np.isnan(table_faint['FLUX_AUTO_corr'])
 
-    # Combine two samples, make sure they do not overlap
-    star_pos = np.vstack([star_pos1, star_pos2])
-    Flux = np.concatenate([Flux1, Flux2])
+        # Positions & Flux of faint stars from catalog
+        star_pos_faint = np.vstack([table_faint['X_IMAGE_PS'].data[~ma],
+                                    table_faint['Y_IMAGE_PS'].data[~ma]]).T - pos_ref
+        Flux_faint = np.array(table_faint['FLUX_AUTO_corr'].data[~ma])
+        
+        # Combine two samples, make sure they do not overlap
+        star_pos = np.vstack([star_pos, star_pos_faint])
+        Flux = np.concatenate([Flux, Flux_faint])
+        
     stars_all = Stars(star_pos, Flux, Flux_threshold=Flux_threshold)
 
-    # Bright stars in model
-    stars_0 = Stars(star_pos2, Flux2, Flux_threshold=Flux_threshold,
-                    z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
-    stars_0 = stars_0.remove_outsider(image_size, d=[36, 12])
-    
     if draw:
         stars_all.plot_flux_dist(label='All', color='plum')
-        stars_0.plot_flux_dist(label='Model', color='orange', ZP=ZP,
-                              save=save, save_dir=save_dir)
+        stars_bright.plot_flux_dist(label='Model', color='orange', ZP=ZP,
+                                    save=save, save_dir=save_dir)
         plt.show()
         
-    return stars_0, stars_all
+    return stars_bright, stars_all
 
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
                 pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,

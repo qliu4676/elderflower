@@ -8,16 +8,15 @@
     draw: True
     save: True
     use_PS1_DR2: False
-    ZP: 27.15
     
     # Run_PSF_Fitting
     n_spline: 2
     use_PS1_DR2: False
     pixel_scale: 2.5
     r_scale: 12
-    pad: 100
+    pad: 50
     mag_limit: 15
-    mag_threshold: [13,11]
+    mag_threshold: [13,10.5]
     mask_type: 'aper'
     SB_threshold: 24.5
     r_core: 24
@@ -36,4 +35,3 @@
     sample_method: 'auto'
     draw: True
     print_progress: True
-    ZP: 27.15

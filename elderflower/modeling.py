@@ -17,6 +17,7 @@ from astropy.utils import lazyproperty
 import galsim
 from galsim import GalSimBoundsError
 
+import warnings
 from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
@@ -1246,7 +1247,7 @@ def add_image_noise(image, noise_std, random_seed=42, verbose=True):
     return Image.array
 
 
-def make_base_image(image_size, stars, psf_base, pad=100, psf_size=64, verbose=True):
+def make_base_image(image_size, stars, psf_base, pad=50, psf_size=64, verbose=True):
     """ Background images composed of dim stars with fixed PSF psf_base"""
     if verbose:
         print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
@@ -1418,7 +1419,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
                               psf_size=psf_size,
                               full_image=full_image)
             else:
-                # Draw in parallel, automatically back to serial computing if too few jobs 
+                # Draw in parallel, automatically back to serial computing if too few jobs
                 p_get_stamp_bounds = partial(get_stamp_bounds,
                                              star_pos=stars.star_pos_medbright,
                                              Flux=stars.Flux_medbright,
@@ -1426,7 +1427,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
                                              psf_size=psf_size,
                                              full_image=full_image)
 
-                results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds, 
+                results = parallel_compute(np.arange(stars.n_medbright), p_get_stamp_bounds,
                                            lengthy_computation=False, verbose=False)
 
                 for (stamp, bounds) in results:
@@ -1632,11 +1633,13 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     elif norm=='flux':
         draw_func = generate_image_by_flux
     
-    image_star = draw_func(psf_fit, stars, xx, yy,
-                           psf_range=[900,image_size],
-                           psf_scale=psf_fit.pixel_scale,
-                           brightest_only=brightest_only,
-                           draw_real=draw_real)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        image_star = draw_func(psf_fit, stars, xx, yy,
+                               psf_range=[900,image_size],
+                               psf_scale=psf_fit.pixel_scale,
+                               brightest_only=brightest_only,
+                               draw_real=draw_real)
                           
     image_fit = add_image_noise(image_star, psf_fit.bkg_std, verbose=False)
     

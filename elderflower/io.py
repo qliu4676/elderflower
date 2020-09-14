@@ -89,9 +89,9 @@ def DateToday():
     """ Today's date in YYYY-MM-DD """
     return datetime.today().strftime('%Y-%m-%d')
 
-def AsciiUpper():
+def AsciiUpper(N):
     """ ascii uppercase letters """
-    return string.ascii_uppercase
+    return string.ascii_uppercase[:N]
     
 def save_pickle(data, filename, printout=True):
     """ Save data as pickle file. """

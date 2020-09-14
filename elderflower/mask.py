@@ -304,13 +304,16 @@ def make_mask_detection(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
     return mask_deep, segmap
 
 
-def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
+def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
                        k=3, pixel_scale=DF_pixel_scale):
     
-    """ Make mask map with elliptical apertures.
+    """
+    
+    Make mask map with elliptical apertures.
     
     Parameters
     ----------
+    fname : name of saved mask
     Pos : turple or array or turples
         position(s) (x,y) of apertures
     A_ang : float or 1d array
@@ -355,6 +358,8 @@ def make_mask_aperture(Pos, A_ang, B_ang, PA_ang, shape,
         ma = ma_aper.to_image(shape).astype(bool)
         
         mask[ma] = 1.0
+        
+    fits.writeto(fname, mask)
     
     return mask
 

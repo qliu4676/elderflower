@@ -294,8 +294,9 @@ def Match_Mask_Measure(hdu_path,
     [print("%r"%b) for b in bounds_list.tolist()]
     
     # Display field_bounds and sub-regions to be matched
-    patch, _ = crop_image(data, field_bounds, seg_map,
+    patch, _ = crop_image(data, field_bounds,
                           sub_bounds=bounds_list,
+                          seg_map=seg_map,
                           origin=0, draw=draw)
     
     # Crop parent SE catalog
@@ -436,18 +437,18 @@ def Match_Mask_Measure(hdu_path,
                 for catalog stars %s < %.1f in %r:"""\
               %(r_scale, mag_name, mag_limit, bounds))
         
-        tab_res_Rnorm, res_thumb = \
-                        measure_Rnorm_all(tab_target_patch, bounds,
-                                          wcs_data, data, seg_map,
-                                          mag_limit=mag_limit,
-                                          r_scale=r_scale, width=1,
-                                          obj_name=obj_name,
-                                          mag_name=mag_name_cat,
-                                          save=save, dir_name=dir_name)
+        tab_norm, res_thumb = \
+                    measure_Rnorm_all(tab_target_patch, bounds,
+                                      wcs_data, data, seg_map,
+                                      mag_limit=mag_limit,
+                                      r_scale=r_scale, width=1,
+                                      obj_name=obj_name,
+                                      mag_name=mag_name_cat,
+                                      save=save, dir_name=dir_name)
         
         if draw:
             plot_bright_star_profile(tab_target_patch,
-                                     tab_res_Rnorm, res_thumb,
+                                     tab_norm, res_thumb,
                                      bkg_sky=bkg, std_sky=std, ZP=ZP,
                                      pixel_scale=pixel_scale)
         
@@ -461,7 +462,7 @@ def Run_PSF_Fitting(hdu_path,
                     ZP=None,
                     bkg=None,
                     G_eff=None,
-                    pad=100,
+                    pad=50,
                     r_scale=12,
                     mag_limit=15,
                     mag_threshold=[14,11],
@@ -596,11 +597,15 @@ def Run_PSF_Fitting(hdu_path,
     plot_dir = os.path.join(work_dir, 'plot')
     check_save_path(plot_dir, make_new=False, verbose=False)
     
+    if use_PS1_DR2:
+        dir_measure = os.path.join(work_dir, 'Measure-PS2/')
+    else:
+        dir_measure = os.path.join(work_dir, 'Measure-PS1/')
+    
     ############################################
     # Read Image and Table
     ############################################
     from .image import ImageList, DF_Gain
-    from .utils import read_measurement_tables
     
     # Read global background model ZP from header
     header = fits.getheader(hdu_path)
@@ -619,19 +624,20 @@ def Run_PSF_Fitting(hdu_path,
                           pad=pad, ZP=ZP, bkg=bkg, G_eff=G_eff)
     
     # Read faint stars info and brightness measurement
-    if use_PS1_DR2:
-        dir_measure = os.path.join(work_dir, 'Measure-PS2/')
-    else:
-        dir_measure = os.path.join(work_dir, 'Measure-PS1/')
-        
-    tables_faint, tables_res_Rnorm = \
-                read_measurement_tables(dir_measure,
-                                        bounds_list,
-                                        obj_name=obj_name,
-                                        band=band, pad=pad,
-                                        r_scale=r_scale,
-                                        mag_limit=mag_limit,
-                                        use_PS1_DR2=use_PS1_DR2)
+    DF_Images.read_measurement_tables(dir_measure,
+                                      r_scale=r_scale,
+                                      mag_limit=mag_limit,
+                                      use_PS1_DR2=use_PS1_DR2)
+                                     
+    ############################################
+    # Setup Stars
+    ############################################
+    from .utils import assign_star_props
+    stars_b, stars_all = DF_Images.assign_star_props(r_scale=r_scale,
+                                                     mag_threshold=mag_threshold,
+                                                     verbose=True, draw=False,
+                                                     save=save, save_dir=plot_dir)
+    # bright stars and all stars
     
     ############################################
     # Setup PSF
@@ -671,21 +677,6 @@ def Run_PSF_Fitting(hdu_path,
     psf_tri = psf.copy()
     
     ############################################
-    # Setup Stars
-    ############################################    
-    from .utils import assign_star_props
-    
-    stars_0, stars_all = \
-         DF_Images.assign_star_props(tables_faint,
-                                     tables_res_Rnorm,
-                                     r_scale=r_scale,
-                                     mag_threshold=mag_threshold,
-                                     verbose=True, draw=False,
-                                     save=save, save_dir=plot_dir)
-    
-    #breakpoint()
-    
-    ############################################
     # Setup Basement Image
     ############################################
     # Make fixed background of dim stars
@@ -704,7 +695,7 @@ def Run_PSF_Fitting(hdu_path,
         count = None
         
     # Mask faint and centers of bright stars
-    DF_Images.make_mask(stars_0, dir_measure,
+    DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
                         sn_thre=2.5, n_dilation=5, draw=draw,
@@ -749,7 +740,7 @@ def Run_PSF_Fitting(hdu_path,
     
     samplers = []
     
-    for i, reg in enumerate(AsciiUpper()[:DF_Images.N_Image]):
+    for i, reg in enumerate(AsciiUpper(len(stars))):
 
         container = DF_Images.containers[i]
         ndim = container.ndim
@@ -757,13 +748,15 @@ def Run_PSF_Fitting(hdu_path,
         s = Sampler(container, n_cpu=n_cpu, sample=sample_method)
                                   
         if nlive_init is None: nlive_init = ndim*10
+        # Run dynesty
         s.run_fitting(nlive_init=nlive_init,
                       nlive_batch=5*ndim+5, maxbatch=2,
                       print_progress=print_progress)
     
         if save:
+            # Save outputs
             fit_info = {'obj_name':obj_name,
-                        'band':band,
+                        'band':band.upper(),
                         'n_spline':n_spline,
                         'bounds':bounds_list[i],
                         'r_scale':r_scale,
@@ -778,7 +771,7 @@ def Run_PSF_Fitting(hdu_path,
             fname=f'{obj_name}{reg}-{band}-fit{suffix}'
     
             s.save_results(fname+'.res', fit_info, save_dir=work_dir)
-            stars[i].save(f'stars{reg}', save_dir=work_dir)
+            stars[i].save(f'stars{reg}-{band.upper()}', save_dir=work_dir)
         
         ############################################
         # Plot Results
@@ -809,9 +802,11 @@ def Run_PSF_Fitting(hdu_path,
                                  save=save, save_dir=plot_dir, suffix=suffix)
 
             if leg2d:
+                # Draw background
                 s.draw_background(save=save, save_dir=plot_dir,
                                   suffix=suffix)
-
+        
+        # Append the sampler
         samplers += [s]
         
     
@@ -899,8 +894,9 @@ class berry:
     def detection(self, **kwargs):
         """ Run the source detection. """
         
-        Run_Detection(self.hdu_path, self.obj_name, self.band,
-                      work_dir=self.work_dir, **kwargs)
+        self.ZP = Run_Detection(self.hdu_path,
+                                self.obj_name, self.band,
+                                work_dir=self.work_dir, **kwargs)
         
     def run(self, **kwargs):
         """ Run the task (Match_Mask_Measure + Run_PSF_Fitting). """
