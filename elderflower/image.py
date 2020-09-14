@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 from astropy import wcs
 from astropy.io import fits
+import astropy.units as u
 from astropy.utils import lazyproperty
 
 from .plotting import display, AsinhNorm
@@ -136,10 +137,92 @@ class Image(ImageButler):
     def __repr__(self):
         return ''.join([f"{self.__class__.__name__} cutout", str(self.bounds0)])
         
-    def display(self):
+    def display(self, **kwargs):
         """ Display the image """
-        display(self.image)
+        display(self.image, **kwargs)
         
+    def read_measurement_table(self, dir_measure, **kwargs):
+        """ Read faint stars info and brightness measurement """
+        from .utils import read_measurement_table
+        self.table_faint, self.table_norm = \
+                    read_measurement_table(dir_measure,
+                                           self.bounds0,
+                                           obj_name=self.obj_name,
+                                           band=self.band,
+                                           pad=self.pad, **kwargs)
+                                           
+    def assign_star_props(self, **kwargs):
+        """ Assign position and flux for faint and bright stars from tables. """
+    
+        from .utils import assign_star_props
+        
+        if hasattr(self, 'table_faint') & hasattr(self, 'table_norm'):
+            pos_ref = self.bounds[0], self.bounds[1]
+            self.stars_bright, self.stars_all = \
+            assign_star_props(self.ZP, self.bkg, self.image_size, pos_ref,
+                              self.table_norm, self.table_faint, **kwargs)
+        else:
+            raise AttributeError(f"{self.__class__.__name__} has no stars info. \
+                                    Read measurement tables first!")
+                                    
+                                    
+    def generate_image_psf(self, psf, SE_catalog, seg_map, draw=False, dir_name='./tmp'):
+        """ Generate image of stars from a PSF Model"""
+        from elderflower.utils import (crop_catalog, identify_extended_source,
+                                       calculate_color_term, cross_match,
+                                       add_supplementary_SE_star, measure_Rnorm_all)
+        from elderflower.modeling import generate_image_fit
+        from .utils import check_save_path
+        import shutil
+        
+        check_save_path(dir_name, make_new=False, verbose=False)
+        
+        band = self.band
+        mag_name = '%smag'%band.lower()
+        obj_name = self.obj_name
+        bounds = self.bounds
+        
+        SE_cat = crop_catalog(SE_catalog, bounds)
+        SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
+        tab_target, tab_target_full, catalog_star = cross_match(self.wcs,
+                                                                SE_cat_target,
+                                                                bounds,
+                                                                sep=3*u.arcsec,
+                                                                mag_limit=15,
+                                                                mag_name=mag_name,
+                                                                verbose=False)
+        
+        CT = calculate_color_term(tab_target_full, mag_range=[13,18],
+                                  mag_name=mag_name+'_PS', draw=draw)
+        
+        catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT #corrected mag
+        tab_target["MAG_AUTO_corr"] = tab_target[mag_name+'_PS'] + CT
+        
+        catalog_star_name = os.path.join(dir_name, f'{obj_name}-catalog_PS_{band}_all.txt')
+        catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
+        
+        tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
+                                               mag_saturate=13, draw=draw)
+        
+        tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
+                                                self.wcs, self.full_image, seg_map,
+                                                mag_limit=15, r_scale=12, width=1,
+                                                obj_name=obj_name, mag_name=mag_name+'_PS',
+                                                save=True, verbose=False, dir_name=dir_name)
+        
+        self.read_measurement_table(dir_name, r_scale=12, mag_limit=15, use_PS1_DR2=False)
+        
+        self.assign_star_props(r_scale=12, mag_threshold=[13.5,10.5],
+                                verbose=False, draw=False, save=False, save_dir='test')
+        
+        stars = self.stars_bright
+        
+        image_stars, _, _ = generate_image_fit(psf, stars, self.image_size)
+        print("Image of stars is generated based on the PSF Model!")
+        shutil.rmtree(dir_name)
+        
+        return image_stars
+
         
 class ImageList(ImageButler):
     """
@@ -178,14 +261,14 @@ class ImageList(ImageButler):
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, pad, ZP, bkg, G_eff, verbose)
                          
-        
+        self.bounds0_list = np.atleast_2d(bounds0_list)
         
         self.Images = [Image(hdu_path, bounds0,
                              obj_name, band, pixel_scale,
                              pad, ZP, bkg, G_eff, verbose)
-                       for bounds0 in np.atleast_2d(bounds0_list)]
+                       for bounds0 in self.bounds0_list]
         self.N_Image = len(self.Images)
-        self.bounds0_list = bounds0_list
+        
         
     def __iter__(self):
         for Img in self.Images:
@@ -196,7 +279,7 @@ class ImageList(ImageButler):
     
     @lazyproperty
     def images(self):
-        return np.array([Image.image for Image in self.Images])
+        return np.array([Img.image for Img in self.Images])
 
     def display(self, fig=None, ax=None):
         """ Display the image list """
@@ -216,38 +299,30 @@ class ImageList(ImageButler):
     
     def read_measurement_tables(self, dir_measure, **kwargs):
         """ Read faint stars info and brightness measurement """
-        from .utils import read_measurement_tables
         
-        self.tables_faint, self.tables_norm = \
-            read_measurement_tables(dir_measure,
-                                    self.bounds0_list,
-                                    obj_name=self.obj_name,
-                                    band=self.band,
-                                    pad=self.pad,
-                                    **kwargs)
+        self.tables_norm = []
+        self.tables_faint = []
+        
+        for Img in self.Images:
+            Img.read_measurement_table(dir_measure, **kwargs)
+            self.tables_faint += [Img.table_faint]
+            self.tables_norm += [Img.table_norm]
                                     
     
     def assign_star_props(self, *args, **kwargs):
-        
         """ Assign position and flux for faint and bright stars from tables. """
+        
+        stars_bright, stars_all = [], []
     
-        from .utils import assign_star_props
-        
-        stars0, stars_all = [], []
-        
-        if hasattr(self, 'tables_faint') & hasattr(self, 'tables_norm'):
-            for Image, tab_res, tab_f in zip(self.Images,
-                                             self.tables_norm,
-                                             self.tables_faint):
-                s0, sa = assign_star_props(Image, tab_res, tab_f,
-                                           *args, **kwargs)
-                stars0 += [s0]
-                stars_all += [sa]
-        else:
-            raise AttributeError(f"{self.__class__.__name__} has no stars info. \
-                                 Read measurement tables first!")
+        for Img in self.Images:
+            Img.assign_star_props(*args, **kwargs)
+            stars_bright += [Img.stars_bright]
+            stars_all += [Img.stars_all]
+            
+        self.stars_bright = stars_bright
+        self.stars_all = stars_all
 
-        return stars0, stars_all
+        return stars_bright, stars_all
     
     
     def make_base_image(self, psf_star, stars_all, psf_size=64, vmax=30, draw=True):

@@ -131,7 +131,7 @@ could easily fail if a field is too large (&gt; 1 deg^2)</p></li>
 
 <dl class="function">
 <dt id="elderflower.task.Run_PSF_Fitting">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=100, r_scale=12, mag_limit=15, mag_threshold=[14, 11], mask_type='aper', wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, theta_cutoff=1200, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, r_scale=12, mag_limit=15, mag_threshold=[14, 11], mask_type='aper', wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, theta_cutoff=1200, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the wide-angle PSF fitting.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -244,7 +244,7 @@ If None, use the default configuration file.</p></li>
 
 <dl class="method">
 <dt id="elderflower.task.berry.run">
-<code class="sig-name descname">run</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.run" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.run" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the task (Match_Mask_Measure + Run_PSF_Fitting).</p>
 </dd></dl>
 

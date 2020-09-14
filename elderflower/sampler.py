@@ -1,6 +1,6 @@
 import os
 import time
-
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocess as mp
@@ -189,19 +189,19 @@ class Sampler:
         self.bkg_std_fit = psf_fit.bkg_std
         
         
-        image_star, image_fit, bkg_image \
+        image_stars, image_fit, bkg_image \
                    = generate_image_fit(psf_fit, stars, image_size,
                                         norm=norm, leg2d=ct.leg2d,
                                         brightest_only=ct.brightest_only,
                                         draw_real=ct.draw_real)
 
-        noise_image = image_fit - image_star
+        noise_image = image_fit - image_stars
 
         image_fit += image_base + bkg_image
         
         # Images constructed from fitting
         self.image_fit = image_fit
-        self.image_star = image_star
+        self.image_stars = image_stars
         self.bkg_image = bkg_image
         self.noise_image = noise_image
         
@@ -233,7 +233,7 @@ class Sampler:
         mask = ct.mask
         
         if hasattr(self, 'image_fit'):
-            draw_comparison_2D(self.image_fit, image, mask, self.image_star,
+            draw_comparison_2D(self.image_fit, image, mask, self.image_stars,
                                self.noise_image, **kwargs)
         
     def draw_background(self, save=False, save_dir='.', suffix=''):

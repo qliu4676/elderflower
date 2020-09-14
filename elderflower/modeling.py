@@ -1635,13 +1635,13 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        image_star = draw_func(psf_fit, stars, xx, yy,
+        image_stars = draw_func(psf_fit, stars, xx, yy,
                                psf_range=[900,image_size],
                                psf_scale=psf_fit.pixel_scale,
                                brightest_only=brightest_only,
                                draw_real=draw_real)
                           
-    image_fit = add_image_noise(image_star, psf_fit.bkg_std, verbose=False)
+    image_fit = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
     
     bkg_fit = psf_fit.bkg * np.ones((image_size, image_size))
     
@@ -1657,7 +1657,7 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
     
     print("Bakground : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     
-    return image_star, image_fit, bkg_fit
+    return image_stars, image_fit, bkg_fit
 
 
 ############################################

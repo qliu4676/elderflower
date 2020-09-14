@@ -104,8 +104,7 @@ def make_rand_color(n_color, seed=1234,
 
 def display(image, mask=None,
             k_std=10, cmap="gray_r",
-            norm=AsinhNorm(a=0.1),
-            fig=None, ax=None):
+            a=0.1, fig=None, ax=None):
     """ Visualize an image """
     
     if mask is not None:
@@ -115,7 +114,7 @@ def display(image, mask=None,
     sky_mean, sky_std = np.mean(sky), mad_std(sky)
     
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
-    ax.imshow(image, cmap="gray_r",
+    ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
                vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
@@ -519,7 +518,7 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
-def draw_comparison_2D(image_fit, data, mask, image_star,
+def draw_comparison_2D(image_fit, data, mask, image_stars,
                        noise_fit=0, r_core=None,
                        vmin=None, vmax=None,
                        cmap='gnuplot2', norm=AsinhNorm(0.01),
@@ -544,7 +543,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
     im = ax2.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_star, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)    
+    im = ax3.imshow(image_stars, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     frac_diff = (image_fit-noise_fit-data)/data
@@ -557,7 +556,7 @@ def draw_comparison_2D(image_fit, data, mask, image_star,
 #     im = ax4.imshow(chi, vmin=-10, vmax=10, cmap="seismic")
 #     ax4.set_title("Chi. [(I$_f$ - I$_0$)/$\sigma_0$]", fontsize=15); colorbar(im)
     
-    residual = (data-image_star)
+    residual = (data-image_stars)
     im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     

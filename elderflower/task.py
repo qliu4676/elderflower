@@ -372,15 +372,14 @@ def Match_Mask_Measure(hdu_path,
     ##################################################
     if save:
         check_save_path(dir_name, make_new=False, verbose=False)
+        
         tab_target_name = os.path.join(dir_name,
        '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_limit))
-        
         tab_target.write(tab_target_name,
                          overwrite=True, format='ascii')
 
         catalog_star_name = os.path.join(dir_name,
                  f'{obj_name}-catalog_PS_{b_name}_all.txt')
-        
         catalog_star.write(catalog_star_name, 
                            overwrite=True, format='ascii')
         
@@ -760,7 +759,7 @@ def Run_PSF_Fitting(hdu_path,
                         'n_spline':n_spline,
                         'bounds':bounds_list[i],
                         'r_scale':r_scale,
-                        'n_c': n_c,
+                        'n_cutoff': n_c,
                         'theta_cutoff': theta_cutoff,
                         'date':DateToday()}
                         

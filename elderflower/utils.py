@@ -847,79 +847,70 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     return cat_match
 
-def read_measurement_tables(dir_name, bounds0_list,
-                            obj_name='', band='G',
-                            pad=50, r_scale=12,
-                            mag_limit=15, use_PS1_DR2=True):
+def read_measurement_table(dir_name, bounds0,
+                           obj_name='', band='G',
+                           pad=50, r_scale=12,
+                           mag_limit=15, use_PS1_DR2=True):
     """ Read measurement tables from the directory """
     
     # Magnitude name
     b_name = band.lower()
     mag_name = b_name+'MeanPSFMag' if use_PS1_DR2 else b_name+'mag'
     
-    tables_norm = []
-    tables_faint = []
+    # Clipped bounds
+    patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
+
+    bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
+              patch_Xmax0-pad, patch_Ymax0-pad)
+
+    ## Read measurement for faint stars from catalog
+    # Faint star catalog name
+    fname_catalog = os.path.join(dir_name, "%s-catalog_PS_%s_all.txt"%(obj_name, b_name))
+
+    # Check if the file exist before read
+    assert os.path.isfile(fname_catalog), f"Table {fname_catalog} does not exist!"
+    print(f"Read {fname_catalog}.")
+    table_catalog = Table.read(fname_catalog, format="ascii")
+    mag_catalog = table_catalog[mag_name]
+
+    # stars fainter than magnitude limit (fixed as background), > 22 is ignored
+    table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
+    table_faint = crop_catalog(table_faint,
+                               keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
+                               bounds=bounds)
     
-    for bounds0 in np.atleast_2d(bounds0_list):
-        # Clipped bounds
-        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
+    ## Read measurement for bright stars
+    # Catalog name
+    fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
+                                   %(obj_name, r_scale, b_name, mag_limit,
+                                   patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
+    # Check if the file exist before read
+    assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
+    print(f"Read {fname_norm}.")
+    table_norm = Table.read(fname_norm, format="ascii")
 
-        bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
-                        patch_Xmax0-pad, patch_Ymax0-pad)
+    # Crop the catalog
+    table_norm = crop_catalog(table_norm, bounds=bounds0)
 
-        ## Read measurement for faint stars from catalog
-        # Faint star catalog name
-        fname_catalog = os.path.join(dir_name, "%s-catalog_PS_%s_all.txt"%(obj_name, b_name))
-
-        # Check if the file exist before read
-        assert os.path.isfile(fname_catalog), f"Table {fname_catalog} does not exist!"
-        table_catalog = Table.read(fname_catalog, format="ascii")
-        mag_catalog = table_catalog[mag_name]
-
-        # stars fainter than magnitude limit (fixed as background), > 22 is ignored
-        table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
-        table_faint = crop_catalog(table_faint,
-                                   keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
-                                   bounds=bounds)
-        tables_faint += [table_faint]  
-        
-        ## Read measurement for bright stars
-        # Catalog name
-        fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
-                                       %(obj_name, r_scale, b_name, mag_limit,
-                                       patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
-        # Check if the file exist before read
-        assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
-        table_norm = Table.read(fname_norm, format="ascii")
-
-        # Crop the catalog
-        table_norm = crop_catalog(table_norm, bounds=bounds0)
-
-        # Do not use flagged measurement
-        Iflag = table_norm["Iflag"]
-        tables_norm += [table_norm[Iflag==0]]
-        
-    return tables_faint, tables_norm
+    # Do not use flagged measurement
+    Iflag = table_norm["Iflag"]
+    table_norm = table_norm[Iflag==0]
+    
+    return table_faint, table_norm
     
 
-def assign_star_props(Image, table_norm, table_faint=None,
+def assign_star_props(ZP, sky_mean, image_size, pos_ref,
+                      table_norm, table_faint=None,
                       r_scale=12, mag_threshold=[14,11],
                       psf=None, keys='Imed', verbose=True, 
                       draw=True, save=False, save_dir='./'):
     """ Assign position and flux for faint and bright stars from tables. """
     
     from .modeling import Stars
-    
-    # Image attributes
-    ZP = Image.ZP
-    sky_mean = Image.bkg
-    image_size = Image.image_size
-    
-    pos_ref = (Image.bounds[0], Image.bounds[1])
 
     # Positions & Flux (estimate) of bright stars from measured norm
     star_pos = np.vstack([table_norm['X_IMAGE_PS'],
-                           table_norm['Y_IMAGE_PS']]).T - pos_ref
+                         table_norm['Y_IMAGE_PS']]).T - pos_ref
                            
     mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
     Flux = 10**((np.array(mag)-ZP)/(-2.5))
@@ -945,8 +936,8 @@ def assign_star_props(Image, table_norm, table_faint=None,
                          z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
     stars_bright = stars_bright.remove_outsider(image_size, d=[36, 12])
     
-    if table_faint is not None:
-        table_faint['FLUX_AUTO_corr'] = 10**((table_faint["MAG_AUTO_corr"]-ZP)/(-2.5))
+    if (table_faint is not None) & ('MAG_AUTO_corr' in table_faint.colnames):
+        table_faint['FLUX_AUTO_corr'] = 10**((table_faint['MAG_AUTO_corr']-ZP)/(-2.5))
         
         try:
             ma = table_faint['FLUX_AUTO_corr'].data.mask
