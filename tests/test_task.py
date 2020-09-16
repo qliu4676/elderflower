@@ -4,12 +4,13 @@ import shutil
 import subprocess
 import multiprocess as mp
 
-from elderflower.io import get_SExtractor_path, default_SE_config, default_SE_conv, default_SE_nnw
-from elderflower.task import Run_Detection, Match_Mask_Measure, Run_PSF_Fitting, berry
+from elderflower.io import (get_SExtractor_path, test_dir,
+                            default_SE_config, default_SE_conv, default_SE_nnw)
+from elderflower.task import Run_Detection, Match_Mask_Measure, Run_PSF_Fitting
 
 obj_name = 'cutout'
 filt = 'g'
-fn  = 'cutout.fits'
+fn  = os.path.join(test_dir, 'cutout.fits')
 work_dir = './'
 
 bounds = ((50, 50, 450, 450))
@@ -60,8 +61,8 @@ def test_run_match_mask_measure(ZP=27.116):
     assert os.path.isfile(f'Measure-PS1/{obj_name}-segm_gmag_catalog_X[50-450]Y[50-450].fits'), \
           'Segmentation file is not saved properly.'
     
-    assert os.path.isfile(f'Measure-PS1/{obj_name}-thumbnail_gmag15_X[50-450]Y[50-450].pkl'), \
-          'Star thumbnails are not saved properly.'
+#    assert os.path.isfile(f'Measure-PS1/{obj_name}-thumbnail_gmag15_X[50-450]Y[50-450].pkl'), \
+#          'Star thumbnails are not saved properly.'
     
     return None
 
@@ -102,21 +103,20 @@ def test_run_psf_fitting(ZP=27.116):
     assert os.path.isfile(f'{obj_name}A-g-fit2p.res'), \
           'Fitting result is not saved properly.'
     
-    assert os.path.isfile('starsA.pkl'), \
+    assert os.path.isfile('starsA-G.pkl'), \
           'Stars pkl is not saved properly.'
     
     # clean out
     shutil.rmtree('plot/')
     shutil.rmtree('Measure-PS1/')
-    for f in [f'{obj_name}A-g-fit2p.res', 'starsA.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
+    for f in [f'{obj_name}A-g-fit2p.res', 'starsA-G.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
         os.remove(f)
 
     return None
 
 
 def test_run_berry(ZP=27.116):
-    
-    from elderflower.io import get_SExtractor_path, default_SE_config
+    from elderflower.task import berry
     
     SE_executable = get_SExtractor_path()
     
@@ -153,13 +153,13 @@ def test_run_berry(ZP=27.116):
     assert os.path.isfile(f'{obj_name}A-g-fit2p.res'), \
           'Fitting result is not saved properly.'
     
-    assert os.path.isfile('starsA.pkl'), \
+    assert os.path.isfile('starsA-G.pkl'), \
           'Stars pkl is not saved properly.'
     
     # clean out
     shutil.rmtree('plot/')
     shutil.rmtree('Measure-PS1/')
-    for f in [f'{obj_name}A-g-fit2p.res', 'starsA.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
+    for f in [f'{obj_name}A-g-fit2p.res', 'starsA-G.pkl', f'{obj_name}.cat', f'{obj_name}_seg.fits']:
         os.remove(f)
     
     return None
