@@ -16,7 +16,7 @@ from pickle import PicklingError
 
 
 package_dir = os.path.dirname(__file__)
-
+test_dir = os.path.normpath(os.path.join(package_dir, '../tests'))
 config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
 
 # Default file path
