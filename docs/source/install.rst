@@ -28,11 +28,15 @@ Dependencies
 
 * scikit_image>=0.14.2
 
+* pandas>=1.0.1
+
 * pyyaml>=5.3
 
-* psutil>=5.6.7
-
 * joblib>=0.14
+
+* psutil
+
+* tqdm
 
 The above dependencies (except ``galsim``) can be installed by ``pip`` with ``requirement.txt`` in the Github repo of ``elderflower``::
 
@@ -44,7 +48,7 @@ To install ``galsim``, try ``pip install galsim``. If it reports errors, it is l
 
 Or you can install it from source.
 
-To fully run the process, it also needs ``source-extractor`` to be installed.
+To fully run the process, it also needs ``SExtractor`` to be installed. Note using old version of ``SExtractor`` may report errors.
 
 Temporarily, the newly developed Dragonfly data reduction pipeline  (author: Johnny Greco, Allison Merrit, et al.) ``dfreduce`` is required for running the first-step detection on the image. You can intsall it from the dfreduce Github `repository <https://github.com/johnnygreco/DFReduce>`__.
 
