@@ -108,14 +108,14 @@ def display(image, mask=None,
     """ Visualize an image """
     
     if mask is not None:
-        sky = data[(mask==0)]
+        sky = image[(mask==0)]
     else:
         sky = sigma_clip(image, 3)
     sky_mean, sky_std = np.mean(sky), mad_std(sky)
     
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
     ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
-               vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
+              vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=None, r_out=None, vmin=None, vmax=None,

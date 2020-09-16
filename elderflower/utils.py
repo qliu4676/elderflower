@@ -775,7 +775,7 @@ def crop_image(data, bounds, seg_map=None,
     if draw:
         from .plotting import display
         fig, ax = plt.subplots(figsize=(12,8))       
-        display(data, mask=seg_map)
+        display(data, mask=seg_map, fig=fig, ax=ax)
         
         width = Xmax-Xmin, Ymax-Ymin
         rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],

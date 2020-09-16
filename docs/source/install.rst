@@ -34,16 +34,17 @@ Dependencies
 
 * joblib>=0.14
 
-The above dependencies (except ``galsim``) can be installed by ``pip`` or by ``requirement.txt`` in the Github repo of ``elderflower``::
+The above dependencies (except ``galsim``) can be installed by ``pip`` with ``requirement.txt`` in the Github repo of ``elderflower``::
 
-	pip install -r requirement.txt 
+	pip install -r requirements.txt 
 
-To install ``galsim``, try ``pip install galsim``. If it reports errors, it is likely because one of the dependencies (fftw) cannot be installed by ``pip``. If you have ``conda`` installed, it is convenient to install ``galsim`` by::
+To install ``galsim``, try ``pip install galsim``. If it reports errors, it is likely because one of its dependencies (fftw) cannot be installed by ``pip``. If you have ``conda`` installed, it is convenient to install ``galsim`` by::
+
 	conda install -c conda-forge galsim
 
 Or you can install it from source.
 
-To fully run from scratch, it also needs ``source-extractor`` to be installed.
+To fully run the process, it also needs ``source-extractor`` to be installed.
 
 Temporarily, the newly developed Dragonfly data reduction pipeline  (author: Johnny Greco, Allison Merrit, et al.) ``dfreduce`` is required for running the first-step detection on the image. You can intsall it from the dfreduce Github `repository <https://github.com/johnnygreco/DFReduce>`__.
 
