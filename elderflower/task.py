@@ -770,7 +770,7 @@ def Run_PSF_Fitting(hdu_path,
             fname=f'{obj_name}{reg}-{band}-fit{suffix}'
     
             s.save_results(fname+'.res', fit_info, save_dir=work_dir)
-            stars[i].save(f'stars{reg}-{band.upper()}', save_dir=work_dir)
+            stars[i].save(f'{obj_name}-stars{reg}-{band.upper()}', save_dir=work_dir)
         
         ############################################
         # Plot Results
