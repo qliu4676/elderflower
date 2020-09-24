@@ -95,8 +95,12 @@ def Run_Detection(hdu_path, obj_name, band,
     
     header = fits.getheader(hdu_path)
     
-    # Find zero-point in the fits header
-    if ZP_keyname not in header.keys():
+    # Find zero-point in the fits header if not specified in kwargs
+    if ZP is not None:
+
+        print("Read zero-point from kwargs : ZP = {:.3f}".format(ZP))
+
+    elif ZP_keyname not in header.keys():
     
         # If not in the header, check kwargs
         if type(ZP) is not float:
