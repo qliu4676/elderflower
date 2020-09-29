@@ -179,6 +179,7 @@ class Sampler:
         image_base = ct.image_base
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
+                                            psf_range=image_size,
                                             n_spline=ct.n_spline,
                                             leg2d=ct.leg2d,
                                             sigma=ct.std_est,

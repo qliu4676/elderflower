@@ -1563,7 +1563,7 @@ def build_independent_priors(priors):
     
 def make_psf_from_fit(fit_res, psf=None, n_spline=2,
                       pixel_scale=DF_pixel_scale,
-                      n_cutoff=4, theta_cutoff=1200,
+                      psf_range=None,
                       leg2d=False, sigma=None,
                       fit_sigma=True, fit_frac=False):
                       
@@ -1581,9 +1581,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
         Number of power-law component for the aureole models.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
-    theta_cutoff : float, optional, default 1200
-        Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n_cutoff. Default is 20' for Dragonfly.
-    
+        
     Returns
     -------
     psf_fit : PSF_Model class
@@ -1615,22 +1613,21 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
         N_n = n_spline
         N_theta = n_spline - 1
         
-        try:
+        if psf.cutoff:
             n_c = psf.n_c
             theta_c = psf.theta_c
-        except AttributeError:
-            n_c = n_cutoff
-            theta_c = theta_cutoff
     
         if psf.aureole_model == "power":
             n_fit = params[0]
             param_update = {'n':n_fit}
 
         elif psf.aureole_model == "multi-power":
-            n_s_fit = np.concatenate([params[:N_n], [n_c]])
-            theta_s_fit = np.concatenate([[psf.theta_0],
-                          np.atleast_1d(10**params[N_n:N_n+N_theta]),[theta_c]])
-
+            n_s_fit = params[:N_n]
+            theta_s_fit = np.append(psf.theta_0, 10**params[N_n:N_n+N_theta])
+            if psf.cutoff:
+                n_s_fit = np.append(n_s_fit, n_c)
+                theta_s_fit = np.append(theta_s_fit, theta_c)
+                
             param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
 
     if fit_frac:
@@ -1653,7 +1650,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
-    _, _ = psf_fit.generate_aureole(psf_range=theta_cutoff)
+    _, _ = psf_fit.generate_aureole(psf_range=psf_range)
     
     return psf_fit, params
 

@@ -472,6 +472,8 @@ def Run_PSF_Fitting(hdu_path,
                     n_spline=3,
                     r_core=24,
                     r_out=None,
+                    cutoff=True,
+                    n_cutoff=4,
                     theta_cutoff=1200,
                     fit_sigma=True,
                     fit_frac=False,
@@ -542,8 +544,13 @@ def Run_PSF_Fitting(hdu_path,
     r_out : int or [int, int] or None, optional, default None
         Radius (in pix) for the outer mask of [very, medium]
         bright stars. If None, turn off outer mask.
+    cutoff : bool, optional, default True
+        If True, the aureole will be cutoff at theta_cutoff.
+    n_cutoff : float, optional, default 4
+        Cutoff slope for the aureole model.
+        Default is 4 for Dragonfly.
     theta_cutoff : float, optional, default 1200
-        Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n=4.
+        Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
     fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
@@ -613,6 +620,7 @@ def Run_PSF_Fitting(hdu_path,
     if G_eff is None:
         N_frames = find_keyword_header(header, "NFRAMES")
         G_eff = DF_Gain * N_frames
+        print('Effective Gain = %.3f'%G_eff)
     
     bounds_list = np.atleast_2d(bounds_list)
     
@@ -651,18 +659,18 @@ def Run_PSF_Fitting(hdu_path,
     n0 = 3.2                    # estimated true power index
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
-    n_c = 4                     # cutoff power index (arbitrarily steep)
 
-    n_s = np.array([n0, 2., n_c])         # power index
+    n_s = np.array([n0, 2., n_cutoff])         # power index
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # transition radius in arcsec
 
     # Multi-power-law PSF
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
                    "n_s":n_s, "theta_s":theta_s,
-                   "n_c":n_c, "theta_c":theta_cutoff}
+                   "n_c":n_cutoff, "theta_c":theta_cutoff}
     psf = PSF_Model(params=params_mpow,
                     aureole_model='multi-power')
+    psf.cutoff = cutoff
 
     # Pixelize PSF
     psf.pixelize(pixel_scale)
@@ -724,7 +732,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.set_container(psf_tri, stars_tri, 
                             n_spline=n_spline,
                             n_min=1, n_est=n0,
-                            theta_in=50, theta_out=240,
+                            theta_in=30, theta_out=300,
                             leg2d=leg2d, parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
@@ -759,7 +767,7 @@ def Run_PSF_Fitting(hdu_path,
                         'n_spline':n_spline,
                         'bounds':bounds_list[i],
                         'r_scale':r_scale,
-                        'n_cutoff': n_c,
+                        'n_cutoff': n_cutoff,
                         'theta_cutoff': theta_cutoff,
                         'date':DateToday()}
                         

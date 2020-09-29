@@ -447,7 +447,7 @@ class ImageList(ImageButler):
                       draw_real=True,
                       n_min=1,
                       theta_in=50,
-                      theta_out=240):
+                      theta_out=300):
         """ Container for fit storing prior and likelihood function """
         
         from .container import Container
@@ -478,7 +478,6 @@ class ImageList(ImageButler):
             container.data = self.data[i]
             container.mask = self.Masks[i]
             container.image_size = self.Images[i].image_size
-            container.theta_c = psf.theta_c
             
             self.containers += [container]
 

@@ -620,6 +620,10 @@ def plot_fit_PSF1D(results, psf,
     r = np.logspace(0., np.log10(image_size), 100)
     comp1 = psf.f_core1D(r)
     
+    if psf.cutoff:
+        n_c = psf.n_c
+        theta_c = psf.theta_c
+    
     # Sample distribution from joint PDF
     for sample in samples_eq_bs:
         frac_k = frac
@@ -630,18 +634,17 @@ def plot_fit_PSF1D(results, psf,
             psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
             
         else:
-            n_c = psf.n_c
-            theta_c = psf.theta_c
-            
             if psf.aureole_model == "power":
                 n_k = sample[0]
                 psf_fit.update({'n':n_k})
 
             elif psf.aureole_model == "multi-power":
-                n_s_k = np.concatenate([sample[:N_n], [n_c]])
-                theta_s_k = np.concatenate([[theta_0],
-                                            np.atleast_1d(10**sample[N_n:N_n+N_theta]),
-                                            [theta_c]])
+                n_s_k = sample[:N_n]
+                theta_s_k = np.append(theta_0, 10**sample[N_n:N_n+N_theta])
+                if psf.cutoff:
+                    n_s_k = np.append(n_s_k, n_c)
+                    theta_s_k = np.append(theta_s_k, theta_c)
+                                            
                 psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
             
         comp2_k = psf_fit.f_aureole1D(r)
@@ -664,10 +667,10 @@ def plot_fit_PSF1D(results, psf,
                 psf_fit.update({'n':n_fit})
 
             elif psf.aureole_model == "multi-power":
-                n_s_fit = np.concatenate([fits[:N_n], [n_c]])
-                theta_s_fit = np.concatenate([[theta_0],
-                                              np.atleast_1d(10**fits[N_n:N_n+N_theta]),
-                                              [theta_c]])
+                if psf.cutoff:
+                    n_s_fit = np.append(n_s_fit, n_c)
+                    theta_s_fit = np.append(theta_s_fit, theta_c)
+                    
                 psf_fit.update({'n_s':n_s_fit, 'theta_s':theta_s_fit})
             
         comp2 = psf_fit.f_aureole1D(r)

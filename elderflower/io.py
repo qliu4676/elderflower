@@ -42,14 +42,17 @@ def check_save_path(dir_name, make_new=True, verbose=True):
 
 
 def get_executable_path(executable):
+    """ Get the execuable path """
+    
     check_exe_path = subprocess.Popen(f'which {executable}', stdout=subprocess.PIPE, shell=True)
     exe_path = check_exe_path.stdout.read().decode("utf-8").rstrip('\n')
+    
     return exe_path
 
 
 def get_SExtractor_path():
     """ Get the execuable path of SExtractor.
-        Possible alias: source-extractor, sex, sextractor """
+        Possible (sequential) alias: source-extractor, sex, sextractor """
         
     # Check_path
     SE_paths = list(map(get_executable_path,
@@ -60,7 +63,7 @@ def get_SExtractor_path():
         SE_executable = next(path for path in SE_paths if len(path)>0)
         return SE_executable
     except StopIteration:
-        print('SExtractor path is not found automatically.')
+        print('Warning: SExtractor path is not found automatically.')
         return ''
     
 

@@ -37,7 +37,7 @@ try:
     
 except ImportError:
     def njit(*args, **kwargs):
-        def dummy_decorator(func):
+        def dummy_decorator(func, *args, **kwargs):
             return func 
         return dummy_decorator
     
@@ -90,6 +90,8 @@ class PSF_Model:
         elif aureole_model == "multi-power":
             self.n0 = params['n_s'][0]
             self.theta_0 = params['theta_s'][0]
+        
+        self.cutoff = True
         
     def __str__(self):
         return "A PSF Model Class"
@@ -1666,8 +1668,9 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
               n_min=1, d_n0=0.3, d_n=0.2, std_min=3,
-              theta_in=50, theta_out=240, leg2d=False,
-              fit_sigma=True, fit_frac=False, **kwargs):
+              theta_in=50, theta_out=300, d_theta=0.477,
+              leg2d=False, fit_sigma=True, fit_frac=False,
+              **kwargs):
     
     """
     Setup prior transforms for models. 
@@ -1681,7 +1684,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     n_spline : number of power-law component for modeling the aureole
     n_min : minium power index allowed in fitting
     d_n0 : stddev of noraml prior of n_0
-    d_n : minimum length of prior jump in n_k for n_spline>=3
+    d_n : minimum length of prior jump in n_k for n_spline>=3, default 0.2
+    d_theta : maximum length of prior jump in theta_k, default 2 * theta_k
     theta_in : inner boundary of the first transition radius
     theta_out : outer boundary of the first transition radius
     leg2d : whether a legendre polynomial background will be fit
@@ -1699,7 +1703,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     log_t_out = np.log10(theta_out)
     dlog_t = log_t_out - log_t_in
     
-    Prior_mu = stats.truncnorm(a=-2, b=2., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
+    Prior_mu = stats.truncnorm(a=-3, b=0., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
     
     # counting helper for # of parameters
     K = 0
@@ -1710,7 +1714,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 #        bound_a = (np.log10(std_min)+0.3-np.log10(std_est))/0.3
 #        Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
 #                                         loc=np.log10(std_est), scale=0.3)
-    Prior_logsigma = stats.truncnorm(a=-2, b=1,
+    Prior_logsigma = stats.truncnorm(a=-3, b=0,
                                      loc=np.log10(std_est), scale=0.3)
     
     if n_spline == 'm':
@@ -1820,7 +1824,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
         else:
             prior_tf = partial(prior_tf_sp, Priors=[Prior_n, Prior_mu, Prior_logsigma],
-                               n_spline=n_spline, n_min=n_min, d_n=d_n,
+                               n_spline=n_spline, n_min=n_min,
+                               d_n=d_n, d_theta=d_theta,
                                log_t_in=log_t_in, log_t_out=log_t_out,
                                leg2d=leg2d, K=K, fit_sigma=fit_sigma, fit_frac=fit_frac)
 
@@ -1828,7 +1833,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
 
 def prior_tf_sp(u, Priors,
-                n_spline=3, n_min=1, n_max=4, d_n=0.2,
+                n_spline=3, n_min=1, n_max=4,
+                d_n=0.2, d_theta=0.477,
                 log_t_in=1.7, log_t_out=2.4,
                 leg2d=False, K=1, flexible=True,
                 fit_sigma=True, fit_frac=False):
@@ -1861,9 +1867,12 @@ def prior_tf_sp(u, Priors,
 
     for k in range(n_spline-2):
 
+#        v[k+n_spline+1] = u[k+n_spline+1] * \
+#                            min(d_theta, log_t_out - v[k+n_spline]) + v[k+n_spline]
+#        # log theta_k+1: theta_k - [A*theta_k, t_out]  # in arcsec
         v[k+n_spline+1] = u[k+n_spline+1] * \
-                            min(0.3, log_t_out - v[k+n_spline]) + v[k+n_spline]
-        # log theta_k+1: theta_k - [2*theta_k, t_out]  # in arcsec
+                            (log_t_out - v[k+n_spline]) + v[k+n_spline]
+        # log theta_k+1: theta_k - t_out  # in arcsec
 
     v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
 
@@ -2004,7 +2013,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         leg = None
         H10, H01 = 0, 0
         
-        
     if n_spline == 'm':
         
         def loglike_mof(v):
@@ -2039,7 +2047,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         return loglike_mof
         
     else:
-    
+        cutoff = psf.cutoff    # whether to cutoff
         theta_0 = psf.theta_0  # inner flattening
         theta_c = psf.theta_c  # outer cutoff
         n_c = psf.n_c
@@ -2081,9 +2089,13 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
         elif n_spline==2:
 
             def loglike_2p(v):
-    
-                n_s = np.append(v[:2], n_c)
-                theta_s = np.append([theta_0, 10**v[2]], theta_c)
+            
+                n_s = v[:2]
+                theta_s = [theta_0, 10**v[2]]
+                if cutoff:
+                    n_s = np.append(n_s, n_c)
+                    theta_s = np.append(theta_s, theta_c)
+                    
                 mu = v[-K-1]
                 loglike = -1000
 
@@ -2129,11 +2141,16 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
             def loglike_3p(v):
 
-                n_s = np.append(v[:3], n_c)
-                theta_s = np.append([theta_0, 10**v[3], 10**v[4]], theta_c)
+                n_s = v[:3]
+                theta_s = [theta_0, 10**v[3], 10**v[4]]
+                
+                if cutoff:
+                    n_s = np.append(n_s, n_c)
+                    theta_s = np.append(theta_s, theta_c)
+                
                 mu = v[-K-1]
 
-                param_update ={'n_s':n_s, 'theta_s':theta_s}
+                param_update = {'n_s':n_s, 'theta_s':theta_s}
 
                 if fit_frac:
                     frac = 10**v[-1]  
@@ -2171,9 +2188,13 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
 
             def loglike_sp(v):
                 
-                n_s = np.append(v[:n_spline], n_c)
+                n_s = v[:n_spline]
                 
-                theta_s = np.concatenate([[theta_0],10**v[n_spline:2*n_spline-1], [theta_c]])
+                theta_s = np.append(theta_0, 10**v[n_spline:2*n_spline-1])
+                
+                if cutoff:
+                    n_s = np.append(n_s, n_c)
+                    theta_s = np.append(theta_s, theta_c)
                 
                 mu = v[-K-1]
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
@@ -2204,58 +2225,5 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 loglike = calculate_likelihood(ypred, data, sigma)
 
                 return loglike
-                
-#            loglike = partial(loglike_sp, data=data, psf=psf, stars=stars,
-#                              image_base=image_base, mask_fit=mask_fit,
-#                              draw_func=draw_func, z_norm=z_norm,
-#                              n_spline=n_spline, leg=leg,
-#                              fit_sigma=fit_sigma, fit_frac=fit_frac, K=K)
             
             return loglike_sp
-#
-#def loglike_sp(v, data, psf, stars,
-#               xx, yy, image_base,
-#               draw_func, mask_fit,
-#               z_norm,
-#               n_spline=3, leg=None,
-#               fit_sigma=True, fit_frac=False, K=1):
-#
-#    K = 0
-#    if fit_frac: K += 1
-#    if fit_sigma: K += 1
-#
-#    n_c = psf.n_c
-#    n_s = np.append(v[:n_spline], n_c)
-#
-#    theta_0, theta_c = psf.theta_0, psf.theta_c
-#    theta_s = np.concatenate([[theta_0],10**v[n_spline:2*n_spline-1], [theta_c]])
-#
-#    mu = v[-K-1]
-#    param_update = {'n_s':n_s, 'theta_s':theta_s}
-#
-#    if fit_sigma:
-#        sigma = 10**v[-K]
-#
-#    if fit_frac:
-#        frac = 10**v[-1]
-#        param_update['frac'] = frac
-#
-#    psf.update(param_update)
-#
-#    if norm=='brightness':
-#        # I varies with sky background
-#        stars.z_norm = z_norm + (stars.BKG - mu)
-#
-#    image_tri = draw_proposal(draw_func, v, psf, stars,
-#                              xx, yy, image_base,
-#                              leg=leg, K=K,
-#                              psf_range=psf_range, psf_scale=psf.pixel_scale,
-#                              max_psf_range=psf.theta_c,
-#                              brightest_only=brightest_only,
-#                              subtract_external=subtract_external,
-#                              parallel=parallel, draw_real=draw_real)
-#
-#    ypred = image_tri[~mask_fit].ravel()
-#    loglike = calculate_likelihood(ypred, data, sigma)
-#
-#    return loglike
