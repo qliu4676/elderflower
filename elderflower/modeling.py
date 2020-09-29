@@ -1703,7 +1703,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     log_t_out = np.log10(theta_out)
     dlog_t = log_t_out - log_t_in
     
-    Prior_mu = stats.truncnorm(a=-3, b=0., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
+    Prior_mu = stats.truncnorm(a=-3, b=1., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
     
     # counting helper for # of parameters
     K = 0

@@ -667,6 +667,8 @@ def plot_fit_PSF1D(results, psf,
                 psf_fit.update({'n':n_fit})
 
             elif psf.aureole_model == "multi-power":
+                n_s_fit = fits[:N_n]
+                theta_s_fit = np.append(theta_0, 10**fits[N_n:N_n+N_theta])
                 if psf.cutoff:
                     n_s_fit = np.append(n_s_fit, n_c)
                     theta_s_fit = np.append(theta_s_fit, theta_c)
@@ -702,7 +704,12 @@ def plot_fit_PSF1D(results, psf,
     if r_core is not None:
         
         if figsize is not None:
-            plt.axvspan(np.atleast_1d(r_core).max(), theta_c/pixel_scale,
+            if psf.cutoff:
+                psf_range = theta_c/pixel_scale
+            else:
+                psf_range = image_size
+                
+            plt.axvspan(np.atleast_1d(r_core).max(), psf_rangee,
                         color='steelblue', alpha=0.15, zorder=1)
             plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
                         color='seagreen', alpha=0.15, zorder=1)
