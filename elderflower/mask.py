@@ -74,6 +74,11 @@ class Mask:
     def seg_comb(self):
         image_size, pad = self.image_size, self.pad
         return self.seg_comb0[pad:image_size+pad, pad:image_size+pad]
+        
+    @property
+    def mask_fit(self):
+        """ Mask for fit """
+        return getattr(self, 'mask_comb', self.mask_deep)
     
     
     def make_mask_object(self, obj_name='',
@@ -369,17 +374,17 @@ def make_mask_map_core(image, star_pos, r_core=12):
 
     # mask core
     yy, xx = np.indices(image.shape)
-    mask_deep = np.zeros_like(image, dtype=bool)
+    mask_core = np.zeros_like(image, dtype=bool)
     
     if np.ndim(r_core) == 0:
         r_core = np.ones(len(star_pos)) * r_core
     
     core_region= np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r for (pos,r) in zip(star_pos,r_core)])
     
-    mask_deep[core_region] = 1
-    segmap = mask_deep.astype(int).copy()
+    mask_core[core_region] = 1
+    segmap = mask_core.astype(int).copy()
     
-    return mask_deep, segmap
+    return mask_core, segmap
 
 
 def make_mask_map_dual(image, stars,

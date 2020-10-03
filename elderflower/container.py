@@ -67,7 +67,9 @@ class Container:
                        psf_range=[None, None],
                        G_eff=None,
                        image_base=None):
+                       
         """ Setup likelihood function for fitting """
+        
         from .modeling import set_likelihood
         
         if image_base is None:
@@ -75,9 +77,13 @@ class Container:
         
         self.image_base = image_base
         
-        loglike = set_likelihood(data,
-                                 mask_fit,
-                                 psf, stars,
+        # Copy psf and stars to preserve the orginal ones
+        stars_tri = stars.copy()
+        psf_tri = psf.copy()
+        
+        # Set up likelihood function
+        loglike = set_likelihood(data, mask_fit,
+                                 psf_tri, stars_tri,
                                  norm=norm,
                                  psf_range=psf_range,
                                  std_est=self.std_est,

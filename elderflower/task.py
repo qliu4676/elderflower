@@ -679,10 +679,7 @@ def Run_PSF_Fitting(hdu_path,
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e6,
                                            psf_range=1000)
-                                           
-    # Deep copy
-    psf_tri = psf.copy()
-    
+                   
     ############################################
     # Setup Basement Image
     ############################################
@@ -714,9 +711,6 @@ def Run_PSF_Fitting(hdu_path,
     else:
         stars = DF_Images.stars # for fit
 
-    # Copy stars
-    stars_tri = stars.copy()
-
     # (a stop for developer)
 #    proceed = input('Is the Mask Reasonable?[y/n]')
 #    if proceed == 'n': sys.exit("Reset the Mask.")
@@ -729,10 +723,10 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     # Setup Priors and Likelihood Models for Fitting
     ############################################
-    DF_Images.set_container(psf_tri, stars_tri, 
+    DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
                             n_min=1, n_est=n0,
-                            theta_in=30, theta_out=300,
+                            theta_in=50, theta_out=240,
                             leg2d=leg2d, parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
@@ -775,10 +769,10 @@ def Run_PSF_Fitting(hdu_path,
             if leg2d: suffix+='l'
             if brightest_only: suffix += 'b'
             
-            fname=f'{obj_name}{reg}-{band}-fit{suffix}'
+            fname = f'{obj_name}-{reg}-{band}-fit{suffix}.res'
     
-            s.save_results(fname+'.res', fit_info, save_dir=work_dir)
-            stars[i].save(f'stars{reg}-{band.upper()}', save_dir=work_dir)
+            s.save_results(fname, fit_info, save_dir=work_dir)
+            stars[i].save(f'stars-{reg}-{band.upper()}', save_dir=work_dir)
         
         ############################################
         # Plot Results
@@ -788,7 +782,7 @@ def Run_PSF_Fitting(hdu_path,
         suffix = str(n_spline)+'p'+'_'+obj_name
         
         # Recovered 1D PSF
-        s.generate_fit(psf, stars_tri[i])
+        s.generate_fit(psf, stars[i])
         
         if draw:
             s.cornerplot(figsize=(18, 16),
@@ -799,13 +793,12 @@ def Run_PSF_Fitting(hdu_path,
                              save=save, save_dir=plot_dir, suffix=suffix)
 
             # Calculate Chi^2
-            s.calculate_reduced_chi2()
+            s.calculate_reduced_chi2(Gain=G_eff, dof=ndim)
 
             # Draw 2D compaison
-            s.draw_comparison_2D(r_core=r_core,
-                                 norm=AsinhNorm(a=0.01),
-                                 vmin=DF_Images.bkg-s.bkg_std_fit,
-                                 vmax=DF_Images.bkg+50,
+            s.draw_comparison_2D(r_core=r_core, # Gain=G_eff, 
+                                 vmin=DF_Images.bkg,
+                                 vmax=DF_Images.bkg+20*s.bkg_std_fit,
                                  save=save, save_dir=plot_dir, suffix=suffix)
 
             if leg2d:
@@ -816,7 +809,6 @@ def Run_PSF_Fitting(hdu_path,
         # Append the sampler
         samplers += [s]
         
-    
     # Delete Stars to avoid pickling error in rerun
     for variable in dir():
         if 'stars' in variable:

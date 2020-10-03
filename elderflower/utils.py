@@ -1576,7 +1576,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
     fit_res : dynesty.results.Results
         Results of the dynesty dynamic sampler class
     psf : PSF_Model class, optional, default None
-        Dummy PSF model. If None, create a new one.
+        Inherited PSF model. If None, create a new one.
     n_spline : int, optional, default 3
         Number of power-law component for the aureole models.
     pixel_scale : float, optional, default 2.5
@@ -1598,7 +1598,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
                   "n_s":np.array([3.3, 2.5]), "theta_s":np.array([5, 72])}
         psf = PSF_Model(params, aureole_model='multi-power')
         psf.pixelize(pixel_scale)
-
+        
     params, _, _ = get_params_fit(fit_res)
         
     K = 0
@@ -1614,8 +1614,13 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
         N_theta = n_spline - 1
         
         if psf.cutoff:
-            n_c = psf.n_c
-            theta_c = psf.theta_c
+            try:
+                n_c = psf.n_c
+                theta_c = psf.theta_c
+            except AttributeError:
+                n_c = 4
+                theta_c = 1200
+        
     
         if psf.aureole_model == "power":
             n_fit = params[0]
@@ -1633,7 +1638,8 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
     if fit_frac:
         frac = 10**params[-1]
         param_update['frac'] = frac
-        
+    
+    # Make a new copy and update params
     psf_fit = psf.copy()
     psf_fit.update(param_update)
 
@@ -1656,8 +1662,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
 
 
 def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
-#     uncertainty = 10**params[-1]
-    chi2_reduced = np.sum((fit-data)**2/uncertainty**2)/(len(data)-dof)
+    chi2_reduced = np.sum(((fit-data)/uncertainty)**2)/(len(data)-dof)
     print("Reduced Chi^2: %.5f"%chi2_reduced)
 
 

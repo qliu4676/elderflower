@@ -518,9 +518,10 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
                                  "Fit_vs_truth_image.png"), dpi=120)
         plt.close()
         
-def draw_comparison_2D(image_fit, data, mask, image_stars,
-                       noise_fit=0, r_core=None,
-                       vmin=None, vmax=None,
+def draw_comparison_2D(data, mask, image_fit,
+                       image_stars, bkg_image,
+                       noise_image=0, r_core=None,
+                       vmin=None, vmax=None, Gain=None,
                        cmap='gnuplot2', norm=AsinhNorm(0.01),
                        save=False, save_dir=".", suffix=""):
                        
@@ -528,49 +529,50 @@ def draw_comparison_2D(image_fit, data, mask, image_stars,
     
     mask_fit = getattr(mask, 'mask_comb', mask.mask_deep)
     
+    std = np.std(image_fit[~mask_fit])
     if vmin is None:
-        vmin = np.median(image_fit[~mask_fit]) - 5
+        vmin = np.mean(bkg_image) - std
     if vmax is None:
-        vmax = vmin + 200
+        vmax = vmin + min([10*std, 100])
         
     norm2 = deepcopy(norm)
     
-    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(17,9))
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(19,11))
     
     im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
-    ax2.set_title("Fit [I$_f$]", fontsize=15); colorbar(im)
+    im = ax2.imshow(image_fit+noise_image, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    ax2.set_title("Fit [I$_f$] + noise", fontsize=15); colorbar(im)
     
     im = ax3.imshow(image_stars, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
-    frac_diff = (image_fit-noise_fit-data)/data
-#     frac_diff[mask_fit] = 0
-    im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="seismic")
-    ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
-    
-#     noise = np.sqrt((data/0.37/618)**2+(2/0.37/618)**2)
-#     chi = (image_fit-data)/noise
-#     im = ax4.imshow(chi, vmin=-10, vmax=10, cmap="seismic")
-#     ax4.set_title("Chi. [(I$_f$ - I$_0$)/$\sigma_0$]", fontsize=15); colorbar(im)
-    
+    if Gain is None:
+        frac_diff = (image_fit-data)/data
+        im = ax4.imshow(frac_diff, vmin=-0.05, vmax=0.05, cmap="bwr")
+        ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
+    else:
+        uncertainty = np.sqrt(np.std(noise_image)**2+(image_fit-bkg_image)/Gain)
+        chi = (image_fit-data)/uncertainty
+        im = ax4.imshow(chi, vmin=-10, vmax=10, cmap="coolwarm")
+        ax4.set_title("$\chi$ [(I$_f$ - I$_0$)/$\sigma$]", fontsize=15); colorbar(im)
+        
     residual = (data-image_stars)
     im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     
     residual[mask_fit] = 0
     im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
-    ax6.set_title("Bright Subtracted (masked)"); colorbar(im)
+    ax6.set_title("Bright Subtracted (masked)", fontsize=15); colorbar(im)
     
     if r_core is not None:
         if np.ndim(r_core) == 0:
             r_core = [r_core,r_core]
         aper1 = CircularAperture(mask.stars.star_pos_verybright, r=r_core[0])
-        aper1.plot(color='lime',lw=2,alpha=0.9, axes=ax6)
+        aper1.plot(color='lime',lw=2,alpha=0.95, axes=ax6)
         aper2 = CircularAperture(mask.stars.star_pos_medbright, r=r_core[1])
-        aper2.plot(color='skyblue',lw=2,label="",alpha=0.7, axes=ax6)
+        aper2.plot(color='skyblue',lw=2,label="",alpha=0.85, axes=ax6)
         
     plt.tight_layout()
     if save:
@@ -709,7 +711,7 @@ def plot_fit_PSF1D(results, psf,
             else:
                 psf_range = image_size
                 
-            plt.axvspan(np.atleast_1d(r_core).max(), psf_rangee,
+            plt.axvspan(np.atleast_1d(r_core).max(), psf_range,
                         color='steelblue', alpha=0.15, zorder=1)
             plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
                         color='seagreen', alpha=0.15, zorder=1)

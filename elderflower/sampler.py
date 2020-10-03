@@ -189,16 +189,13 @@ class Sampler:
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std
         
-        
-        image_stars, image_fit, bkg_image \
+        image_stars, noise_image, bkg_image \
                    = generate_image_fit(psf_fit, stars, image_size,
                                         norm=norm, leg2d=ct.leg2d,
                                         brightest_only=ct.brightest_only,
                                         draw_real=ct.draw_real)
 
-        noise_image = image_fit - image_stars
-
-        image_fit += image_base + bkg_image
+        image_fit = image_stars + image_base + bkg_image
         
         # Images constructed from fitting
         self.image_fit = image_fit
@@ -209,22 +206,24 @@ class Sampler:
         # PSF constructed from fitting
         self.psf_fit = psf_fit
         
+        # Stars
+        self.stars = stars
+        
     
-    def calculate_reduced_chi2(self, Gain=456.95):
+    def calculate_reduced_chi2(self, Gain, dof):
         
         """Calculate reduced Chi^2"""
         
         from .utils import calculate_reduced_chi2
         
         ct = self.container
-        mask_fit = getattr(ct.mask, 'mask_comb', ct.mask.mask_deep)
+        mask_fit = getattr(ct.mask, 'mask_comb')
         data = ct.data
         
         data_pred = (self.image_fit[~mask_fit]).ravel()
+        uncertainty = np.sqrt(self.bkg_std_fit**2+(data_pred-self.bkg_fit)/Gain)
         
-        uncertainty = np.sqrt(self.bkg_std_fit**2+(data-self.bkg_fit)/Gain)
-        
-        calculate_reduced_chi2(data_pred, data, uncertainty)
+        calculate_reduced_chi2(data_pred, data, uncertainty, dof=dof)
         
     def draw_comparison_2D(self, **kwargs):
         from .plotting import draw_comparison_2D
@@ -234,8 +233,8 @@ class Sampler:
         mask = ct.mask
         
         if hasattr(self, 'image_fit'):
-            draw_comparison_2D(self.image_fit, image, mask, self.image_stars,
-                               self.noise_image, **kwargs)
+            draw_comparison_2D(image, mask, self.image_fit, self.image_stars,
+                               self.bkg_image, self.noise_image, **kwargs)
         
     def draw_background(self, save=False, save_dir='.', suffix=''):
         plt.figure()

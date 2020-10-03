@@ -402,17 +402,18 @@ class ImageList(ImageButler):
     
     
     @property
-    def mask_fit(self):
-        """ Masking for fit """
-        return [getattr(mask, 'mask_comb', mask.mask_deep) for mask in self.Masks]
-        
+    def mask_fits(self):
+        """ Masks for fitting """
+        return [mask.mask_fit for mask in self.Masks]
+    
     @property
     def data(self):
         """ 1D array to be fit """
-        data = [image[~mask].copy().ravel()
-                    for (image, mask) in zip(self.images, self.mask_fit)]
+        data = [image[~mask_fit].copy().ravel()
+                    for (image, mask_fit) in zip(self.images, self.mask_fits)]
 
         return data
+        self
         
         
     def estimate_bkg(self):
@@ -423,8 +424,7 @@ class ImageList(ImageButler):
         self.mu_est = np.zeros(len(self.Images))
         self.std_est = np.zeros(len(self.Images))
         
-        for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fit)):
-        
+        for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fits)):
             data_sky = sigma_clip(Image.image[~mask], sigma=3)
             
             mu_patch, std_patch = np.mean(data_sky), np.std(data_sky)
@@ -466,7 +466,7 @@ class ImageList(ImageButler):
 
             # Set Likelihood
             container.set_likelihood(self.data[i],
-                                     self.mask_fit[i],
+                                     self.mask_fits[i],
                                      psf, stars[i],
                                      psf_range=[None, None],
                                      norm='brightness',

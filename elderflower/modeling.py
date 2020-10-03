@@ -1627,6 +1627,8 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
 def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
                        brightest_only=False, draw_real=True, leg2d=False):
+    """ Generate the fitted bright stars, the fitted background and
+        a noise images (for display). """
     
     yy, xx = np.mgrid[:image_size, :image_size]
     
@@ -1643,9 +1645,10 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
                                brightest_only=brightest_only,
                                draw_real=draw_real)
                           
-    image_fit = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
+    image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
+    noise_image = image_stars_noise - image_stars
     
-    bkg_fit = psf_fit.bkg * np.ones((image_size, image_size))
+    bkg_image = psf_fit.bkg * np.ones((image_size, image_size))
     
     if leg2d:
         x_grid = y_grid = np.linspace(0, image_size-1, image_size)
@@ -1655,11 +1658,11 @@ def generate_image_fit(psf_fit, stars, image_size, norm='brightness',
         H01 = leggrid2d((x_grid-cen[1])/image_size,
                         (y_grid-cen[0])/image_size, c=[[0,0],[1,0]])
 
-        bkg_fit += psf_fit.A10 * H10 + psf_fit.A01 * H01
+        bkg_image += psf_fit.A10 * H10 + psf_fit.A01 * H01
     
-    print("Bakground : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+    print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     
-    return image_stars, image_fit, bkg_fit
+    return image_stars, noise_image, bkg_image
 
 
 ############################################
@@ -1836,7 +1839,7 @@ def prior_tf_sp(u, Priors,
                 n_spline=3, n_min=1, n_max=4,
                 d_n=0.2, d_theta=0.477,
                 log_t_in=1.7, log_t_out=2.4,
-                leg2d=False, K=1, flexible=True,
+                leg2d=False, K=1, flexible=False,
                 fit_sigma=True, fit_frac=False):
                 
     """ Prior Transform function for n_spline """
@@ -1848,16 +1851,16 @@ def prior_tf_sp(u, Priors,
     
     if flexible:
         for k in range(n_spline-2):
-            v[k+1] = u[k+1] * max(-1.5+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
-            # n_k+1 : max{n_min, n_k-1.5} - n_k-d_n
+            v[k+1] = u[k+1] * max(-2.+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
+            # n_k+1 : max{n_min, n_k-2} - n_k-d_n
         
         v[k+2] = u[k+2] * min(n_max-(v[k+1]-d_n), n_max-n_min) + max(n_min, v[k+1]-d_n)
         # n_last : max(n_min, n_k-d_n) - n_max
         
     else:
         for k in range(n_spline-1):
-            v[k+1] = u[k+1] * max(-1.5+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
-            # n_k+1 : max{n_min, n_k-1.5} - n_k-d_n
+            v[k+1] = u[k+1] * max(-2.+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
+            # n_k+1 : max{n_min, n_k-2} - n_k-d_n
         
 #        v[k+1] = u[k+1] * max(-0.3, n_min+0.3-v[k]) + (v[k]-0.3)
 #        # n_k+1 : max{n_min, n_k-0.6} - n_k-0.3 (old)
@@ -1947,7 +1950,7 @@ class Legendre2D:
             self.coefs = [H10, H01]
             
 
-def set_likelihood(data, mask_fit, psf_tri, stars_tri,
+def set_likelihood(data, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
                    psf_range=[None,None], leg2d=False,
                    std_est=None, G_eff=None, image_base=None,
@@ -1969,9 +1972,6 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
     loglike : log-likelihood function for fitting
     
     """
-    
-    stars = stars_tri.copy()
-    psf = psf_tri.copy()
     
     image_size = mask_fit.shape[0]
     yy, xx = np.mgrid[:image_size, :image_size]
@@ -2172,7 +2172,7 @@ def set_likelihood(data, mask_fit, psf_tri, stars_tri,
                 ypred = image_tri[~mask_fit].ravel()
                 
                 if fit_sigma:
-                    # sigma = 10**v[-K]
+                    #sigma = 10**v[-K]
                     sigma = np.sqrt((10**v[-K])**2+(ypred-mu)/G_eff)
                 else:
                     #sigma = std_est
