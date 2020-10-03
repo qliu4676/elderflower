@@ -117,9 +117,10 @@ class Image(ImageButler):
         
         patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
         
-        image_size0 = min((patch_Xmax0 - patch_Xmin0), (patch_Ymax0 - patch_Ymin0))
-        self.image_size0 = image_size0
-        self.image_size = image_size0 - 2 * pad
+        Ximage_size0 = (patch_Xmax0 - patch_Xmin0)
+        Yimage_size0 = (patch_Ymax0 - patch_Ymin0)
+        self.image_shape0 = (Yimage_size0, Ximage_size0)
+        self.image_shape = (Yimage_size0 - 2 * pad, Ximage_size0 - 2 * pad)
         
         # Crop image
         self.bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
@@ -128,8 +129,8 @@ class Image(ImageButler):
         self.image0 = crop_image(self.full_image, bounds0, origin=0, draw=False)
         
         # Cutout of data
-        self.image = self.image0[pad:image_size0-pad,
-                                 pad:image_size0-pad]
+        self.image = self.image0[pad:Yimage_size0-pad,
+                                 pad:Ximage_size0-pad]
         
     def __str__(self):
         return "An Image Class"
@@ -159,7 +160,7 @@ class Image(ImageButler):
         if hasattr(self, 'table_faint') & hasattr(self, 'table_norm'):
             pos_ref = self.bounds[0], self.bounds[1]
             self.stars_bright, self.stars_all = \
-            assign_star_props(self.ZP, self.bkg, self.image_size, pos_ref,
+            assign_star_props(self.ZP, self.bkg, self.image_shape, pos_ref,
                               self.table_norm, self.table_faint, **kwargs)
         else:
             raise AttributeError(f"{self.__class__.__name__} has no stars info. \
@@ -171,7 +172,7 @@ class Image(ImageButler):
         from elderflower.utils import (crop_catalog, identify_extended_source,
                                        calculate_color_term, cross_match,
                                        add_supplementary_SE_star, measure_Rnorm_all)
-        from elderflower.modeling import generate_image_fit
+        from .modeling import generate_image_fit
         from .utils import check_save_path
         import shutil
         
@@ -217,7 +218,7 @@ class Image(ImageButler):
         
         stars = self.stars_bright
         
-        image_stars, _, _ = generate_image_fit(psf, stars, self.image_size)
+        image_stars, _, _ = generate_image_fit(psf, stars, self.image_shape)
         print("Image of stars is generated based on the PSF Model!")
         shutil.rmtree(dir_name)
         
@@ -335,8 +336,9 @@ class ImageList(ImageButler):
         
         for i, (Image, stars) in enumerate(zip(self.Images, stars_all)):
         # Make sky background and draw dim stars
-            image_base[i] = make_base_image(Image.image_size, stars,
-                                            psf_star, self.pad, psf_size, verbose=self.verbose)
+            image_base[i] = make_base_image(Image.image_shape, stars,
+                                            psf_star, self.pad, psf_size,
+                                            verbose=self.verbose)
             
             if draw:
                 #display
@@ -387,7 +389,7 @@ class ImageList(ImageButler):
                 # Supplementary Strip + Cross mask
                 
                 if dist_strip is None:
-                    dist_strip = Image.image_size    
+                    dist_strip = max(Image.image_shape)
                     
                 mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
                                         wid_cross, dist_cross, 
@@ -477,7 +479,7 @@ class ImageList(ImageButler):
             container.image = self.images[i]
             container.data = self.data[i]
             container.mask = self.Masks[i]
-            container.image_size = self.Images[i].image_size
+            container.image_shape = self.Images[i].image_shape
             
             self.containers += [container]
 

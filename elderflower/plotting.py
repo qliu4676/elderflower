@@ -166,8 +166,9 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
             aper = CircularAperture(star_pos_B, r=r_out[1])
             aper.plot(color='c',lw=1.5,label="",alpha=0.7, axes=ax3)
     
-    patch_size = image.shape[0] - pad * 2
-    rec = patches.Rectangle((pad, pad), patch_size, patch_size, facecolor='none',
+    patch_Xsize = image.shape[1] - pad * 2
+    patch_Ysize = image.shape[0] - pad * 2
+    rec = patches.Rectangle((pad, pad), patch_Xsize, patch_Ysize, facecolor='none',
                             edgecolor='w', linewidth=2, linestyle='--',alpha=0.8)
     ax3.add_patch(rec)
     
@@ -229,8 +230,10 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
         aper = CircularAperture(star_pos_B, r=r_core[1])
         aper.plot(color='c',lw=2,label="",alpha=0.7, axes=ax3)
 
-    size = image.shape[0] - pad * 2
-    rec = patches.Rectangle((pad, pad), size, size, facecolor='none',
+    patch_Xsize = image.shape[1] - pad * 2
+    patch_Ysize = image.shape[0] - pad * 2
+    
+    rec = patches.Rectangle((pad, pad), patch_Xsize, patch_Ysize, facecolor='none',
                             edgecolor='w', linewidth=2, linestyle='--',alpha=0.8)
     ax3.add_patch(rec)
     
@@ -311,11 +314,12 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     plt.xlabel('r [pix]', fontsize=14)
 
     
-def plot_PSF_model_galsim(psf, image_size=800, contrast=None,
+def plot_PSF_model_galsim(psf, image_shape, contrast=None,
                           figsize=(7,6), save=False, save_dir='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     from .utils import Intensity2SB, cal_profile_1d
     
+    Yimage_size, Ximage_size = image_shape
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac
@@ -326,7 +330,7 @@ def plot_PSF_model_galsim(psf, image_size=800, contrast=None,
     
     img_core = psf_core.drawImage(scale=pixel_scale, method="no_pixel")
     img_aureole = psf_aureole.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel")
-    img_star = psf_star.drawImage(nx=image_size, ny=image_size, scale=pixel_scale, method="no_pixel")
+    img_star = psf_star.drawImage(nx=Ximage_size, ny=Yimage_size, scale=pixel_scale, method="no_pixel")
     
     if figsize is not None:
         fig, ax = plt.subplots(1,1, figsize=figsize)
@@ -349,7 +353,7 @@ def plot_PSF_model_galsim(psf, image_size=800, contrast=None,
 
     plt.legend(loc=1, fontsize=12)
     
-    r = np.logspace(0, np.log10(image_size), 100)
+    r = np.logspace(0, np.log10(max(image_shape)), 100)
     comp1 = psf.f_core1D(r)
     comp2 = psf.f_aureole1D(r)
     
@@ -490,7 +494,7 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
     psf_fit = psf.copy()
     psf_fit.update({'n_s':n_s_fit, 'theta_s': theta_s_fit})
     
-    psf_range = psf.image_size * psf.pixel_scale
+    psf_range = max(image.shape) * psf.pixel_scale
     image_fit = generate_image_by_flux(psf_fit, stars, draw_real=True,
                                        psf_range=[psf_range//2, psf_range])
     if image_base is not None:
@@ -550,7 +554,7 @@ def draw_comparison_2D(data, mask, image_fit,
     
     if Gain is None:
         frac_diff = (image_fit-data)/data
-        im = ax4.imshow(frac_diff, vmin=-0.05, vmax=0.05, cmap="bwr")
+        im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="bwr")
         ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
     else:
         uncertainty = np.sqrt(np.std(noise_image)**2+(image_fit-bkg_image)/Gain)
@@ -584,7 +588,7 @@ def draw_comparison_2D(data, mask, image_fit,
     
     
 def plot_fit_PSF1D(results, psf,
-                   image_size=800, n_spline=2,
+                   psf_size=1000, n_spline=2,
                    n_bootstrap=500, truth=None,  
                    Amp_max=None, r_core=None,
                    save=False, save_dir="./",
@@ -602,7 +606,7 @@ def plot_fit_PSF1D(results, psf,
     
     if truth is not None:
         print("Truth : ", psf.params)
-        psf.plot1D(psf_range=600, decompose=False, label='Truth')
+        psf.plot1D(psf_range=900, decompose=False, label='Truth')
     
     # read fitting results
     pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
@@ -619,7 +623,7 @@ def plot_fit_PSF1D(results, psf,
     
     psf_fit = psf.copy()
     
-    r = np.logspace(0., np.log10(image_size), 100)
+    r = np.logspace(0., np.log10(psf_size), 100)
     comp1 = psf.f_core1D(r)
     
     if psf.cutoff:
@@ -709,7 +713,7 @@ def plot_fit_PSF1D(results, psf,
             if psf.cutoff:
                 psf_range = theta_c/pixel_scale
             else:
-                psf_range = image_size
+                psf_range = psf_size*pixel_scale
                 
             plt.axvspan(np.atleast_1d(r_core).max(), psf_range,
                         color='steelblue', alpha=0.15, zorder=1)

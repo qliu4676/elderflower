@@ -164,8 +164,9 @@ class Sampler:
     def plot_fit_PSF1D(self, psf, **kwargs):
         from .plotting import plot_fit_PSF1D
         n_spline = self.container.n_spline
-        
-        plot_fit_PSF1D(self.results, psf, n_spline=n_spline, **kwargs)
+        psf_size = max(self.image.shape)
+        plot_fit_PSF1D(self.results, psf,
+                       psf_size=psf_size, n_spline=n_spline, **kwargs)
     
     def generate_fit(self, psf, stars, norm='brightness'):
     
@@ -175,11 +176,11 @@ class Sampler:
         from .modeling import generate_image_fit
         
         ct = self.container
-        image_size = ct.image_size
+        image_shape = ct.image_shape
         image_base = ct.image_base
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
-                                            psf_range=image_size,
+                                            psf_range=max(image_shape),
                                             n_spline=ct.n_spline,
                                             leg2d=ct.leg2d,
                                             sigma=ct.std_est,
@@ -190,7 +191,7 @@ class Sampler:
         self.bkg_std_fit = psf_fit.bkg_std
         
         image_stars, noise_image, bkg_image \
-                   = generate_image_fit(psf_fit, stars, image_size,
+                   = generate_image_fit(psf_fit, stars, image_shape,
                                         norm=norm, leg2d=ct.leg2d,
                                         brightest_only=ct.brightest_only,
                                         draw_real=ct.draw_real)

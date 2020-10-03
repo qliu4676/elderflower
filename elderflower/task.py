@@ -364,7 +364,7 @@ def Match_Mask_Measure(hdu_path,
    
     # Mannually add stars missed in the crossmatch or w/ weird mag to table
     tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
-                                            mag_saturate, draw=draw)
+                                           mag_saturate, draw=draw)
                                             
     
     ##################################################
@@ -397,7 +397,7 @@ def Match_Mask_Measure(hdu_path,
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
-                                             mag_range=[mag_saturate,22], K=3,
+                                             mag_range=[10,22], K=3,
                                              degree=2, draw=draw)
     
     for bounds in bounds_list:
@@ -444,13 +444,11 @@ def Match_Mask_Measure(hdu_path,
                                       obj_name=obj_name,
                                       mag_name=mag_name_cat,
                                       save=save, dir_name=dir_name)
-        
         if draw:
             plot_bright_star_profile(tab_target_patch,
                                      tab_norm, res_thumb,
                                      bkg_sky=bkg, std_sky=std, ZP=ZP,
                                      pixel_scale=pixel_scale)
-        
         
         
 def Run_PSF_Fitting(hdu_path,
@@ -743,10 +741,10 @@ def Run_PSF_Fitting(hdu_path,
     
     for i, reg in enumerate(AsciiUpper(len(stars))):
 
-        container = DF_Images.containers[i]
-        ndim = container.ndim
+        ct = DF_Images.containers[i]
+        ndim = ct.ndim
 
-        s = Sampler(container, n_cpu=n_cpu, sample=sample_method)
+        s = Sampler(ct, n_cpu=n_cpu, sample=sample_method)
                                   
         if nlive_init is None: nlive_init = ndim*10
         # Run dynesty

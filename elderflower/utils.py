@@ -190,9 +190,9 @@ def piecewise_linear(x, k1, k2, x0, y0):
     return np.array(list(map(lambda x:k1*x + (y0-k1*x0) if x>=x0 else k2*x + (y0-k2*x0), x)))
 
 def iter_curve_fit(x_data, y_data, func, p0=None,
-                color=None, x_min=None, x_max=None,
-                x_lab='', y_lab='',c_lab='',
-                n_iter=3, k_std=5, draw=True):
+                   color=None, x_min=None, x_max=None,
+                   x_lab='', y_lab='',c_lab='',
+                   n_iter=3, k_std=5, draw=True, **kwargs):
     """ Iterative curve_fit """
     
     # min-max cutoff
@@ -208,7 +208,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     clip = np.zeros_like(x_data, dtype='bool')
     
     # fitst curve_fit
-    popt, pcov = curve_fit(func, x_data, y_data, p0=p0)
+    popt, pcov = curve_fit(func, x_data, y_data, p0=p0, **kwargs)
     
     if draw: plt.figure()
     
@@ -218,7 +218,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
                           color='r', lw=1, ls='--', alpha=0.2)
         
         x_clip, y_clip = x_data[~clip], y_data[~clip]
-        popt, pcov = curve_fit(func, x_clip, y_clip, p0=p0)
+        popt, pcov = curve_fit(func, x_clip, y_clip, p0=p0, **kwargs)
 
         # compute residual and stddev
         res = y_data - func(x_data, *popt)
@@ -258,10 +258,10 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     
     # Fit a flattened linear
     popt, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
-                                    p0=(1, MAG_saturate, MU_saturate),
-                                    x_max=mag_limit, x_min=7, c_lab='CLASS_STAR',
-                                    color=SE_bright['CLASS_STAR'],
-                                    x_lab='MAG_AUTO',y_lab='MU_MAX', draw=draw)
+                                     p0=(1, MAG_saturate, MU_saturate),
+                                     x_max=mag_limit, x_min=7, c_lab='CLASS_STAR',
+                                     color=SE_bright['CLASS_STAR'],
+                                     x_lab='MAG_AUTO',y_lab='MU_MAX', draw=draw)
 
     # pick outliers in the catalog
     outlier = clip_func(SE_catalog['MAG_AUTO'], SE_catalog['MU_MAX'])
@@ -760,7 +760,12 @@ def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
         return cat_crop
     else:
         return cat[crop]
-
+        
+def crop_pad(image, pad):
+    """ Crop the padding of the image """
+    shape = image.shape
+    return image[pad:shape[0]-pad, pad:shape[1]-pad]
+    
 def crop_image(data, bounds, seg_map=None,
                sub_bounds=None, origin=1, color="w", draw=False):
     """ Crop the data (and segm map if given) with the given bouds. """
@@ -899,7 +904,7 @@ def read_measurement_table(dir_name, bounds0,
     return table_faint, table_norm
     
 
-def assign_star_props(ZP, sky_mean, image_size, pos_ref,
+def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
                       table_norm, table_faint=None,
                       r_scale=12, mag_threshold=[14,11],
                       psf=None, keys='Imed', verbose=True, 
@@ -934,7 +939,7 @@ def assign_star_props(ZP, sky_mean, image_size, pos_ref,
     # Bright stars in model
     stars_bright = Stars(star_pos, Flux, Flux_threshold=Flux_threshold,
                          z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
-    stars_bright = stars_bright.remove_outsider(image_size, d=[36, 12])
+    stars_bright = stars_bright.remove_outsider(image_shape, d=[36, 12])
     
     if (table_faint is not None) & ('MAG_AUTO_corr' in table_faint.colnames):
         table_faint['FLUX_AUTO_corr'] = 10**((table_faint['MAG_AUTO_corr']-ZP)/(-2.5))
@@ -1308,15 +1313,19 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     """ Add unmatched bright (saturated) stars in SE_catatlogas to tab.
         Magnitude is corrected by interpolation from other matched stars """
     
+    if len(tab['MAG_AUTO_corr']<mag_saturate)<10:
+        return tab
+        
     print("Mannually add unmatched bright stars to the catalog.")
     
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
     popt, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
-                                    piecewise_linear, x_max=15, n_iter=5,
-                                    p0=(1, 2, mag_saturate, mag_saturate),
-                                    x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
-
+                                     piecewise_linear, x_max=15, n_iter=5,
+                                     p0=(1, 2, mag_saturate, mag_saturate),
+                                     bounds=(0.9, [2, 4, mag_saturate+2, mag_saturate+2]),
+                                     x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
+                                    
     # Empirical corrected magnitude
     f_corr = lambda x: piecewise_linear(x, *popt)
     mag_corr = f_corr(tab['MAG_AUTO'])
@@ -1490,8 +1499,9 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     """
     
-    image_size = bounds[2] - bounds[0]
     Xmin, Ymin, Xmax, Ymax = bounds
+    Ximage_size = Xmax - Xmin
+    Yimage_size = Ymax - Ymin
     X_key, Y_key = 'X_IMAGE'+'_'+cat_name, 'Y_IMAGE'+'_'+cat_name
     
     try:
@@ -1523,11 +1533,11 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                 
             
     # Draw segment map generated from the catalog
-    seg_map = np.zeros((image_size, image_size))
+    seg_map = np.zeros((Yimage_size, Ximage_size))
     
     # Segmentation k sorted by mag of source catalog
     for (k, aper) in enumerate(apers):
-        star_ma = aper.to_mask(method='center').to_image((image_size, image_size))
+        star_ma = aper.to_mask(method='center').to_image((Yimage_size, Ximage_size))
         if star_ma is not None:
             seg_map[star_ma.astype(bool)] = k+2
     

@@ -5,7 +5,7 @@ import numpy as np
 from astropy.io import fits
 
 from .modeling import Stars
-from .utils import background_sub_SE
+from .utils import background_sub_SE, crop_pad
 from .image import DF_pixel_scale
 
 class Mask:
@@ -27,11 +27,13 @@ class Mask:
         self.pixel_scale = Image.pixel_scale
         
         self.bounds0 = Image.bounds0
-        self.image_size = Image.image_size
+        self.image_shape = Image.image_shape
+        self.Ximage_size = Image.image_shape[1]
+        self.Yimage_size = Image.image_shape[0]
         self.pad = Image.pad
         
-        self.yy, self.xx = np.mgrid[:self.image_size + 2 * self.pad,
-                                    :self.image_size + 2 * self.pad]
+        self.yy, self.xx = np.mgrid[:self.Yimage_size + 2 * self.pad,
+                                    :self.Ximage_size + 2 * self.pad]
         
         self.pad = Image.pad
         self.bkg = Image.bkg
@@ -46,34 +48,28 @@ class Mask:
     @property
     def mask_base(self):
         mask_base0 = getattr(self, 'mask_base0', self.mask_deep0)
-        image_size, pad = self.image_size, self.pad
-        return mask_base0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(mask_base0, self.pad)
     
     @property
     def seg_base(self):
         seg_base0 = getattr(self, 'seg_base0', self.seg_deep0)
-        image_size, pad = self.image_size, self.pad
-        return seg_base0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(seg_base0, self.pad)
     
     @property
     def mask_deep(self):
-        image_size, pad = self.image_size, self.pad
-        return self.mask_deep0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(self.mask_deep0, self.pad)
     
     @property
     def seg_deep(self):
-        image_size, pad = self.image_size, self.pad
-        return self.seg_deep0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(self.seg_deep0, self.pad)
     
     @property
     def mask_comb(self):
-        image_size, pad = self.image_size, self.pad
-        return self.mask_comb0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(self.mask_comb0, self.pad)
     
     @property
     def seg_comb(self):
-        image_size, pad = self.image_size, self.pad
-        return self.seg_comb0[pad:image_size+pad, pad:image_size+pad]
+        return crop_pad(self.seg_comb0, self.pad)
         
     @property
     def mask_fit(self):
@@ -211,7 +207,9 @@ class Mask:
                            save=False, save_dir='.'):
         
         """
-        Make spider-like mask map and mask stellar spikes for bright stars. The spider-like mask map is to reduce sample size of pixels at large radii, equivalent to assign lower weights to outskirts.
+        Make spider-like mask map and mask stellar spikes for bright stars.
+        The spider-like mask map is to reduce sample size of pixels at large
+        radii, equivalent to assign lower weights to outskirts.
         Note: make_mask_map_deep() need to be run first.
         
         Parameters
@@ -221,7 +219,9 @@ class Mask:
         dist_strip : furthest range of each strip mask
         wid_cross : half-width of spike mask
         dist_cross: furthest range of each spike mask
-        clean : whether to remove medium bright stars far from any available pixels for fitting. A new Stars object will be stored in stars_new, otherwise it is simply a copy.
+        clean : whether to remove medium bright stars far from any available
+                pixels for fitting. A new Stars object will be stored in
+                stars_new, otherwise it is simply a copy.
         draw : whether to draw mask map
         save : whether to save the image
         save_dir : path of saving
@@ -234,8 +234,6 @@ class Mask:
         image0 = self.image0
         stars = self.stars
         
-        
-        image_size = self.image_size
         pad = self.pad 
         
         # Strip + Cross mask
