@@ -351,7 +351,7 @@ class ImageList(ImageButler):
     
     def make_mask(self, stars_list, dir_measure='../output/Measure',
                   by='aper',  r_core=None, r_out=None,
-                  sn_thre=2.5, n_dilation=5, count=None,
+                  sn_thre=2.5, count=None,
                   n_strip=48, wid_strip=16, dist_strip=None,
                   wid_cross=10, dist_cross=72, clean=True,
                   draw=True, save=False, save_dir='../output/pic'):

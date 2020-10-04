@@ -419,7 +419,7 @@ def make_mask_map_dual(image, stars,
             print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))
             
     if sn_thre is not None:
-        print("Detect and deblend source... Mask S/N > %.1f (X%d enlarged)"%(sn_thre, n_dilation))
+        print("Detect and deblend source... Mask S/N > %.1f"%(sn_thre))
         # detect all source first 
         back, back_rms = background_sub_SE(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
