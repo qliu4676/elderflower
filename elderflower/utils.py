@@ -378,6 +378,10 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         
     logzerr_rbin = 0.434 * abs( zstd_rbin / (z_rbin-sky_mean))
     
+    if yunit == "SB":
+        I_rbin = Intensity2SB(I=z_rbin, BKG=np.median(back),
+                              ZP=ZP, pixel_scale=pixel_scale) + I_shift
+    
     if plot:
         if figsize is not None:
             plt.figure(figsize=figsize)
@@ -395,8 +399,6 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
         elif yunit == "SB":  
             # plot radius in Surface Brightness
-            I_rbin = Intensity2SB(I=z_rbin, BKG=np.median(back),
-                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
             I_sky = -2.5*np.log10(sky_std) + ZP + 2.5 * math.log10(pixel_scale**2)
 
             plt.plot(r_rbin, I_rbin, "-o", mec="k",
@@ -406,12 +408,10 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
                 
             if errorbar:
-                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin,
-                                                     BKG=np.median(back)-sky_std,
-                                                     ZP=ZP, pixel_scale=pixel_scale)
-                Ierr_rbin_lo = Intensity2SB(I=z_rbin-sky_std,
-                                            BKG=np.median(back)+sky_std,
-                                            ZP=ZP, pixel_scale=pixel_scale) - I_rbin
+                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin, BKG=np.median(back)-sky_std,
+                                 ZP=ZP, pixel_scale=pixel_scale)  - I_shift
+                Ierr_rbin_lo = Intensity2SB(I=z_rbin, BKG=np.median(back)+sky_std,
+                                ZP=ZP, pixel_scale=pixel_scale) - I_rbin  + I_shift
                 lolims = np.isnan(Ierr_rbin_lo)
                 uplims = np.isnan(Ierr_rbin_up)
                 Ierr_rbin_lo[lolims] = 4
@@ -511,13 +511,12 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=2.5, n_win=25, n_dilation=1,
+                 seeing=2.5, sn_thre=2.5, n_win=25,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
         Do a finer detection&deblending to remove faint undetected source."""
     
-    from skimage import morphology
     thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
                                           n_win=n_win, seeing=seeing, verbose=verbose)
     img_thumb, seg_thumb, mask_thumb = thumb_list
@@ -551,10 +550,6 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     # the target star is at the center of the thumbnail
     star_lab = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
     star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
-        
-    # dilation
-    for i in range(n_dilation):
-        star_ma = morphology.dilation(star_ma)
     
     if display:
         med_back = np.median(back)
@@ -738,7 +733,7 @@ def measure_Rnorm_all(table, bounds,
         
         if save:
             check_save_path(dir_name, make_new=False, verbose=False)
-            #save_pickle(res_thumb, res_thumb_name)   # save star thumbnails
+            save_pickle(res_thumb, res_thumb_name)   # save star thumbnails
             table_norm.write(table_norm_name, overwrite=True, format='ascii')
             
     return table_norm, res_thumb

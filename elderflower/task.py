@@ -9,8 +9,8 @@ from functools import partial
 from astropy.table import Table
 from astropy.io import fits
 
-from .io import (find_keyword_header, get_SExtractor_path,
-                 default_SE_config, check_save_path)
+from .io import (find_keyword_header, check_save_path, get_SExtractor_path,
+                 default_SE_config, default_SE_conv, default_SE_nnw)
 from .image import DF_pixel_scale
 
 
@@ -26,7 +26,9 @@ def Run_Detection(hdu_path, obj_name, band,
                   executable=SE_executable,
                   ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
-                  apass_dir='~/Data/apass/', **kwargs):
+                  apass_dir='~/Data/apass/',
+                  FILTER_NAME=default_SE_conv,
+                  STARNNW_NAME=default_SE_nnw, **kwargs):
                   
     """
     
@@ -654,11 +656,11 @@ def Run_PSF_Fitting(hdu_path,
     beta = 10                   # moffat beta, in arcsec
     fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
 
-    n0 = 3.2                    # estimated true power index
+    n0 = 3.4                    # estimated true power index
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([n0, 2., n_cutoff])         # power index
+    n_s = np.array([n0, 2.5, n_cutoff])         # power index
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # transition radius in arcsec
 
@@ -724,7 +726,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
                             n_min=1, n_est=n0,
-                            theta_in=50, theta_out=240,
+                            theta_in=30, theta_out=300,
                             leg2d=leg2d, parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
@@ -874,11 +876,11 @@ class berry:
         
         self.work_dir = work_dir
         
-        from elderflower.io import config_kwargs, default_config
-        if config_file is None: config_file=default_config
+        from .io import config_kwargs, default_config
+        if config_file is None: config_file=default_config,
         self.config_func = partial(config_kwargs, config_file=config_file)
     
-    
+
     @property
     def parameters(self):
         """ Keyword parameter list in the configuration file """
@@ -893,7 +895,9 @@ class berry:
         
         self.ZP = Run_Detection(self.hdu_path,
                                 self.obj_name, self.band,
-                                work_dir=self.work_dir, **kwargs)
+                                work_dir=self.work_dir,
+                                FILTER_NAME=default_SE_conv,
+                                STARNNW_NAME=default_SE_nnw, **kwargs)
         
     def run(self, **kwargs):
         """ Run the task (Match_Mask_Measure + Run_PSF_Fitting). """

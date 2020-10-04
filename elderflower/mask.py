@@ -286,10 +286,9 @@ class Mask:
             
 # Make mask maps
 
-def make_mask_detection(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
+def make_mask_detection(image, sn_thre=3, b_size=25, npix=5):
     """ Make mask map with S/N > sn_thre """
     from photutils import detect_sources, deblend_sources
-    from skimage import morphology
     
     # detect source
     back, back_rms = background_sub_SE(image, b_size=b_size)
@@ -298,8 +297,6 @@ def make_mask_detection(image, sn_thre=3, b_size=25, npix=5, n_dilation=3):
     
     # dilation
     segmap = segm0.data.copy()
-    for i in range(n_dilation):
-        segmap = morphology.dilation(segmap)
         
     segmap[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
     mask_deep = (segmap!=0)
@@ -389,13 +386,11 @@ def make_mask_map_dual(image, stars,
                        xx=None, yy=None, by='aper',
                        pad=0, r_core=24, r_out=None, count=None,
                        seg_base=None, n_bright=25, sn_thre=3, 
-                       nlevels=64, contrast=0.001, npix=4, 
-                       b_size=64, n_dilation=3):
+                       nlevels=64, contrast=0.001, npix=4, b_size=64):
     """ Make mask map in dual mode: for faint stars, mask with S/N > sn_thre;
     for bright stars, mask core (r < r_core pix) """
     from photutils import detect_sources, deblend_sources
     from photutils.segmentation import SegmentationImage
-    from skimage import morphology
     
     if (xx is None) | (yy is None):
         yy, xx = np.mgrid[:image.shape[0]+2*pad, :image.shape[1]+2*pad]
@@ -447,10 +442,6 @@ def make_mask_map_dual(image, stars,
             rr2 = (xx-pos[0])**2+(yy-pos[1])**2
             lab = segmap[np.where(rr2==np.min(rr2))][0]
             segmap[segmap==lab] = 0
-
-        # dilation
-        for i in range(n_dilation):
-            segmap = morphology.dilation(segmap)
             
     if seg_base is not None:
         segmap2 = seg_base
