@@ -26,8 +26,6 @@ Dependencies
 
 * photutils>=0.7.2
 
-* scikit_image>=0.14.2
-
 * pandas>=1.0.1
 
 * pyyaml>=5.3
