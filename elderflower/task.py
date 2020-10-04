@@ -702,7 +702,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
-                        sn_thre=2.5, n_dilation=5, draw=draw,
+                        sn_thre=2.5, draw=draw,
                         save=save, save_dir=plot_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
