@@ -6,8 +6,8 @@ import numpy as np
 
 from functools import partial
 
-from astropy.table import Table
 from astropy.io import fits
+from astropy.table import Table
 
 from .io import (find_keyword_header, check_save_path, get_SExtractor_path,
                  default_SE_config, default_SE_conv, default_SE_nnw)
@@ -26,9 +26,7 @@ def Run_Detection(hdu_path, obj_name, band,
                   executable=SE_executable,
                   ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
-                  apass_dir='~/Data/apass/',
-                  FILTER_NAME=default_SE_conv,
-                  STARNNW_NAME=default_SE_nnw, **kwargs):
+                  apass_dir='~/Data/apass/', **kwargs):
                   
     """
     
@@ -85,6 +83,8 @@ def Run_Detection(hdu_path, obj_name, band,
     overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in capital):
     
         Run_Detection(..., DETECT_THRESH=10)
+        
+    will override threshold.
     
     """
                 
@@ -111,10 +111,9 @@ def Run_Detection(hdu_path, obj_name, band,
             SE_catalog = sextractor.run(hdu_path,
                                         extra_params=SE_params,
                                         config_path=config_path,
-                                        catalog_path=catname,
+                                        catalog_path=catname+'_zp',
                                         executable=executable,
-                                        DETECT_THRESH=5,
-                                        ANALYSIS_THRESH=5,
+                                        DETECT_THRESH=5, ANALYSIS_THRESH=5,
                                         FILTER_NAME=default_SE_conv,
                                         STARNNW_NAME=default_SE_nnw)
                                         
@@ -133,7 +132,7 @@ def Run_Detection(hdu_path, obj_name, band,
                                                   bounds=[mindec, maxdec, minra, maxra])
                     refcat.write(ref_cat, format='ascii')
                 else:
-                    sys.exit('APASS directory not available. Exit.')
+                    raise FileNotFoundError('APASS directory not available.')
 
             # Crossmatch SE catalog with reference catalog
             imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=3.)
@@ -145,20 +144,26 @@ def Run_Detection(hdu_path, obj_name, band,
     else:
         ZP = np.float(header[ZP_keyname])
         print("Read zero-point from header : ZP = {:.3f}".format(ZP))
-
+    
+    SE_key = kwargs.keys()
+    for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
+        if THRE not in SE_key: kwargs[THRE] = threshold
+    if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_SE_conv
+    if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_SE_nnw
+    for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
+        if key in SE_key: SE_key.pop(key, None); print(f'WARNING: {NAME} are reserved.')
+   
     SE_catalog = sextractor.run(hdu_path,
                                 extra_params=SE_params,
                                 config_path=config_path,
                                 catalog_path=catname,
                                 executable=executable,
-                                DETECT_THRESH=threshold,
-                                ANALYSIS_THRESH=threshold,
+                                MAG_ZEROPOINT=ZP,
                                 CHECKIMAGE_TYPE='SEGMENTATION',
-                                CHECKIMAGE_NAME=segname,
-                                MAG_ZEROPOINT=ZP, **kwargs)
+                                CHECKIMAGE_NAME=segname, **kwargs)
     
     if not (os.path.isfile(catname)) & (os.path.isfile(segname)):
-        sys.exit('SE catalog/segmentation not saved properly. Exit.')
+        raise FileNotFoundError('SE catalog/segmentation not saved properly.')
         
     print(f"CATALOG saved as {catname}")
     print(f"SEGMENTATION saved as {segname}")
@@ -260,7 +265,7 @@ def Match_Mask_Measure(hdu_path,
     
     # Read hdu
     if not os.path.isfile(hdu_path):
-        sys.exit("Image does not exist. Check path.")
+        raise FileNotFoundError("Image does not exist. Check path.")
         
     with fits.open(hdu_path) as hdul:
         print("Read Image :", hdu_path)

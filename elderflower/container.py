@@ -14,6 +14,10 @@ class Container:
                  brightest_only=False,
                  parallel=False,
                  draw_real=True):
+                 
+        if n_spline is float:
+            if n_spline <=1:
+                sys.exit('n_spline needs to be >=2!')
         
         self.n_spline = n_spline
         self.fit_sigma = fit_sigma

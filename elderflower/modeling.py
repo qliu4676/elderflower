@@ -1725,11 +1725,13 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 #                                         loc=np.log10(std_est), scale=0.3)
     Prior_logsigma = stats.truncnorm(a=-3, b=0,
                                      loc=np.log10(std_est), scale=0.3)
+                                     
+    Prior_logfrac = stats.uniform(loc=-2.5, scale=2.2)
     
     if n_spline == 'm':
         Prior_gamma = stats.uniform(loc=0., scale=10.)       
         Prior_beta = stats.uniform(loc=1.1, scale=6.)  
-        Prior_logfrac = stats.uniform(loc=-2, scale=2.)
+        
         
         def prior_tf_mof(u):
             v = u.copy()
@@ -1757,22 +1759,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     else:
         Prior_n = stats.truncnorm(a=-3, b=3., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
-        Prior_logfrac = stats.uniform(loc=-2, scale=1.7)
-        
-        if n_spline == 1:
-            # Single power law
-            from .plotting import draw_independent_priors
-            Priors = [Prior_n, Prior_mu, Prior_logsigma]
 
-            # Draw the priors
-            draw_independent_priors(Priors, **kwargs)
-
-            # Build independent priors
-            prior_tf_p = build_independent_priors(Priors)
-
-            return prior_tf_p
-
-        elif n_spline==2:
+        if n_spline==2:
             def prior_tf_2p(u):
                 v = u.copy()
                 v[0] = Prior_n.ppf(u[0])    # n0 : N (n, d_n0)
@@ -1832,11 +1820,12 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 #            return prior_tf_3p
 
         else:
-            prior_tf = partial(prior_tf_sp, Priors=[Prior_n, Prior_mu, Prior_logsigma],
-                               n_spline=n_spline, n_min=n_min,
-                               d_n=d_n, d_theta=d_theta,
+            Priors = [Prior_n, Prior_mu, Prior_logsigma, Prior_logfrac]
+            prior_tf = partial(prior_tf_sp, Priors=Priors,
+                               n_spline=n_spline, leg2d=leg2d,
+                               n_min=n_min, d_n=d_n, d_theta=d_theta,
                                log_t_in=log_t_in, log_t_out=log_t_out,
-                               leg2d=leg2d, K=K, fit_sigma=fit_sigma, fit_frac=fit_frac)
+                               K=K, fit_sigma=fit_sigma, fit_frac=fit_frac)
 
             return prior_tf
 
@@ -1851,7 +1840,7 @@ def prior_tf_sp(u, Priors,
     """ Prior Transform function for n_spline """
 
     v = u.copy()
-    Prior_n, Prior_mu, Prior_logsigma = Priors
+    Prior_n, Prior_mu, Prior_logsigma, Prior_logfrac = Priors
 
     v[0] = Prior_n.ppf(u[0])
     
@@ -2062,41 +2051,7 @@ def set_likelihood(data, mask_fit, psf, stars,
         theta_c = psf.theta_c  # outer cutoff
         n_c = psf.n_c
         
-        if n_spline==1:
-
-            def loglike_p(v):
-                    
-                n, mu = v[0], v[-K-1]
-                
-                if fit_sigma:
-                    sigma = 10**v[-K]
-                else:
-                    sigma = std_est
-
-                param_update = {'n':n}
-
-                if fit_frac:
-                    frac = 10**v[-1]
-                    param_update['frac'] = frac
-
-                psf.update(param_update)
-
-                if norm=='brightness':
-                    # I varies with sky background
-                    stars.z_norm = z_norm + (stars.BKG - mu)
-
-                image_tri = p_draw_func(psf, stars)
-                image_tri = image_tri + image_base + mu
-
-                ypred = image_tri[~mask_fit].ravel()
-
-                loglike = calculate_likelihood(ypred, data, sigma)
-                
-                return loglike
-
-            return loglike_p
-
-        elif n_spline==2:
+        if n_spline==2:
 
             def loglike_2p(v):
             
