@@ -114,7 +114,9 @@ def Run_Detection(hdu_path, obj_name, band,
                                         catalog_path=catname,
                                         executable=executable,
                                         DETECT_THRESH=5,
-                                        ANALYSIS_THRESH=5)
+                                        ANALYSIS_THRESH=5,
+                                        FILTER_NAME=default_SE_conv,
+                                        STARNNW_NAME=default_SE_nnw)
                                         
             # Load (APASS) reference catalog
             if os.path.exists(ref_cat):
