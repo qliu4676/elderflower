@@ -574,9 +574,9 @@ def draw_comparison_2D(data, mask, image_fit,
     if r_core is not None:
         if np.ndim(r_core) == 0:
             r_core = [r_core,r_core]
-        aper1 = CircularAperture(mask.stars.star_pos_verybright, r=r_core[0])
+        aper1 = CircularAperture(mask.stars.star_pos_verybright, r=r_core[1])
         aper1.plot(color='lime',lw=2,alpha=0.95, axes=ax6)
-        aper2 = CircularAperture(mask.stars.star_pos_medbright, r=r_core[1])
+        aper2 = CircularAperture(mask.stars.star_pos_medbright, r=r_core[0])
         aper2.plot(color='skyblue',lw=2,label="",alpha=0.85, axes=ax6)
         
     plt.tight_layout()

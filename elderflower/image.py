@@ -486,7 +486,7 @@ class ImageList(ImageButler):
             d_n0 = getattr(self.Images[i],'d_n0', 0.2)
             if type(n0) is not float: n0, d_n0 = psf.n0, 0.2
             
-            d_n0 *= 2
+            d_n0 *= 3
             
             # Set Priors
             container.set_prior(n0, self.bkg, self.std_est[i],

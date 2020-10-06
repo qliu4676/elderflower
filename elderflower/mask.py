@@ -3,6 +3,8 @@ import math
 import numpy as np
 
 from astropy.io import fits
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 
 from .modeling import Stars
 from .utils import background_sub_SE, crop_pad
@@ -304,8 +306,8 @@ def make_mask_detection(image, sn_thre=3, b_size=25, npix=5):
     return mask_deep, segmap
 
 
-def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
-                       k=3, pixel_scale=DF_pixel_scale):
+def make_mask_aperture(fname, RA, Dec, A_ang, B_ang, PA_ang, wcs, shape,
+                       enlarge=3, pixel_scale=DF_pixel_scale):
     
     """
     
@@ -314,16 +316,15 @@ def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
     Parameters
     ----------
     fname : name of saved mask
-    Pos : turple or array or turples
-        position(s) (x,y) of apertures
-    A_ang : float or 1d array
-        semi-major axis length(s) in arcsec
-    B_ang : float or 1d array
-        semi-minor axis length(s) in arcsec
+    RA, Dec : float or 1d array
+        coordinates(s) of aperture centers
+    A_ang, B_ang : float or 1d array
+        semi-major/minor axis length(s) in arcsec
     PA_ang : float or 1d array
         patch angle (counter-clockwise from north) in degree
+    wcs : astropy wcs
     shape : image shape
-    k : float, enlargement factor
+    enlarge : float, enlargement factor
     pixel_scale : pixel scale in arcsec/pixel
     
     Returns
@@ -337,9 +338,13 @@ def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
     mask = np.zeros(shape)
     
     # shape properties of apertures
-    aper_props = np.atleast_2d(np.array([Pos, A_ang, B_ang, PA_ang]).T)
+    aper_props = np.atleast_2d(np.array([RA, Dec, A_ang, B_ang, PA_ang]).T)
     
-    for pos, a_ang, b_ang, pa_ang in aper_props:
+    for ra, dec, a_ang, b_ang, pa_ang in aper_props:
+        
+        # convert coordinates to positions
+        coords = SkyCoord(f'{ra} {dec}', unit=u.deg)
+        pos = wcs.all_world2pix(ra, dec, 0) # 0-original in photutils
         
         # convert angular to pixel unit
         a_pix = a_ang / pixel_scale
@@ -351,7 +356,7 @@ def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
 #        pos = (shape[1]-1)/2., (shape[0]-1)/2.
 
         # make elliptical aperture
-        aper = EllipticalAperture(pos, k*a_pix, k*b_pix, theta)
+        aper = EllipticalAperture(pos, enlarge*a_pix, enlarge*b_pix, theta)
 
         # convert aperture to mask
         ma_aper = aper.to_mask(method='center')
@@ -398,7 +403,7 @@ def make_mask_map_dual(image, stars,
     star_pos = stars.star_pos_bright + pad
     
     if by == 'aper':
-        r_core_s = np.unique(r_core)[::-1]
+        r_core_s = np.unique(r_core)
         if len(r_core_s) == 1:
             r_core_A, r_core_B = r_core_s, r_core_s
             r_core_s = np.ones(len(star_pos)) * r_core_s
@@ -408,7 +413,7 @@ def make_mask_map_dual(image, stars,
                                  for F in stars.Flux_bright])
 
         if r_out is not None:
-            r_out_s = np.unique(r_out)[::-1]
+            r_out_s = np.unique(r_out)
             if len(r_out_s) == 1:
                 r_out_A, r_out_B = r_out_s, r_out_s
                 r_out_s = np.ones(len(star_pos)) * r_out_s
