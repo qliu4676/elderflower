@@ -6,10 +6,11 @@ import time
 import string
 import random
 
+from functools import partial
+
 import numpy as np
 from scipy import stats
 from scipy.optimize import curve_fit
-
 import matplotlib.pyplot as plt
 
 from astropy import wcs
@@ -237,12 +238,14 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         
         if color is not None: plt.colorbar(s, label=c_lab.replace('_','\_'))
         
-        plt.xlim(x_max, x_min)
-        plt.gca().invert_yaxis()
+        plt.xlim(x_min, x_max)
+        invert = lambda lab: ('MAG' in lab) | ('MU' in lab)
+        if invert(x_lab): plt.gca().invert_xaxis()
+        if invert(y_lab): plt.gca().invert_yaxis()
         plt.xlabel(x_lab.replace('_','\_'))
         plt.ylabel(y_lab.replace('_','\_'))
         
-    return popt, clip_func
+    return popt, pcov, clip_func
     
 def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=True):
     """ Empirically pick out (bright) extended sources in the SE_catalog.
@@ -257,11 +260,12 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     MAG_saturate = mag_saturate # guess of saturated MAG_AUTO
     
     # Fit a flattened linear
-    popt, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
-                                     p0=(1, MAG_saturate, MU_saturate),
-                                     x_max=mag_limit, x_min=7, c_lab='CLASS_STAR',
-                                     color=SE_bright['CLASS_STAR'],
-                                     x_lab='MAG_AUTO',y_lab='MU_MAX', draw=draw)
+    popt, _, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
+                                        p0=(1, MAG_saturate, MU_saturate),
+                                        x_max=mag_limit, x_min=7,
+                                        draw=draw, c_lab='CLASS_STAR',
+                                        color=SE_bright['CLASS_STAR'],
+                                        x_lab='MAG_AUTO',y_lab='MU_MAX')
 
     # pick outliers in the catalog
     outlier = clip_func(SE_catalog['MAG_AUTO'], SE_catalog['MU_MAX'])
@@ -962,6 +966,162 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
         plt.show()
         
     return stars_bright, stars_all
+    
+    
+def interp_I0(r, I, r0, r1, r2):
+    """ Interpolate I0 at r0 with I(r) between r1 and r2 """
+    range_intp = (r>r1) & (r<r2)
+    I0 = np.interp(r0, r[(r>r1)&(r<r2)], I[(r>r1)&(r<r2)])
+    return I0
+
+def fit_n0(dir_measure, bounds,
+           obj_name, band, BKG, ZP,
+           pixel_scale=DF_pixel_scale,
+           fit_range=[20,50], dr=0.2,
+           N_max=20, mag_max=13, I_norm=24,
+           r_scale=12, mag_limit=15, sky_std=3,
+           plot_brightest=True, draw=True):
+           
+    """
+    Fit the first component of using bright stars.
+    
+    Parameters
+    ----------
+    dir_measure : str
+        directory storing the measurement
+    bounds : 1d list, [Xmin, Ymin, Xmax, Ymax]
+        fitting boundary
+    band : str, 'g' 'G' 'r' or 'R'
+    obj_name : str
+        object name
+    BKG : float
+        background value for profile measurement
+    ZP : float
+        zero-point
+    pixel_scale : float, optional, default 2.5
+        pixel scale in arcsec/pix
+    fit_range : 2-list, optional, default [20, 50]
+        range for fitting in arcsec
+    dr : float, optional, default 0.2
+        profile step paramter
+    N_max : int, optional, default 20
+        max number of stars used to fit n0
+    mag_max : float, optional, default 13
+        max magnitude of stars used to fit n0
+    I_norm : float, optional, default 24
+        SB at which profiles are normed
+    r_scale : int, optional, default 12
+        Radius (in pix) at which the brightness is measured
+        Default is 30" for Dragonfly.
+    mag_limit : float, optional, default 15
+        Magnitude upper limit below which are measured
+    sky_std : float, optional, default 3
+        sky stddev (for display only)
+    plot_brightest : bool, optional, default True
+        whether to draw profile of the brightest star
+    draw : bool, optional, default True
+        whether to draw profiles and fit process
+        
+    Returns
+    -------
+    n0 : float
+        first power index
+    d_n0 : float
+        uncertainty of n0
+    
+    """
+
+    from .modeling import log_linear
+
+    Xmin, Ymin, Xmax, Ymax = bounds
+    r1, r2 = fit_range
+    r0 = r_scale*DF_pixel_scale
+
+    if  r1<r0<r2:
+        # read result thumbnail and norm table
+        b = band.lower()
+        bound_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
+        fn_res_thumb = os.path.join(dir_measure, f'{obj_name}-thumbnail_{b}mag{mag_limit}_{bound_str}.pkl')
+        fn_tab_norm = os.path.join(dir_measure, f'{obj_name}-norm_{r_scale}pix_{b}mag{mag_limit}_{bound_str}.txt')
+        res_thumb = load_pickle(fn_res_thumb)
+        tab_norm = Table.read(fn_tab_norm, format='ascii')
+
+        if draw:
+            plt.figure(figsize=(8,6))
+
+        # r_rbin: r in arcsec, I_rbin: SB in mag/arcsec^2
+        # I_r0: SB at r0, I_rbin: SB in mag/arcsec^2
+        r_rbin_all, I_rbin_all = np.array([]), np.array([])
+        I_r0_all, In_rbin_all = np.array([]), np.array([])
+
+        tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_max]
+        if len(tab_fit)==0:
+            print('No enought bright stars in this region. Use default.')
+            return None, None
+            
+        print('Fit n0 with profiles of %d bright stars...'%(len(tab_fit)))
+        for num in tab_fit['NUMBER']:
+            res = res_thumb[num]
+            img, ma, cen = res['image'], res['mask'], res['center']
+            
+            # calculate 1d profile
+            r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma,
+                                               ZP=ZP, sky_mean=BKG, sky_std=sky_std,
+                                               xunit="arcsec", yunit="SB",
+                                               errorbar=False, dr=dr,
+                                               core_undersample=False, plot=False)
+
+            range_intp = (r_rbin>r1) & (r_rbin<r2)
+            if len(r_rbin[range_intp]) > 5:
+                # interpolate I0 at r0, r in arcsec
+                I_r0 = interp_I0(r_rbin, I_rbin, r0, r1, r2)
+
+                r_rbin_all = np.append(r_rbin_all, r_rbin)
+                I_rbin_all = np.append(I_rbin_all, I_rbin)
+
+                I_r0_all = np.append(I_r0_all, I_r0)
+                In_rbin_all = np.append(In_rbin_all, I_rbin-I_r0+I_norm)
+
+                if draw:
+                    cal_profile_1d(img, cen=cen, mask=ma, dr=1,
+                                   ZP=27.1, sky_mean=BKG, sky_std=2.8,
+                                   xunit="arcsec", yunit="SB", errorbar=False,
+                                   core_undersample=False, color='gray', lw=2,
+                                   I_shift=24-I_r0, markersize=0, alpha=0.1)
+
+        if plot_brightest:
+            num = list(res_thumb.keys())[0]
+            img0, ma0, cen0 = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
+            cal_profile_1d(img0, cen=cen0, mask=ma0, dr=0.8,
+                           ZP=27.1, sky_mean=BKG, sky_std=2.8,
+                           xunit="arcsec", yunit="SB", errorbar=True,
+                           core_undersample=False, color='steelblue', lw=3,
+                           I_shift=24-I_r0_all[0], markersize=8, alpha=0.9)
+
+        if draw:
+            plt.ylim(30.5,16.5)
+            plt.xlim(5.,5e2)
+            plt.axvspan(r1, r2, color='gold', alpha=0.1)
+            plt.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
+            plt.xscale('log')
+            plt.show()
+    
+    else:
+        print('Warning: r0 is out of fit_range! Use default.')
+        return None, None
+
+    p_log_linear = partial(log_linear, x0=r_scale*pixel_scale, y0=I_norm)
+    popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
+                                           x_min=r1, x_max=r2, p0=10, bounds=(3, 15), n_iter=10,
+                                           x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]', draw=draw)
+    if draw: plt.ylim(I_norm+2.75, I_norm-2); plt.show()
+
+    # I ~ klogr; m = -2.5logF => n = k/2.5
+    n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
+    print('n0 = {:.4f}+/{:.4f}'.format(n0, d_n0))
+    
+    return n0, d_n0
+    
 
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
                 pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
@@ -1131,7 +1291,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
     sep : maximum separation (in astropy unit) for crossmatch with SE.
     
     Returns
-    ----------
+    -------
     tab_target : table containing matched bright sources with SE source catalog
     tab_target_all : table containing matched all sources with SE source catalog
     catalog_star : PS-1 catalog of all sources in the region(s)
@@ -1315,11 +1475,12 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
-    popt, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
-                                     piecewise_linear, x_max=15, n_iter=5,
-                                     p0=(1, 2, mag_saturate, mag_saturate),
-                                     bounds=(0.9, [2, 4, mag_saturate+2, mag_saturate+2]),
-                                     x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
+    mag_lim = mag_saturate+2
+    popt, _, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
+                                        piecewise_linear, x_max=15, n_iter=5,
+                                        p0=(1, 2, mag_saturate, mag_saturate),
+                                        bounds=(0.9, [2, 4, mag_lim, mag_lim]),
+                                        x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
                                     
     # Empirical corrected magnitude
     f_corr = lambda x: piecewise_linear(x, *popt)
@@ -1599,7 +1760,7 @@ def make_psf_from_fit(fit_res, psf=None, n_spline=2,
     from .sampler import get_params_fit
     
     if psf is None:
-        params = {"fwhm":2.28 * pixel_scale, "beta":10, "frac":0.3,
+        params = {"fwhm":2.28 * pixel_scale, "beta":10, "frac":0.1,
                   "n_s":np.array([3.3, 2.5]), "theta_s":np.array([5, 72])}
         psf = PSF_Model(params, aureole_model='multi-power')
         psf.pixelize(pixel_scale)

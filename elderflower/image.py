@@ -166,6 +166,13 @@ class Image(ImageButler):
             raise AttributeError(f"{self.__class__.__name__} has no stars info. \
                                     Read measurement tables first!")
                                     
+    def fit_n0(self, dir_measure, **kwargs):
+        from .utils import fit_n0
+        n0, d_n0 = fit_n0(dir_measure, self.bounds0,
+                         self.obj_name, self.band, self.bkg, self.ZP, **kwargs)
+        self.n0 = n0
+        self.d_n0 = d_n0
+        return n0, d_n0
                                     
     def generate_image_psf(self, psf, SE_catalog, seg_map, draw=False, dir_name='./tmp'):
         """ Generate image of stars from a PSF Model"""
@@ -217,6 +224,7 @@ class Image(ImageButler):
                                 verbose=False, draw=False, save=False, save_dir='test')
         
         stars = self.stars_bright
+        self.stars_gen = stars
         
         image_stars, _, _ = generate_image_fit(psf, stars, self.image_shape)
         print("Image of stars is generated based on the PSF Model!")
@@ -324,7 +332,7 @@ class ImageList(ImageButler):
         self.stars_all = stars_all
 
         return stars_bright, stars_all
-    
+        
     
     def make_base_image(self, psf_star, stars_all, psf_size=64, vmax=30, draw=True):
         
@@ -350,8 +358,8 @@ class ImageList(ImageButler):
             
     
     def make_mask(self, stars_list, dir_measure='../output/Measure',
-                  by='aper',  r_core=None, r_out=None,
-                  sn_thre=2.5, count=None,
+                  by='aper',  r_core=24, r_out=None,
+                  sn_thre=2.5, count=None, mask_obj=None,
                   n_strip=48, wid_strip=16, dist_strip=None,
                   wid_cross=10, dist_cross=72, clean=True,
                   draw=True, save=False, save_dir='../output/pic'):
@@ -368,7 +376,7 @@ class ImageList(ImageButler):
             mask = Mask(Image, stars)
             
             # Mask the main object by given shape parameters or read a map
-            mask.make_mask_object(self.obj_name)
+            mask.make_mask_object(mask_obj)
             
             # crop the full mask map into smaller one
             if hasattr(mask, 'mask_obj_field'):
@@ -404,7 +412,7 @@ class ImageList(ImageButler):
     
     
     @property
-    def mask_fits(self):
+    def mask_fit(self):
         """ Masks for fitting """
         return [mask.mask_fit for mask in self.Masks]
     
@@ -412,7 +420,7 @@ class ImageList(ImageButler):
     def data(self):
         """ 1D array to be fit """
         data = [image[~mask_fit].copy().ravel()
-                    for (image, mask_fit) in zip(self.images, self.mask_fits)]
+                    for (image, mask_fit) in zip(self.images, self.mask_fit)]
 
         return data
         self
@@ -426,7 +434,7 @@ class ImageList(ImageButler):
         self.mu_est = np.zeros(len(self.Images))
         self.std_est = np.zeros(len(self.Images))
         
-        for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fits)):
+        for i, (Image, mask) in enumerate(zip(self.Images, self.mask_fit)):
             data_sky = sigma_clip(Image.image[~mask], sigma=3)
             
             mu_patch, std_patch = np.mean(data_sky), np.std(data_sky)
@@ -436,10 +444,21 @@ class ImageList(ImageButler):
             
             print(repr(Image))
             print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
+    
+    def fit_n0(self, dir_measure, **kwargs):
+        """ Fit power index of first component with bright star profiles """
+        self.n0, self.d_n0 = [], []
+        for i in range(self.N_Image):
+            if hasattr(self, 'std_est'):
+                kwargs['sky_std'] = self.std_est[i]
+            else:
+                print('Sky stddev has not been estimated yet.')
+            n0, d_n0 = self.Images[i].fit_n0(dir_measure, **kwargs)
+            self.n0 += [n0]
+            self.d_n0 += [d_n0]
             
     def set_container(self,
                       psf, stars,
-                      n_est=3.2,
                       n_spline=2,
                       leg2d=False,
                       fit_sigma=True,
@@ -462,13 +481,21 @@ class ImageList(ImageButler):
                                   fit_sigma, fit_frac,
                                   brightest_only,
                                   parallel, draw_real)
+                                  
+            n0 = getattr(self.Images[i],'n0', psf.n0)
+            d_n0 = getattr(self.Images[i],'d_n0', 0.2)
+            if type(n0) is not float: n0, d_n0 = psf.n0, 0.2
+            
+            d_n0 *= 2
+            
             # Set Priors
-            container.set_prior(n_est, self.bkg, self.std_est[i],
-                                n_min=n_min, theta_in=theta_in, theta_out=theta_out)
+            container.set_prior(n0, self.bkg, self.std_est[i],
+                                n_min=n_min, d_n0=d_n0,
+                                theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
             container.set_likelihood(self.data[i],
-                                     self.mask_fits[i],
+                                     self.mask_fit[i],
                                      psf, stars[i],
                                      psf_range=[None, None],
                                      norm='brightness',

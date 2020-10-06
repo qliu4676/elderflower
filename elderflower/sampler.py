@@ -126,7 +126,8 @@ class Sampler:
         
         # Delete local prior and loglikelihood function which can't be pickled
         for attr in ['prior_transform', 'loglikelihood']:
-            delattr(res['container'], attr)
+            if hasattr(res['container'], attr):
+                delattr(res['container'], attr)
         
         save_pickle(res, os.path.join(save_dir, filename))
         

@@ -248,13 +248,13 @@ The image of bright stars can be created by simply running::
 
 To see how the subtraction works, we draw the original image (``DF_Image.image``), the image of bright stars (``image_stars``) and the residual image as below::
 
-	from elderflower.plottting import LogNorm
+	from elderflower.plotting import LogNorm
 	fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(22,7))
 	ax1.imshow(DF_Image.image, vmin=1049, vmax=1149, norm=LogNorm())
 	ax1.set_title('IM1: Data')
 	ax2.imshow(image_stars, vmin=0, vmax=100, norm=LogNorm())
 	ax2.set_title('IM2: Bright Stars')
-	ax3.imshow(DF_Image.image-image_star, vmin=1049, vmax=1149, norm=LogNorm())
+	ax3.imshow(DF_Image.image-image_stars, vmin=1049, vmax=1149, norm=LogNorm())
 	ax3.set_title('IM1 - IM2')
 
 .. image:: images/subtract_stars_by_psf.png

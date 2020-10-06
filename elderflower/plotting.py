@@ -78,6 +78,7 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args
     
     cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
     cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
+    cb.ax.tick_params(labelsize=12)
     
     cmap = cb.mappable.get_cmap()
     cmap.set_bad(color=color_nan, alpha=0.3)
@@ -143,9 +144,9 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
     image2 = image.copy()
     image2[mask_deep] = 0
-    im3 = ax3.imshow(image2, norm=LogNorm(), vmin=vmin, vmax=vmax, aspect='auto') 
+    im3 = ax3.imshow(image2, norm=LogNorm(), vmin=vmin, vmax=vmax) 
     ax3.set_title("Sky")
-    colorbar(im3)
+    colorbar(im3, pad=0.1, size="2%")
     
     if r_core is not None:
         if np.ndim(r_core) == 0:
@@ -215,10 +216,10 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
 
     image3 = image.copy()
     image3[mask_comb] = 0
-    im3 = ax3.imshow(image3, norm=LogNorm(), aspect='auto', vmin=vmin, vmax=vmax) 
+    im3 = ax3.imshow(image3, norm=LogNorm(), vmin=vmin, vmax=vmax)
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_title("Sky")
-    colorbar(im3)
+    colorbar(im3, pad=0.1, size="2%")
     
     if r_core is not None:
         if np.ndim(r_core) == 0:

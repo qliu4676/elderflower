@@ -108,8 +108,11 @@ def save_pickle(data, filename, printout=True):
 def load_pickle(filename, printout=True):
     """ Load data as pickle file. """
     if printout: print("Read from %s"%filename)
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
+    if os.path.exists(filename):
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+    else:
+        raise FileNotFoundError(f'{filename} not found!')
 
 
 def load_config(filename):

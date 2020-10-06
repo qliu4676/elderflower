@@ -471,8 +471,9 @@ def Run_PSF_Fitting(hdu_path,
                     pad=50,
                     r_scale=12,
                     mag_limit=15,
-                    mag_threshold=[14,11],
+                    mag_threshold=[13.,11],
                     mask_type='aper',
+                    mask_obj=None,
                     wid_strip=24,
                     n_strip=48,
                     SB_threshold=24.5,
@@ -482,6 +483,7 @@ def Run_PSF_Fitting(hdu_path,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
+                    fit_n0=False,
                     fit_sigma=True,
                     fit_frac=False,
                     leg2d=False,
@@ -535,6 +537,8 @@ def Run_PSF_Fitting(hdu_path,
     mask_type : 'aper' or 'brightness', optional, default 'aper'
         "aper": aperture masking
         "brightness": brightness-limit masking
+    mask_obj : 'str', optional, default None
+        path to the target object mask (w/ the same shape with image)
     wid_strip : int, optional, default 24
         Width of strip for masks of very bright stars.
     n_strip : int, optional, default 48
@@ -559,6 +563,8 @@ def Run_PSF_Fitting(hdu_path,
     theta_cutoff : float, optional, default 1200
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
+    fit_n0:
+        
     fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
         If False, will use the estimated value
@@ -659,17 +665,17 @@ def Run_PSF_Fitting(hdu_path,
     from .modeling import PSF_Model
     
     # PSF Parameters (some from fitting stacked PSF)
-    frac = 0.3                  # fraction of aureole
+    frac = 0.1                  # fraction of aureole
     beta = 10                   # moffat beta, in arcsec
     fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
 
-    n0 = 3.4                    # estimated true power index
+    n0 = 3.4                    # initial first power index
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([n0, 2.5, n_cutoff])         # power index
+    n_s = np.array([n0, 2.5, n_cutoff])         # initial power index
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
-        # transition radius in arcsec
+        # initial transition radius in arcsec
 
     # Multi-power-law PSF
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
@@ -709,7 +715,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip,
-                        sn_thre=2.5, draw=draw,
+                        sn_thre=2.5, draw=draw, mask_obj=mask_obj,
                         save=save, save_dir=plot_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
@@ -723,18 +729,22 @@ def Run_PSF_Fitting(hdu_path,
 #    if proceed == 'n': sys.exit("Reset the Mask.")
     
     ############################################
-    # Estimate Background
+    # Estimate Background & Fit n0
     ############################################
     DF_Images.estimate_bkg()
+    if fit_n0:
+        DF_Images.fit_n0(dir_measure, pixel_scale=pixel_scale,
+                         r_scale=r_scale, mag_limit=mag_limit,
+                         mag_max=12, draw=draw)
 
     ############################################
     # Setup Priors and Likelihood Models for Fitting
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            n_min=1, n_est=n0,
-                            theta_in=30, theta_out=300,
-                            leg2d=leg2d, parallel=parallel,
+                            theta_in=50, theta_out=300,
+                            n_min=1, leg2d=leg2d,
+                            parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
                             fit_frac=fit_frac,
@@ -764,7 +774,7 @@ def Run_PSF_Fitting(hdu_path,
         if save:
             # Save outputs
             fit_info = {'obj_name':obj_name,
-                        'band':band.upper(),
+                        'band':band.lower(),
                         'n_spline':n_spline,
                         'bounds':bounds_list[i],
                         'r_scale':r_scale,
@@ -776,10 +786,12 @@ def Run_PSF_Fitting(hdu_path,
             if leg2d: suffix+='l'
             if brightest_only: suffix += 'b'
             
-            fname = f'{obj_name}-{reg}-{band}-fit{suffix}.res'
+            Xmin, Ymin, Xmax, Ymax = bounds_list[i]
+            
+            fname = f'{obj_name}-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band}-fit{suffix}.res'
     
             s.save_results(fname, fit_info, save_dir=work_dir)
-            stars[i].save(f'stars-{reg}-{band.upper()}', save_dir=work_dir)
+            stars[i].save(f'stars-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band.upper()}', save_dir=work_dir)
         
         ############################################
         # Plot Results

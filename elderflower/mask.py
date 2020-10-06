@@ -77,54 +77,54 @@ class Mask:
         return getattr(self, 'mask_comb', self.mask_deep)
     
     
-    def make_mask_object(self, obj_name='',
-                         band='', k=3):
-        """ Make mask of objects w/ ellip apertures given shape parameters 
-        Parameters
-        ----------
-        obj_name : object name
-        k : float, enlargement factor
-        
-        Notes
-        -----
-        if {obj_name}_maskobj.fits exists, use as mask
-        otherwise find {obj_name}_shape.txt and make new masl
-        the txt should record following parameters in rows:
-            pos : turple or array or turples
-                position(s) (x,y) of apertures
-            a_ang : float or 1d array
-                semi-major axis length(s) in arcsec
-            b_ang : float or 1d array
-                semi-minor axis length(s) in arcsec
-            PA_ang : float or 1d array
-                patch angle (ccw from north) in degree
+    def make_mask_object(self, mask_obj=None):
+        """ Read mask of objects w/ ellip apertures given shape parameters
+#        Parameters
+#        ----------
+#        obj_name : object name
+#        k : float, enlargement factor
+#
+#        Notes
+#        -----
+#        if {obj_name}_maskobj.fits exists, use as mask
+#        otherwise find {obj_name}_shape.txt and make new masl
+#        the txt should record following parameters in rows:
+#            pos : turple or array or turples
+#                position(s) (x,y) of apertures
+#            a_ang : float or 1d array
+#                semi-major axis length(s) in arcsec
+#            b_ang : float or 1d array
+#                semi-minor axis length(s) in arcsec
+#            PA_ang : float or 1d array
+#                patch angle (ccw from north) in degree
 
         """
         
-        file_obj = '%s_maskobj.fits'%obj_name
-        
-        if os.path.isfile(file_obj):
-            print("Read mask map of objects: ",
-                  os.path.abspath(file_obj))
-            # read existed mask map
-            self.mask_obj_field = fits.getdata(file_obj).astype(bool)
+        if mask_obj is not None:
             
-        else:
-            file_obj = '%s_shape.txt'%obj_name
+            if os.path.isfile(mask_obj):
+                print("Read mask map of objects: ", os.path.abspath(mask_obj))
+                # read existed mask map
+                self.mask_obj_field = fits.getdata(mask_obj).astype(bool)
+            else:
+                "Object mask not found. Skip."
             
-            if os.path.isfile(file_obj):
-                print("Read shape parameters of objects: ",
-                os.path.abspath(file_obj))
-                # read shape parameters from file
-                par = np.atleast_2d(np.loadtxt(file_obj_pars))
-
-                pos = par[:,:1]
-                a_ang, b_ang, PA_ang = par[:,2], par[:,3], par[:,4]
-
-                # make mask map with parameters
-                self.mask_obj_field = make_mask_aperture(pos, a_ang, b_ang,
-                                                        PA_ang, self.shape,
-                                                        k, self.pixel_scale)
+#        else:
+#            file_obj = '%s_shape.txt'%obj_name
+#
+#            if os.path.isfile(file_obj):
+#                print("Read shape parameters of objects: ",
+#                os.path.abspath(file_obj))
+#                # read shape parameters from file
+#                par = np.atleast_2d(np.loadtxt(file_obj_pars))
+#
+#                pos = par[:,:1]
+#                a_ang, b_ang, PA_ang = par[:,2], par[:,3], par[:,4]
+#
+#                # make mask map with parameters
+#                self.mask_obj_field = make_mask_aperture(pos, a_ang, b_ang,
+#                                                        PA_ang, self.shape,
+#                                                        k, self.pixel_scale)
                 
         
     def make_mask_map_deep(self, dir_measure=None, by='aper',
@@ -359,7 +359,7 @@ def make_mask_aperture(fname, Pos, A_ang, B_ang, PA_ang, shape,
         
         mask[ma] = 1.0
         
-    fits.writeto(fname, mask)
+    fits.writeto(fname, mask, overwrite=True)
     
     return mask
 

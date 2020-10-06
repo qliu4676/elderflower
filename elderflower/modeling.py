@@ -721,6 +721,11 @@ def multi_pow(x, n_s, theta_s, I_theta0, a_s=None):
 
 ### 1D functions ###
 
+def log_linear(x, k, x0, y0):
+    """ linear function y ~ k * log x passing (x0,y0) """
+    x_ = np.log10(x)
+    return k * x_ + (y0-k*np.log10(x0))
+
 def power1d(x, n, theta0, I_theta0):
     """ Power law for 1d array, I = I_theta0 at theta0, theta in pix """
     a = I_theta0 / (theta0)**(-n)
@@ -1676,10 +1681,9 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.3, d_n=0.2, std_min=3,
+              n_min=1, d_n0=0.1, d_n=0.2, std_min=3,
               theta_in=50, theta_out=300, d_theta=0.477,
-              leg2d=False, fit_sigma=True, fit_frac=False,
-              **kwargs):
+              leg2d=False, fit_sigma=True, fit_frac=False):
     
     """
     Setup prior transforms for models. 

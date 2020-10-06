@@ -39,7 +39,7 @@ class Container:
             
         
     def set_prior(self, n_est, mu_est, std_est,
-                  n_min=1, theta_in=50, theta_out=300):
+                  n_min=1, d_n0=0.2, theta_in=50, theta_out=300):
         """ Setup priors for fitting and labels for displaying the results"""
         from .modeling import set_prior
         
@@ -50,7 +50,8 @@ class Container:
         leg2d = self.leg2d
     
         prior_tf = set_prior(n_est, mu_est, std_est,
-                             n_spline=n_spline, n_min=n_min, leg2d=leg2d,
+                             n_spline=n_spline, leg2d=leg2d,
+                             n_min=n_min, d_n0=d_n0,
                              theta_in=theta_in, theta_out=theta_out,
                              fit_sigma=fit_sigma, fit_frac=fit_frac)
         
