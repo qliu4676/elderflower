@@ -1035,7 +1035,7 @@ def fit_n0(dir_measure, bounds,
 
     Xmin, Ymin, Xmax, Ymax = bounds
     r1, r2 = fit_range
-    r0 = r_scale*DF_pixel_scale
+    r0 = r_scale*pixel_scale
 
     if  r1<r0<r2:
         # read result thumbnail and norm table
@@ -1069,6 +1069,7 @@ def fit_n0(dir_measure, bounds,
                                                ZP=ZP, sky_mean=BKG, sky_std=sky_std,
                                                xunit="arcsec", yunit="SB",
                                                errorbar=False, dr=dr,
+                                               pixel_scale=pixel_scale,
                                                core_undersample=False, plot=False)
 
             range_intp = (r_rbin>r1) & (r_rbin<r2)
@@ -1086,6 +1087,7 @@ def fit_n0(dir_measure, bounds,
                     cal_profile_1d(img, cen=cen, mask=ma, dr=1,
                                    ZP=27.1, sky_mean=BKG, sky_std=2.8,
                                    xunit="arcsec", yunit="SB", errorbar=False,
+                                   pixel_scale=pixel_scale,
                                    core_undersample=False, color='gray', lw=2,
                                    I_shift=24-I_r0, markersize=0, alpha=0.1)
 
@@ -1095,6 +1097,7 @@ def fit_n0(dir_measure, bounds,
             cal_profile_1d(img0, cen=cen0, mask=ma0, dr=0.8,
                            ZP=27.1, sky_mean=BKG, sky_std=2.8,
                            xunit="arcsec", yunit="SB", errorbar=True,
+                           pixel_scale=pixel_scale,
                            core_undersample=False, color='steelblue', lw=3,
                            I_shift=24-I_r0_all[0], markersize=8, alpha=0.9)
 
