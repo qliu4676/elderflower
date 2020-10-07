@@ -631,9 +631,12 @@ def Run_PSF_Fitting(hdu_path,
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
     if G_eff is None:
-        N_frames = find_keyword_header(header, "NFRAMES")
+        N_frames = find_keyword_header(header, "NFRAMES", default=1e5)
         G_eff = DF_Gain * N_frames
-        print('Effective Gain = %.3f'%G_eff)
+        if N_frames==1e5:
+            print('Ineffective Gain. Will ignore short noise.')
+        else:
+            print('Effective Gain = %.3f'%G_eff)
     
     bounds_list = np.atleast_2d(bounds_list)
     
@@ -815,8 +818,8 @@ def Run_PSF_Fitting(hdu_path,
             s.calculate_reduced_chi2(Gain=G_eff, dof=ndim)
 
             # Draw 2D compaison
-            s.draw_comparison_2D(r_core=r_core, # Gain=G_eff, 
-                                 vmin=DF_Images.bkg,
+            s.draw_comparison_2D(r_core=r_core, Gain=G_eff, 
+                                 vmin=DF_Images.bkg-s.bkg_std_fit,
                                  vmax=DF_Images.bkg+20*s.bkg_std_fit,
                                  save=save, save_dir=plot_dir, suffix=suffix)
 

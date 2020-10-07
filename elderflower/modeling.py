@@ -1682,15 +1682,16 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
               n_min=1, d_n0=0.1, d_n=0.2, std_min=3,
-              theta_in=50, theta_out=300, d_theta=0.477,
-              leg2d=False, fit_sigma=True, fit_frac=False):
+              theta_in=50, theta_out=300, leg2d=False,
+              fix_n0=False, fix_theta=False,
+              fit_sigma=True, fit_frac=False):
     
     """
     Setup prior transforms for models. 
     
     Parameters
     ----------
-    n_est : estimate of the first power-law index, typically from a simultaneous fitting on the core
+    n_est : estimate of the first power-law index, i.e. from profile fitting
     mu_est : estimate of sky background level, from either the global DF reduction pipeline or a local sigma-clipped mean after aggresive mask
     std_est : esimtate of sky uncertainty, from a local sigma-clipped stddev after aggresive mask
     
@@ -1698,7 +1699,6 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     n_min : minium power index allowed in fitting
     d_n0 : stddev of noraml prior of n_0
     d_n : minimum length of prior jump in n_k for n_spline>=3, default 0.2
-    d_theta : maximum length of prior jump in theta_k, default 2 * theta_k
     theta_in : inner boundary of the first transition radius
     theta_out : outer boundary of the first transition radius
     leg2d : whether a legendre polynomial background will be fit
@@ -1714,7 +1714,9 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     log_t_in = np.log10(theta_in)
     log_t_out = np.log10(theta_out)
-    dlog_t = log_t_out - log_t_in
+    Dlog_t = log_t_out - log_t_in
+    log_t_s = np.logspace(log_t_in, log_t_out, n_spline+1)[1:-1]
+    #used if fix_theta=True
     
     Prior_mu = stats.truncnorm(a=-3, b=1., loc=mu_est, scale=std_est)  # mu : N(mu_est, std_est)
     
@@ -1722,11 +1724,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     K = 0
     if fit_frac: K += 1
     if fit_sigma: K += 1
-        
-        # logsigma : [std_min, std_est]   # need modified!
-#        bound_a = (np.log10(std_min)+0.3-np.log10(std_est))/0.3
-#        Prior_logsigma = stats.truncnorm(a=bound_a, b=1,
-#                                         loc=np.log10(std_est), scale=0.3)
+    
     Prior_logsigma = stats.truncnorm(a=-3, b=0,
                                      loc=np.log10(std_est), scale=0.3)
                                      
@@ -1734,8 +1732,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     
     if n_spline == 'm':
         Prior_gamma = stats.uniform(loc=0., scale=10.)       
-        Prior_beta = stats.uniform(loc=1.1, scale=6.)  
-        
+        Prior_beta = stats.uniform(loc=1.1, scale=6.)
         
         def prior_tf_mof(u):
             v = u.copy()
@@ -1762,14 +1759,22 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         return prior_tf_mof
     
     else:
-        Prior_n = stats.truncnorm(a=-3, b=3., loc=n_est, scale=d_n0)       # n0 : N(n, d_n0)
-
+        Prior_n0 = stats.truncnorm(a=-3, b=3., loc=n_est, scale=d_n0)
+        # n0 : N(n, d_n0)
+        Prior_logtheta1 = stats.uniform(loc=log_t_in, scale=Dlog_t)
+        # log theta1 : log t_in - log t_out  arcsec
+        
         if n_spline==2:
             def prior_tf_2p(u):
                 v = u.copy()
-                v[0] = Prior_n.ppf(u[0])    # n0 : N (n, d_n0)
+                
+                if fix_n0:
+                    v[0] = Prior_n0.mean()
+                else:
+                    v[0] = Prior_n0.ppf(u[0])
+                    
                 v[1] = u[1] * (v[0]- d_n0 - n_min) + n_min        # n1 : n_min - (n0-d_n0)
-                v[2] = u[2] * dlog_t + log_t_in      # log theta1 : t_in-t_out  arcsec
+                v[2] = Prior_logtheta1.ppf(u[2])
 
                 v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
 
@@ -1791,62 +1796,36 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
             
             return prior_tf_2p
 
-#        elif n_spline==3:
-#            def prior_tf_3p(u):
-#                v = u.copy()
-#                v[0] = Prior_n.ppf(u[0])        # n0 : N (n, d_n0)
-#                v[1] = u[1] + (v[0]-1.5)        # n1 : n0-1.5 - n0-0.5
-#                v[2] = u[2] * max(-1., n_min+0.5-v[1]) + (v[1]-0.5)
-#                    # n2 : max{n_min, n1-1.5} - n1-0.5
-#                v[3] = u[3] * dlog_t + log_t_in
-#                    # log theta1 : t_in-t_out  arcsec
-#                v[4] = u[4] * (log_t_out - v[3]) + v[3]
-#                    # log theta2 : theta1 - t_out  arcsec
-#
-#                v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
-#
-#                if fit_sigma:
-#                    v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
-#                    leg_amp = v[-K]
-#                else:
-#                    leg_amp = 0.5
-#
-#                if leg2d:
-#                    v[-K-2] = stats.uniform.ppf(u[-K-2],
-#                                                loc=leg_amp-1.3, scale=1.3)  # log A10
-#                    v[-K-3] = stats.uniform.ppf(u[-K-3],
-#                                                loc=leg_amp-1.3, scale=1.3)  # log A01
-#                if fit_frac:
-#                    v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
-#
-#                return v
-#
-#            return prior_tf_3p
-
         else:
-            Priors = [Prior_n, Prior_mu, Prior_logsigma, Prior_logfrac]
-            prior_tf = partial(prior_tf_sp, Priors=Priors,
-                               n_spline=n_spline, leg2d=leg2d,
-                               n_min=n_min, d_n=d_n, d_theta=d_theta,
-                               log_t_in=log_t_in, log_t_out=log_t_out,
-                               K=K, fit_sigma=fit_sigma, fit_frac=fit_frac)
+            Priors = [Prior_n0, Prior_logtheta1,
+                      Prior_mu, Prior_logsigma, Prior_logfrac]
+            prior_tf = partial(prior_tf_sp, Priors=Priors, n_spline=n_spline,
+                               n_min=n_min, d_n=d_n, log_t_s=log_t_s, log_t_out=log_t_out,
+                               K=K, fix_n0=fix_n0, leg2d=leg2d,
+                               fit_sigma=fit_sigma, fit_frac=fit_frac)
 
             return prior_tf
 
 
-def prior_tf_sp(u, Priors,
-                n_spline=3, n_min=1, n_max=4,
-                d_n=0.2, d_theta=0.477,
-                log_t_in=1.7, log_t_out=2.4,
-                leg2d=False, K=1, flexible=False,
-                fit_sigma=True, fit_frac=False):
+def prior_tf_sp(u, Priors, n_spline=3,
+                d_n=0.2, n_min=1, n_max=4,
+                leg2d=False, fix_n0=False, flexible=False,
+                fix_theta=False, log_t_s=[90, 180], log_t_out=300,
+                K=1, fit_sigma=True, fit_frac=False):
                 
     """ Prior Transform function for n_spline """
-
+    
+    # loglikehood vector
     v = u.copy()
-    Prior_n, Prior_mu, Prior_logsigma, Prior_logfrac = Priors
-
-    v[0] = Prior_n.ppf(u[0])
+    
+    # read priors
+    Prior_n0, Prior_logtheta1, Prior_mu, Prior_logsigma, Prior_logfrac = Priors
+    
+    # n prior
+    if fix_n0:
+        v[0] = Prior_n0.mean()
+    else:
+        v[0] = Prior_n0.ppf(u[0])
     
     if flexible:
         for k in range(n_spline-2):
@@ -1860,24 +1839,21 @@ def prior_tf_sp(u, Priors,
         for k in range(n_spline-1):
             v[k+1] = u[k+1] * max(-2.+d_n, n_min-v[k]+d_n) + (v[k]-d_n)
             # n_k+1 : max{n_min, n_k-2} - n_k-d_n
-        
-#        v[k+1] = u[k+1] * max(-0.3, n_min+0.3-v[k]) + (v[k]-0.3)
-#        # n_k+1 : max{n_min, n_k-0.6} - n_k-0.3 (old)
+    
+    # theta prior
+    if fix_theta:
+        v[n_spline:2*n_spline-1] = log_t_s
+    else:
+        v[n_spline] = Prior_logtheta1.ppf(u[n_spline])
+        # log theta1 : t_in-t_out  arcsec
 
-    v[n_spline] = u[n_spline] * (log_t_out - log_t_in) + log_t_in
-    # log theta1 : t_in-t_out  arcsec
+        for k in range(n_spline-2):
+            v[k+n_spline+1] = u[k+n_spline+1] * \
+                                (log_t_out - v[k+n_spline]) + v[k+n_spline]
+            # log theta_k+1: theta_k - t_out  # in arcsec
 
-    for k in range(n_spline-2):
-
-#        v[k+n_spline+1] = u[k+n_spline+1] * \
-#                            min(d_theta, log_t_out - v[k+n_spline]) + v[k+n_spline]
-#        # log theta_k+1: theta_k - [A*theta_k, t_out]  # in arcsec
-        v[k+n_spline+1] = u[k+n_spline+1] * \
-                            (log_t_out - v[k+n_spline]) + v[k+n_spline]
-        # log theta_k+1: theta_k - t_out  # in arcsec
-
+    # background prior
     v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
-
     if fit_sigma:
         v[-K] = Prior_logsigma.ppf(u[-K])       # log sigma
         leg_amp = v[-K]
@@ -1889,6 +1865,8 @@ def prior_tf_sp(u, Priors,
                                     loc=leg_amp-1.3, scale=1.3)  # log A10
         v[-K-3] = stats.uniform.ppf(u[-K-3],
                                     loc=leg_amp-1.3, scale=1.3)  # log A01
+    
+    # frac prior
     if fit_frac:
         v[-1] = Prior_logfrac.ppf(u[-1])       # log frac
 
@@ -1955,7 +1933,7 @@ class Legendre2D:
 def set_likelihood(data, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
                    psf_range=[None,None], leg2d=False,
-                   std_est=None, G_eff=None, image_base=None,
+                   std_est=None, G_eff=1e5, image_base=None,
                    fit_sigma=True, fit_frac=False,
                    brightest_only=False, parallel=False, draw_real=False):
     

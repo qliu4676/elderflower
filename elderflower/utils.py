@@ -913,8 +913,11 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     from .modeling import Stars
 
     # Positions & Flux (estimate) of bright stars from measured norm
-    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
-                         table_norm['Y_IMAGE_PS']]).T - pos_ref
+#    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
+#                         table_norm['Y_IMAGE_PS']]).T - pos_ref
+                         
+    star_pos = np.vstack([table_norm['X_IMAGE'],
+                          table_norm['Y_IMAGE']]).T - pos_ref
                            
     mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
     Flux = 10**((np.array(mag)-ZP)/(-2.5))
@@ -1047,7 +1050,7 @@ def fit_n0(dir_measure, bounds,
         tab_norm = Table.read(fn_tab_norm, format='ascii')
 
         if draw:
-            plt.figure(figsize=(8,6))
+            plt.figure(figsize=(7,5))
 
         # r_rbin: r in arcsec, I_rbin: SB in mag/arcsec^2
         # I_r0: SB at r0, I_rbin: SB in mag/arcsec^2
@@ -1121,7 +1124,7 @@ def fit_n0(dir_measure, bounds,
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
-    print('n0 = {:.4f}+/{:.4f}'.format(n0, d_n0))
+    print('n0 = {:.4f}+/-{:.4f}'.format(n0, d_n0))
     
     return n0, d_n0
     

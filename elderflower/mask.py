@@ -199,7 +199,7 @@ class Mask:
             from .plotting import draw_mask_map
             draw_mask_map(image0, seg_deep0, mask_deep0, stars,
                           pad=pad, r_core=r_core, r_out=r_out,
-                          vmin=self.bkg, save=save, save_dir=save_dir)
+                          save=save, save_dir=save_dir)
             
             
     def make_mask_advanced(self, n_strip=48,
@@ -283,7 +283,7 @@ class Mask:
             draw_mask_map_strip(image0, seg_comb0, mask_comb0, stars_new,
                                 pad=pad, r_core=self.r_core, 
                                 ma_example=[mask_strip_s[0], mask_cross_s[0]],
-                                vmin=self.bkg, save=save, save_dir=save_dir)
+                                save=save, save_dir=save_dir)
             
             
 # Make mask maps
