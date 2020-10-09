@@ -10,18 +10,18 @@
     use_PS1_DR2: False
     
     # Run_PSF_Fitting
-    n_spline: 2
+    n_spline: 3
     use_PS1_DR2: False
     pixel_scale: 2.5
-    r_scale: 12
     pad: 50
-    mag_limit: 15
     mag_threshold: [13,10.5]
     mask_type: 'aper'
     SB_threshold: 24.5
     r_core: 24
     r_out: ~
     theta_cutoff: 1200
+    n0: 3
+    fit_n0: True
     fit_sigma: True
     fit_frac: False
     leg2d: False
@@ -34,4 +34,4 @@
     nlive_init: ~
     sample_method: 'auto'
     draw: True
-    print_progress: True
+    print_progress: False

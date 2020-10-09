@@ -110,16 +110,16 @@ class Sampler:
     def get_params(self, return_sample=False):
         return get_params_fit(self.results, return_sample)
     
-    def save_results(self, filename, fit_info=None, save_dir='.'):
+    def save_results(self, filename, save_dir='.'):
         """ Save fitting results """
         
         if not self.run: return None
         
         res = {}
-        if fit_info is not None:
-            res['fit_info'] = {'run_time': round(self.run_time,2)}
-            for key, val in fit_info.items():
-                res['fit_info'][key] = val
+        if hasattr(self, 'fit_info'):
+            self.fit_info = {'run_time': round(self.run_time,2)}
+            for key, val in self.fit_info.items():
+                self.fit_info[key] = val
         
         res['fit_res'] = self.results         # fitting results
         res['container'] = self.container     # a container for prior and likelihood
@@ -139,7 +139,7 @@ class Sampler:
             warnings.simplefilter("ignore")
             res = load_pickle(filename, printout=False)
             
-        print(f"Read fitting results {filename}\n", res['fit_info'])
+        print(f"Read fitting results {filename}\n", res.fit_info)
         
         return cls(res['container'], run=False, results=res['fit_res'])
         
@@ -169,7 +169,7 @@ class Sampler:
         plot_fit_PSF1D(self.results, psf,
                        psf_size=psf_size, n_spline=n_spline, **kwargs)
     
-    def generate_fit(self, psf, stars, norm='brightness'):
+    def generate_fit(self, psf, stars, add_base=True, norm='brightness'):
     
         """ Build psf from fitting results """
         
@@ -178,7 +178,6 @@ class Sampler:
         
         ct = self.container
         image_shape = ct.image_shape
-        image_base = ct.image_base
         
         psf_fit, params = make_psf_from_fit(self.results, psf,
                                             psf_range=max(image_shape),
@@ -197,7 +196,8 @@ class Sampler:
                                         brightest_only=ct.brightest_only,
                                         draw_real=ct.draw_real)
 
-        image_fit = image_stars + image_base + bkg_image
+        image_fit = image_stars + bkg_image
+        if add_base: image_fit += ct.image_base
         
         # Images constructed from fitting
         self.image_fit = image_fit

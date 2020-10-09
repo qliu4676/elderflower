@@ -128,14 +128,14 @@ class PSF_Model:
 
     @property
     def f_core1D(self):
-        """ 1D Core function """
+        """ 1D Core function in pix """
         gamma_pix, beta = self.gamma_pix, self.beta
         c_mof2Dto1D = C_mof2Dto1D(gamma_pix, beta)
         return lambda r: moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
 
     @property
     def f_aureole1D(self):
-        """ 1D Aureole function """
+        """ 1D Aureole function in pix """
         if self.aureole_model == "moffat":
             gamma1_pix, beta1 = self.gamma1_pix, self.beta1
             c_mof2Dto1D = C_mof2Dto1D(gamma1_pix, beta1)
@@ -1652,7 +1652,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        image_stars = draw_func(psf_fit, stars, xx, yy,
+        image_stars = draw_func(psf_fit, stars.copy(), xx, yy,
                                psf_range=[900, max(image_shape)],
                                psf_scale=psf_fit.pixel_scale,
                                brightest_only=brightest_only,

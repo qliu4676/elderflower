@@ -307,7 +307,12 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    plot=True, scatter=False, fill=False,
                    errorbar=False, verbose=False):
                    
-    """Calculate 1d radial profile of a given star postage"""
+    """
+    Calculate 1d radial profile of a given star postage
+    
+    cen: 0-based center position in pixel coordinate
+    
+    """
     
     if mask is None:
         mask =  np.zeros_like(img, dtype=bool)
@@ -913,11 +918,11 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     from .modeling import Stars
 
     # Positions & Flux (estimate) of bright stars from measured norm
-#    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
-#                         table_norm['Y_IMAGE_PS']]).T - pos_ref
+    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
+                         table_norm['Y_IMAGE_PS']]).T - pos_ref
                          
-    star_pos = np.vstack([table_norm['X_IMAGE'],
-                          table_norm['Y_IMAGE']]).T - pos_ref
+#    star_pos = np.vstack([table_norm['X_IMAGE'],
+#                          table_norm['Y_IMAGE']]).T - pos_ref
                            
     mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
     Flux = 10**((np.array(mag)-ZP)/(-2.5))
@@ -1689,8 +1694,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                                               ext_cat['THETA_IMAGE'],):
                 pos = (X_c-Xmin, Y_c-Ymin)
                 theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*5, b*5, theta_)
-#                aper = CircularAperture(pos, r=a*3)
+                aper = EllipticalAperture(pos, a*6, b*6, theta_)
                 apers.append(aper)
                 
             

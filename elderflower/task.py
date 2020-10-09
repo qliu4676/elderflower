@@ -483,7 +483,8 @@ def Run_PSF_Fitting(hdu_path,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
-                    fit_n0=False,
+                    n0=3,
+                    fit_n0=True,
                     fit_sigma=True,
                     fit_frac=False,
                     leg2d=False,
@@ -563,8 +564,11 @@ def Run_PSF_Fitting(hdu_path,
     theta_cutoff : float, optional, default 1200
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
-    fit_n0:
-        
+    n0 : float, optional, default None
+        Power index of the first component, only used if fit_n0=False.
+        If not None, n0 will be fixed at that value in the prior.
+    fit_n0 : bool, optional, default True
+        Whether to fit n0 with profiles of bright stars in advance.
     fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
         If False, will use the estimated value
@@ -672,11 +676,10 @@ def Run_PSF_Fitting(hdu_path,
     beta = 10                   # moffat beta, in arcsec
     fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
 
-    n0 = 3.4                    # initial first power index
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([n0, 2.5, n_cutoff])         # initial power index
+    n_s = np.array([3.3, 2.5, n_cutoff])         # initial guess
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # initial transition radius in arcsec
 
@@ -739,6 +742,8 @@ def Run_PSF_Fitting(hdu_path,
         DF_Images.fit_n0(dir_measure, pixel_scale=pixel_scale,
                          r_scale=r_scale, mag_limit=mag_limit,
                          mag_max=12, draw=draw)
+    else:
+        DF_Images._n0 = n0  # fixed n0 if not None
 
     ############################################
     # Setup Priors and Likelihood Models for Fitting
@@ -776,14 +781,16 @@ def Run_PSF_Fitting(hdu_path,
     
         if save:
             # Save outputs
-            fit_info = {'obj_name':obj_name,
-                        'band':band.lower(),
-                        'n_spline':n_spline,
-                        'bounds':bounds_list[i],
-                        'r_scale':r_scale,
-                        'n_cutoff': n_cutoff,
-                        'theta_cutoff': theta_cutoff,
-                        'date':DateToday()}
+            s.fit_info = {'obj_name':obj_name,
+                          'band':band.lower(),
+                          'n_spline':n_spline,
+                          'bounds':bounds_list[i],
+                          'r_scale':r_scale,
+                          'n_cutoff': n_cutoff,
+                          'theta_cutoff': theta_cutoff,
+                          'cutoff': cutoff,
+                          'fit_n0':fit_n0,
+                          'date':DateToday()}
                         
             suffix = str(n_spline)+'p'
             if leg2d: suffix+='l'
@@ -793,7 +800,7 @@ def Run_PSF_Fitting(hdu_path,
             
             fname = f'{obj_name}-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band}-fit{suffix}.res'
     
-            s.save_results(fname, fit_info, save_dir=work_dir)
+            s.save_results(fname, save_dir=work_dir)
             stars[i].save(f'stars-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band.upper()}', save_dir=work_dir)
         
         ############################################

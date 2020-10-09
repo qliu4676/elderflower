@@ -403,22 +403,20 @@ def make_mask_map_dual(image, stars,
     star_pos = stars.star_pos_bright + pad
     
     if by == 'aper':
-        r_core_s = np.unique(r_core)
-        if len(r_core_s) == 1:
-            r_core_A, r_core_B = r_core_s, r_core_s
-            r_core_s = np.ones(len(star_pos)) * r_core_s
+        if len(r_core) == 1:
+            r_core_A, r_core_B = r_core, r_core
+            r_core_s = np.ones(len(star_pos)) * r_core
         else:
-            r_core_A, r_core_B = r_core_s[:2]
+            r_core_A, r_core_B = r_core[:2]
             r_core_s = np.array([r_core_A if F >= stars.F_verybright else r_core_B
                                  for F in stars.Flux_bright])
 
         if r_out is not None:
-            r_out_s = np.unique(r_out)
-            if len(r_out_s) == 1:
-                r_out_A, r_out_B = r_out_s, r_out_s
+            if len(r_out) == 1:
+                r_out_A, r_out_B = r_out, r_out
                 r_out_s = np.ones(len(star_pos)) * r_out_s
             else:
-                r_out_A, r_out_B = r_out_s[:2]
+                r_out_A, r_out_B = r_out[:2]
                 r_out_s = np.array([r_out_A if F >= stars.F_verybright else r_out_B
                                      for F in stars.Flux_bright])
             print("Mask outer regions: r > %d (%d) pix "%(r_out_A, r_out_B))

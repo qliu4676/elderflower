@@ -482,17 +482,22 @@ class ImageList(ImageButler):
                                   brightest_only,
                                   parallel, draw_real)
             
-            # get first component power index if fitted
-            n0 = getattr(self.Images[i],'n0', psf.n0)
-            d_n0 = getattr(self.Images[i],'d_n0', 0.2)
+            if hasattr(self, '_n0'):
+                # use fixed n0 is given
+                n0, d_n0 = self._n0, 1e-2
+            else:
+                # get first component power index if fitted
+                # if not fitted, n0 will be added to the prior
+                n0 = getattr(self.Images[i],'n0', None)
+                d_n0 = getattr(self.Images[i],'d_n0', 1e-2)
+                
             if n0 is None:
                 fix_n0 = False
                 n0, d_n0 = psf.n0, 0.2
             else:
                 fix_n0 = True
                 
-            #fix_n0 = False
-            #breakpoint()
+            # breakpoint()
             
             # Set Priors
             container.set_prior(n0, self.bkg, self.std_est[i],
