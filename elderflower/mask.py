@@ -264,7 +264,7 @@ class Mask:
             self.seg_comb0 = seg_comb0
             
             # example mask for the brightest star
-            ma_example=[mask_strip_s[0], mask_cross_s[0]],
+            ma_example=mask_strip_s[0], mask_cross_s[0]
         
         else:
             print("No very bright stars in the field! Skip bright star mask.")
