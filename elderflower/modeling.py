@@ -365,7 +365,8 @@ class PSF_Model:
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
                                           save=save, save_dir=save_dir)
         self.image_psf = image_psf
-    
+
+        
     @staticmethod
     def write_psf_image(image_psf, filename='PSF_model.fits'):
         """ Write the 2D psf image to fits """
@@ -489,13 +490,12 @@ class Stars:
         
         if verbose:
             if len(Flux[self.medbright])>0:
-                print("# of medium bright (flux:%.2g~%.2g) stars: %d "\
-                      %(Flux[self.medbright].min(),
-                        Flux[self.medbright].max(), self.n_medbright))
+                print("# of medium bright stars: %d (flux range:%.2g~%.2g) "\
+                      %(self.n_medbright, Flux[self.medbright].min(), Flux[self.medbright].max()))
             
             if len(Flux[self.verybright])>0:
-                print("# of very bright (flux>%.2g) stars : %d"\
-                      %(Flux[self.verybright].min(), self.n_verybright))
+                print("# of very bright stars : %d (flux range:%.2g~%.2g)"\
+                      %(self.n_verybright, Flux[self.verybright].min(), Flux[self.verybright].max()))
             
             # Rendering stars in parallel if number of bright stars exceeds 50
             if self.n_medbright < 50:
@@ -513,7 +513,7 @@ class Stars:
 
     @classmethod            
     def from_znorm(cls, psf, star_pos, z_norm,
-                   z_threshold=[9, 300], r_scale=12, 
+                   z_threshold=[10, 300], r_scale=12, 
                    verbose=False):
         """ Star object built from intensity at r_scale instead of flux """
         Flux = psf.I2Flux(z_norm, r_scale)
@@ -602,7 +602,7 @@ class Stars:
         
         return stars_vb
     
-    def remove_outsider(self, image_shape, d=[36,12]):
+    def remove_outsider(self, image_shape, d=[36,12], verbose=False):
         """ Remove out-of-field stars far from the edge. """
         
         star_pos = self.star_pos
@@ -618,8 +618,10 @@ class Stars:
         remove_B = np.logical_or.reduce(out_B, axis=1) & self.medbright
 
         remove = remove_A | remove_B
-        return Stars(star_pos[~remove], Flux[~remove], self.Flux_threshold,
-                     self.z_norm[~remove], r_scale=self.r_scale, BKG=self.BKG)
+        stars_new = Stars(star_pos[~remove], Flux[~remove],
+                          self.Flux_threshold, self.z_norm[~remove],
+                          r_scale=self.r_scale, BKG=self.BKG, verbose=verbose)
+        return stars_new
      
     def save(self, name='stars', save_dir='./'):
         from .io import save_pickle
@@ -1652,7 +1654,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        image_stars = draw_func(psf_fit, stars.copy(), xx, yy,
+        image_stars = draw_func(psf_fit, stars, xx, yy,
                                psf_range=[900, max(image_shape)],
                                psf_scale=psf_fit.pixel_scale,
                                brightest_only=brightest_only,
@@ -1769,7 +1771,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                 v = u.copy()
                 
                 if fix_n0:
-                    v[0] = Prior_n0.mean()
+#                    v[0] = n_est
+                    v[0] = np.random.normal(n_est, d_n0)
                 else:
                     v[0] = Prior_n0.ppf(u[0])
                     
@@ -1800,7 +1803,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
             Priors = [Prior_n0, Prior_logtheta1,
                       Prior_mu, Prior_logsigma, Prior_logfrac]
             prior_tf = partial(prior_tf_sp, Priors=Priors, n_spline=n_spline,
-                               n_min=n_min, d_n=d_n, log_t_s=log_t_s, log_t_out=log_t_out,
+                               n_min=n_min, n_est=n_est, d_n0=d_n0, d_n=d_n,
+                               log_t_s=log_t_s, log_t_out=log_t_out,
                                K=K, fix_n0=fix_n0, leg2d=leg2d,
                                fit_sigma=fit_sigma, fit_frac=fit_frac)
 
@@ -1808,7 +1812,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
 
 def prior_tf_sp(u, Priors, n_spline=3,
-                d_n=0.2, n_min=1, n_max=4,
+                d_n=0.2, n_min=1, n_max=4, n_est=3.3, d_n0=0.2,
                 leg2d=False, fix_n0=False, flexible=False,
                 fix_theta=False, log_t_s=[90, 180], log_t_out=300,
                 K=1, fit_sigma=True, fit_frac=False):
@@ -1823,7 +1827,8 @@ def prior_tf_sp(u, Priors, n_spline=3,
     
     # n prior
     if fix_n0:
-        v[0] = Prior_n0.mean()
+        # v[0] = n_est
+        v[0] = np.random.normal(n_est, d_n0)
     else:
         v[0] = Prior_n0.ppf(u[0])
     
@@ -1932,6 +1937,7 @@ class Legendre2D:
 
 def set_likelihood(data, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
+                   n0=3.3, fix_n0=False,
                    psf_range=[None,None], leg2d=False,
                    std_est=None, G_eff=1e5, image_base=None,
                    fit_sigma=True, fit_frac=False,
@@ -1969,11 +1975,11 @@ def set_likelihood(data, mask_fit, psf, stars,
         subtract_external = True
     else:
         subtract_external = False
-        
+    
     p_draw_func = partial(draw_func, xx=xx, yy=yy,
                           psf_range=psf_range,
                           psf_scale=psf.pixel_scale,
-                          max_psf_range=psf.theta_c,
+                          max_psf_range=psf.theta_out,
                           brightest_only=brightest_only,
                           subtract_external=subtract_external,
                           parallel=parallel, draw_real=draw_real)
@@ -2038,6 +2044,12 @@ def set_likelihood(data, mask_fit, psf, stars,
             def loglike_2p(v):
             
                 n_s = v[:2]
+                
+                ### Below is new!
+                if fix_n0:
+                    n_s[0] = n0
+                ###
+                
                 theta_s = [theta_0, 10**v[2]]
                 if cutoff:
                     n_s = np.append(n_s, n_c)
@@ -2089,6 +2101,12 @@ def set_likelihood(data, mask_fit, psf, stars,
             def loglike_3p(v):
 
                 n_s = v[:3]
+                
+                ### Below is new!
+                if fix_n0:
+                    n_s[0] = n0
+                ###
+                
                 theta_s = [theta_0, 10**v[3], 10**v[4]]
                 
                 if cutoff:
@@ -2137,6 +2155,11 @@ def set_likelihood(data, mask_fit, psf, stars,
                 
                 n_s = v[:n_spline]
                 
+                ### Below is new!
+                if fix_n0:
+                    n_s[0] = n0
+                ###
+                
                 theta_s = np.append(theta_0, 10**v[n_spline:2*n_spline-1])
                 
                 if cutoff:
@@ -2144,6 +2167,7 @@ def set_likelihood(data, mask_fit, psf, stars,
                     theta_s = np.append(theta_s, theta_c)
                 
                 mu = v[-K-1]
+                
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
 
                 if fit_frac:

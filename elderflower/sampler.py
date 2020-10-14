@@ -117,9 +117,9 @@ class Sampler:
         
         res = {}
         if hasattr(self, 'fit_info'):
-            self.fit_info = {'run_time': round(self.run_time,2)}
+            res['fit_info'] = {'run_time': round(self.run_time,2)}
             for key, val in self.fit_info.items():
-                self.fit_info[key] = val
+                res['fit_info'][key] = val
         
         res['fit_res'] = self.results         # fitting results
         res['container'] = self.container     # a container for prior and likelihood
@@ -139,7 +139,7 @@ class Sampler:
             warnings.simplefilter("ignore")
             res = load_pickle(filename, printout=False)
             
-        print(f"Read fitting results {filename}\n", res.fit_info)
+        print(f"Read fitting results {filename}\n", res['fit_info'])
         
         return cls(res['container'], run=False, results=res['fit_res'])
         
@@ -148,9 +148,9 @@ class Sampler:
                    save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
         
-        draw_cornerplot(self.results, self.ndim,
-                        labels=self.labels, truths=truths, figsize=figsize,
-                        save=save, save_dir=save_dir, suffix=suffix, **kwargs)
+        return draw_cornerplot(self.results, self.ndim,
+                                labels=self.labels, truths=truths, figsize=figsize,
+                                save=save, save_dir=save_dir, suffix=suffix, **kwargs)
         
     def cornerbounds(self, figsize=(10,10),
                     save=False, save_dir='.', suffix='', **kwargs):
@@ -178,17 +178,16 @@ class Sampler:
         
         ct = self.container
         image_shape = ct.image_shape
-        
-        psf_fit, params = make_psf_from_fit(self.results, psf,
+        psf_fit, params = make_psf_from_fit(self.results, ct.n_spline, psf,
                                             psf_range=max(image_shape),
-                                            n_spline=ct.n_spline,
-                                            leg2d=ct.leg2d,
-                                            sigma=ct.std_est,
+                                            leg2d=ct.leg2d, sigma=ct.std_est,
                                             fit_sigma=ct.fit_sigma,
                                             fit_frac=ct.fit_frac)
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std
+        
+        stars.z_norm = stars.z_norm + stars.BKG - self.bkg_fit
         
         image_stars, noise_image, bkg_image \
                    = generate_image_fit(psf_fit, stars, image_shape,

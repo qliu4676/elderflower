@@ -288,19 +288,19 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     
     if yunit=='Intensity':
         plt.semilogx(r, I_tot,
-                 ls="-", lw=3,alpha=0.9, zorder=5, label=label)
+                 ls="-", lw=4,alpha=0.9, zorder=5, label=label)
         if decompose:
             plt.semilogx(r, I_core,
                      ls="--", lw=3, alpha=0.9, zorder=1, label='core')
             plt.semilogx(r, I_aureole,
                      ls="--", lw=3, alpha=0.9, label='aureole')
         plt.ylabel('log Intensity', fontsize=14)
-        plt.ylim(I_aureole.min(), I_tot.max()+0.25)
+        plt.ylim(I_aureole.min()-0.25, I_tot.max()+0.25)
         
     elif yunit=='SB':
         plt.semilogx(r, -14.5+Intensity2SB(I=I_tot, BKG=0,
                                            ZP=27.1, pixel_scale=pixel_scale),
-                     ls="-", lw=3,alpha=0.9, zorder=5, label=label)
+                     ls="-", lw=4,alpha=0.9, zorder=5, label=label)
         if decompose:
             plt.semilogx(r, -14.5+Intensity2SB(I=I_core, BKG=0,
                                                ZP=27.1, pixel_scale=pixel_scale),
@@ -447,14 +447,14 @@ def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
                'title_fmt':'.3f', 'show_titles':True,
                'label_kwargs':{'fontsize':16}}
     plot_kw.update(kwargs)
-    fg, ax = dyplot.cornerplot(results, fig=fig, **plot_kw)
+    fg, axes = dyplot.cornerplot(results, fig=fig, **plot_kw)
     
     if save:
         plt.savefig(os.path.join(save_dir, "Cornerplot%s.png"%suffix), dpi=120)
         plt.show()
         plt.close()
     else:
-        plt.show()
+        return fg, axes
 
 def draw_cornerbounds(results, nidm, prior_transform, labels=None, figsize=(10,10),
                       save=False, save_dir='.', suffix='', **kwargs):
@@ -528,6 +528,7 @@ def draw_comparison_2D(data, mask, image_fit,
                        noise_image=0, r_core=None,
                        vmin=None, vmax=None, Gain=None,
                        cmap='gnuplot2', norm=AsinhNorm(0.01),
+                       manual_locations=None,
                        save=False, save_dir=".", suffix=""):
                        
     """ Compare data and fit in 2D """
@@ -551,6 +552,9 @@ def draw_comparison_2D(data, mask, image_fit,
     ax2.set_title("Fit [I$_f$] + noise", fontsize=15); colorbar(im)
     
     im = ax3.imshow(image_stars, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)
+    contour = ax3.contour(image_stars, levels=[0,1,2,5,10,25],
+                          norm=norm2, colors='w', alpha=0.7)
+    ax3.clabel(contour, fmt='%1g', inline=1, fontsize=12, manual=manual_locations)
     ax3.set_title("Bright Stars [I$_{f,B}$]", fontsize=15); colorbar(im)
     
     if Gain is None:

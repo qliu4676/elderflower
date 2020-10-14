@@ -193,7 +193,8 @@ def piecewise_linear(x, k1, k2, x0, y0):
 def iter_curve_fit(x_data, y_data, func, p0=None,
                    color=None, x_min=None, x_max=None,
                    x_lab='', y_lab='',c_lab='',
-                   n_iter=3, k_std=5, draw=True, **kwargs):
+                   n_iter=3, k_std=5, draw=True,
+                   fig=None, ax=None, **kwargs):
     """ Iterative curve_fit """
     
     # min-max cutoff
@@ -211,12 +212,14 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     # fitst curve_fit
     popt, pcov = curve_fit(func, x_data, y_data, p0=p0, **kwargs)
     
-    if draw: plt.figure()
-    
+    if draw:
+        if fig is None: fig = plt.figure()
+        if ax is None: ax = fig.add_subplot(1,1,1)
+        
     # Iterative sigma clip
     for i in range(n_iter):
-        if draw: plt.plot(x_test, func(x_test, *popt),
-                          color='r', lw=1, ls='--', alpha=0.2)
+        if draw: ax.plot(x_test, func(x_test, *popt),
+                         color='r', lw=1, ls='--', alpha=0.2)
         
         x_clip, y_clip = x_data[~clip], y_data[~clip]
         popt, pcov = curve_fit(func, x_clip, y_clip, p0=p0, **kwargs)
@@ -230,20 +233,20 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     clip_func = lambda x, y: (y - func(x, *popt))**2 > (k_std*std)**2
     
     if draw:
-        s = plt.scatter(x_data, y_data, c=color,
+        s = ax.scatter(x_data, y_data, c=color,
                         s=5, cmap='viridis', alpha=0.4)
-        plt.scatter(x_data[clip], y_data[clip], lw=2, s=20,
+        ax.scatter(x_data[clip], y_data[clip], lw=2, s=20,
                     facecolors='none', edgecolors='orange', alpha=0.7)
-        plt.plot(x_test, func(x_test, *popt), color='r')
+        ax.plot(x_test, func(x_test, *popt), color='r')
         
-        if color is not None: plt.colorbar(s, label=c_lab.replace('_','\_'))
+        if color is not None: fig.colorbar(s, label=c_lab.replace('_','\_'))
         
-        plt.xlim(x_min, x_max)
+        ax.set_xlim(x_min, x_max)
         invert = lambda lab: ('MAG' in lab) | ('MU' in lab)
-        if invert(x_lab): plt.gca().invert_xaxis()
-        if invert(y_lab): plt.gca().invert_yaxis()
-        plt.xlabel(x_lab.replace('_','\_'))
-        plt.ylabel(y_lab.replace('_','\_'))
+        if invert(x_lab): ax.invert_xaxis()
+        if invert(y_lab): ax.invert_yaxis()
+        ax.set_xlabel(x_lab.replace('_','\_'))
+        ax.set_ylabel(y_lab.replace('_','\_'))
         
     return popt, pcov, clip_func
     
@@ -843,6 +846,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
     c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
+    
     idx, d2d, d3d = c_SE.match_to_catalog_sky(c_tab)
     match = d2d < sep 
     cat_SE_match = SE_catalog[match]
@@ -945,8 +949,8 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
             
     # Bright stars in model
     stars_bright = Stars(star_pos, Flux, Flux_threshold=Flux_threshold,
-                         z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=verbose)
-    stars_bright = stars_bright.remove_outsider(image_shape, d=[36, 12])
+                         z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=False)
+    stars_bright = stars_bright.remove_outsider(image_shape, d=[3*r_scale, r_scale], verbose=verbose)
     
     if (table_faint is not None) & ('MAG_AUTO_corr' in table_faint.colnames):
         table_faint['FLUX_AUTO_corr'] = 10**((table_faint['MAG_AUTO_corr']-ZP)/(-2.5))
@@ -965,7 +969,7 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
         star_pos = np.vstack([star_pos, star_pos_faint])
         Flux = np.concatenate([Flux, Flux_faint])
         
-    stars_all = Stars(star_pos, Flux, Flux_threshold=Flux_threshold)
+    stars_all = Stars(star_pos, Flux, Flux_threshold, BKG=sky_mean, verbose=False)
 
     if draw:
         stars_all.plot_flux_dist(label='All', color='plum')
@@ -985,8 +989,8 @@ def interp_I0(r, I, r0, r1, r2):
 def fit_n0(dir_measure, bounds,
            obj_name, band, BKG, ZP,
            pixel_scale=DF_pixel_scale,
-           fit_range=[20,50], dr=0.2,
-           N_max=20, mag_max=13, I_norm=24,
+           fit_range=[20,40], dr=0.2,
+           N_max=15, mag_max=13, I_norm=24,
            r_scale=12, mag_limit=15, sky_std=3,
            plot_brightest=True, draw=True):
            
@@ -1008,7 +1012,7 @@ def fit_n0(dir_measure, bounds,
         zero-point
     pixel_scale : float, optional, default 2.5
         pixel scale in arcsec/pix
-    fit_range : 2-list, optional, default [20, 50]
+    fit_range : 2-list, optional, default [20, 40]
         range for fitting in arcsec
     dr : float, optional, default 0.2
         profile step paramter
@@ -1055,7 +1059,9 @@ def fit_n0(dir_measure, bounds,
         tab_norm = Table.read(fn_tab_norm, format='ascii')
 
         if draw:
-            plt.figure(figsize=(7,5))
+            fig, ax = plt.subplots(1,1,figsize=(8,6))
+        else:
+            fig, ax, ax_ins = None, None, None
 
         # r_rbin: r in arcsec, I_rbin: SB in mag/arcsec^2
         # I_r0: SB at r0, I_rbin: SB in mag/arcsec^2
@@ -1096,8 +1102,8 @@ def fit_n0(dir_measure, bounds,
                                    ZP=27.1, sky_mean=BKG, sky_std=2.8,
                                    xunit="arcsec", yunit="SB", errorbar=False,
                                    pixel_scale=pixel_scale,
-                                   core_undersample=False, color='gray', lw=2,
-                                   I_shift=24-I_r0, markersize=0, alpha=0.1)
+                                   core_undersample=False, color='steelblue', lw=2,
+                                   I_shift=24-I_r0, markersize=0, alpha=0.2)
 
         if plot_brightest:
             num = list(res_thumb.keys())[0]
@@ -1106,26 +1112,39 @@ def fit_n0(dir_measure, bounds,
                            ZP=27.1, sky_mean=BKG, sky_std=2.8,
                            xunit="arcsec", yunit="SB", errorbar=True,
                            pixel_scale=pixel_scale,
-                           core_undersample=False, color='steelblue', lw=3,
+                           core_undersample=False, color='k', lw=3,
                            I_shift=24-I_r0_all[0], markersize=8, alpha=0.9)
 
         if draw:
-            plt.ylim(30.5,16.5)
-            plt.xlim(5.,5e2)
-            plt.axvspan(r1, r2, color='gold', alpha=0.1)
-            plt.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
-            plt.xscale('log')
-            plt.show()
-    
+            ax.text(6, 30, 'N = %d'%len(tab_fit))
+            ax.set_ylim(30.5,16.5)
+            ax.set_xlim(5.,5e2)
+            ax.axvspan(r1, r2, color='gold', alpha=0.1)
+            ax.axvline(r0, ls='--',color='k', alpha=0.9, zorder=1)
+            ax.scatter(r0, I_norm, marker='*',color='r', s=300, zorder=4)
+            ax.set_xscale('log')
+            
+            from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+            ax_ins = inset_axes(ax, width="35%", height="35%")
+            
     else:
         print('Warning: r0 is out of fit_range! Use default.')
         return None, None
 
     p_log_linear = partial(log_linear, x0=r_scale*pixel_scale, y0=I_norm)
     popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
-                                           x_min=r1, x_max=r2, p0=10, bounds=(3, 15), n_iter=10,
-                                           x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]', draw=draw)
-    if draw: plt.ylim(I_norm+2.75, I_norm-2); plt.show()
+                                           x_min=r1, x_max=r2, p0=10,
+                                           bounds=(3, 15), n_iter=3,
+                                           x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
+                                           draw=draw, fig=fig, ax=ax_ins)
+    if draw:
+        ax_ins.set_ylim(I_norm+1.75, I_norm-2.25)
+        ax_ins.axvline(r0, lw=2, ls='--', color='k', alpha=0.7, zorder=1)
+        ax_ins.axvspan(r1, r2, color='gold', alpha=0.1)
+        ax_ins.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
+        ax_ins.tick_params(direction='in',labelsize=14)
+        ax_ins.set_ylabel('')
+#        plt.show()
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
@@ -1240,6 +1259,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                                     ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
         tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,
                                   keep_columns=keep_columns)
+        
         tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
                                          keep_columns=keep_columns)
         
@@ -1274,7 +1294,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
+                        pixel_scale=DF_pixel_scale, mag_limit=15, sep=5*u.arcsec,
                         verbose=True):
     """
     Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
@@ -1694,7 +1714,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                                               ext_cat['THETA_IMAGE'],):
                 pos = (X_c-Xmin, Y_c-Ymin)
                 theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*6, b*6, theta_)
+                aper = EllipticalAperture(pos, a*10, b*10, theta_)
                 apers.append(aper)
                 
             
@@ -1737,7 +1757,7 @@ def build_independent_priors(priors):
     return prior_transform
     
     
-def make_psf_from_fit(fit_res, psf=None, n_spline=2,
+def make_psf_from_fit(fit_res, n_spline, psf=None,
                       pixel_scale=DF_pixel_scale,
                       psf_range=None,
                       leg2d=False, sigma=None,

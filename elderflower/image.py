@@ -476,11 +476,12 @@ class ImageList(ImageButler):
         self.containers = []
         
         for i in range(self.N_Image):
+            image_shape = self.Images[i].image_shape
             
             container = Container(n_spline, leg2d, 
                                   fit_sigma, fit_frac,
-                                  brightest_only,
-                                  parallel, draw_real)
+                                  brightest_only=brightest_only,
+                                  parallel=parallel, draw_real=draw_real)
             
             if hasattr(self, '_n0'):
                 # use fixed n0 is given
@@ -492,22 +493,31 @@ class ImageList(ImageButler):
                 d_n0 = getattr(self.Images[i],'d_n0', 1e-2)
                 
             if n0 is None:
-                fix_n0 = False
+                container.fix_n0 = False
                 n0, d_n0 = psf.n0, 0.2
             else:
-                fix_n0 = True
+                container.fix_n0 = True
                 
-            # breakpoint()
-            
+            if theta_in is None:
+                theta_in = self.Masks[i].r_core_m * self.pixel_scale
+                
+            if theta_out is None:
+                if psf.cutoff:
+                    theta_out = psf.theta_c
+                else:
+                    theta_out = max(image_shape) * self.pixel_scale
+            psf.theta_out = theta_out
+                
             # Set Priors
             container.set_prior(n0, self.bkg, self.std_est[i],
-                                n_min=n_min, d_n0=d_n0, fix_n0=fix_n0,
+                                n_min=n_min, d_n0=d_n0,
                                 theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
             container.set_likelihood(self.data[i],
                                      self.mask_fit[i],
                                      psf, stars[i],
+                                     n0=n0,
                                      psf_range=[None, None],
                                      norm='brightness',
                                      G_eff=self.G_eff,
@@ -517,7 +527,7 @@ class ImageList(ImageButler):
             container.image = self.images[i]
             container.data = self.data[i]
             container.mask = self.Masks[i]
-            container.image_shape = self.Images[i].image_shape
+            container.image_shape = image_shape
             
             self.containers += [container]
 

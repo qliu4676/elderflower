@@ -113,7 +113,13 @@ def load_pickle(filename, printout=True):
     if printout: print("Read from %s"%filename)
     if os.path.exists(filename):
         with open(filename, 'rb') as f:
-            return pickle.load(f)
+            try:
+                out = pickle.load(f)
+            except ValueError as err:
+                print(err)
+                import pickle5
+                out = pickle5.load(f)
+            return out
     else:
         raise FileNotFoundError(f'{filename} not found!')
 

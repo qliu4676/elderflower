@@ -16,11 +16,12 @@
     pad: 50
     mag_threshold: [13,10.5]
     mask_type: 'aper'
+    mask_obj: ~
     SB_threshold: 24.5
     r_core: 24
     r_out: ~
     theta_cutoff: 1200
-    n0: 3
+    n0: ~
     fit_n0: True
     fit_sigma: True
     fit_frac: False

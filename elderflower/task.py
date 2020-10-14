@@ -483,7 +483,7 @@ def Run_PSF_Fitting(hdu_path,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
-                    n0=3,
+                    n0=None,
                     fit_n0=True,
                     fit_sigma=True,
                     fit_frac=False,
@@ -497,6 +497,7 @@ def Run_PSF_Fitting(hdu_path,
                     print_progress=True,
                     draw=True,
                     save=False,
+                    stop=False,
                     use_PS1_DR2=False,
                     work_dir='./'):
     
@@ -538,8 +539,8 @@ def Run_PSF_Fitting(hdu_path,
     mask_type : 'aper' or 'brightness', optional, default 'aper'
         "aper": aperture masking
         "brightness": brightness-limit masking
-    mask_obj : 'str', optional, default None
-        path to the target object mask (w/ the same shape with image)
+    mask_obj : str, optional, default None
+        full path to the target object mask (w/ the same shape with image)
     wid_strip : int, optional, default 24
         Width of strip for masks of very bright stars.
     n_strip : int, optional, default 48
@@ -672,24 +673,23 @@ def Run_PSF_Fitting(hdu_path,
     from .modeling import PSF_Model
     
     # PSF Parameters (some from fitting stacked PSF)
-    frac = 0.1                  # fraction of aureole
+    frac = 0.3                  # fraction of aureole
     beta = 10                   # moffat beta, in arcsec
     fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
 
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([3.3, 2.5, n_cutoff])         # initial guess
+    n_s = np.array([3.3, 2.2, n_cutoff])         # initial guess
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # initial transition radius in arcsec
 
     # Multi-power-law PSF
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
-                   "n_s":n_s, "theta_s":theta_s,
+                   "n_s":n_s, "theta_s":theta_s, "cutoff":cutoff,
                    "n_c":n_cutoff, "theta_c":theta_cutoff}
     psf = PSF_Model(params=params_mpow,
                     aureole_model='multi-power')
-    psf.cutoff = cutoff
 
     # Pixelize PSF
     psf.pixelize(pixel_scale)
@@ -718,9 +718,10 @@ def Run_PSF_Fitting(hdu_path,
         count = None
         
     # Mask faint and centers of bright stars
+#    r_max = int(theta_cutoff/pixel_scale)
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
-                        wid_strip=wid_strip, n_strip=n_strip,
+                        wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
                         sn_thre=2.5, draw=draw, mask_obj=mask_obj,
                         save=save, save_dir=plot_dir)
 
@@ -730,9 +731,10 @@ def Run_PSF_Fitting(hdu_path,
     else:
         stars = DF_Images.stars # for fit
 
-    # (a stop for developer)
-#    proceed = input('Is the Mask Reasonable?[y/n]')
-#    if proceed == 'n': sys.exit("Reset the Mask.")
+    ## (a stop for developer)
+    if stop:
+        proceed = input('Is the Mask Reasonable?[y/n]')
+        if proceed == 'n': sys.exit("Reset the Mask.")
     
     ############################################
     # Estimate Background & Fit n0
@@ -750,14 +752,14 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=50, theta_out=300,
+                            theta_in=40, theta_out=300,
                             n_min=1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
                             fit_frac=fit_frac,
                             brightest_only=brightest_only)
-
+    
     ############################################
     # Run Sampling
     ############################################
@@ -766,7 +768,7 @@ def Run_PSF_Fitting(hdu_path,
     
     samplers = []
     
-    for i, reg in enumerate(AsciiUpper(len(stars))):
+    for i, reg in enumerate(AsciiUpper(DF_Images.N_Image)):
 
         ct = DF_Images.containers[i]
         ndim = ct.ndim
@@ -794,6 +796,7 @@ def Run_PSF_Fitting(hdu_path,
                         
             suffix = str(n_spline)+'p'
             if leg2d: suffix+='l'
+            if fit_frac: suffix+='f'
             if brightest_only: suffix += 'b'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
@@ -906,7 +909,7 @@ class berry:
         self.work_dir = work_dir
         
         from .io import config_kwargs, default_config
-        if config_file is None: config_file=default_config,
+        if config_file is None: config_file = default_config
         self.config_func = partial(config_kwargs, config_file=config_file)
     
 
@@ -940,5 +943,5 @@ class berry:
                         self.obj_name, self.band,
                         work_dir=self.work_dir, **pars)
                         
-        _ = _run(Match_Mask_Measure, **kwargs)
+        _run(Match_Mask_Measure, **kwargs)
         self.samplers = _run(Run_PSF_Fitting, **kwargs)

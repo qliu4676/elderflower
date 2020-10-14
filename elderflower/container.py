@@ -39,7 +39,7 @@ class Container:
             
         
     def set_prior(self, n_est, mu_est, std_est,
-                  n_min=1, d_n0=0.2, fix_n0=False,
+                  n_min=1, d_n0=0.2,
                   theta_in=50, theta_out=300):
         """ Setup priors for fitting and labels for displaying the results"""
         from .modeling import set_prior
@@ -52,7 +52,7 @@ class Container:
     
         prior_tf = set_prior(n_est, mu_est, std_est,
                              n_spline=n_spline, leg2d=leg2d,
-                             n_min=n_min, d_n0=d_n0, fix_n0=fix_n0,
+                             n_min=n_min, d_n0=d_n0, fix_n0=self.fix_n0,
                              theta_in=theta_in, theta_out=theta_out,
                              fit_sigma=fit_sigma, fit_frac=fit_frac)
         
@@ -70,6 +70,7 @@ class Container:
                        data, mask_fit,
                        psf, stars,
                        norm='brightness',
+                       n0=3.3,
                        psf_range=[None, None],
                        G_eff=1e5,
                        image_base=None):
@@ -92,6 +93,7 @@ class Container:
                                  psf_tri, stars_tri,
                                  norm=norm,
                                  psf_range=psf_range,
+                                 n0=n0, fix_n0=self.fix_n0,
                                  std_est=self.std_est,
                                  G_eff=G_eff,
                                  image_base=image_base,

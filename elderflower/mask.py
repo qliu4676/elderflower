@@ -190,8 +190,10 @@ class Mask:
         
         self.mask_deep0 = mask_deep0
         self.seg_deep0 = seg_deep0
-            
+        
         self.r_core = r_core
+        self.r_core_m = max(np.unique(r_core))
+        
         self.count = count
         
         # Display mask
@@ -403,7 +405,7 @@ def make_mask_map_dual(image, stars,
     star_pos = stars.star_pos_bright + pad
     
     if by == 'aper':
-        if len(r_core) == 1:
+        if len(np.unique(r_core)) == 1:
             r_core_A, r_core_B = r_core, r_core
             r_core_s = np.ones(len(star_pos)) * r_core
         else:
@@ -412,7 +414,7 @@ def make_mask_map_dual(image, stars,
                                  for F in stars.Flux_bright])
 
         if r_out is not None:
-            if len(r_out) == 1:
+            if len(np.unique(r_out)) == 1:
                 r_out_A, r_out_B = r_out, r_out
                 r_out_s = np.ones(len(star_pos)) * r_out_s
             else:
