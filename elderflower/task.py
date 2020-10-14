@@ -496,7 +496,7 @@ def Run_PSF_Fitting(hdu_path,
                     sample_method='auto',
                     print_progress=True,
                     draw=True,
-                    save=False,
+                    save=True,
                     stop=False,
                     use_PS1_DR2=False,
                     work_dir='./'):
