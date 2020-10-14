@@ -240,27 +240,38 @@ class Mask:
         
         pad = self.pad 
         
-        # Strip + Cross mask
-        mask_strip_s, mask_cross_s =  make_mask_strip(stars, self.xx, self.yy,
-                                                      pad=pad, n_strip=n_strip,
-                                                      wid_strip=wid_strip, dist_strip=dist_strip,
-                                                      wid_cross=wid_cross, dist_cross=dist_cross)
+        if stars.n_verybright > 0:
+            # Strip + Cross mask
+            mask_strip_s, mask_cross_s =  make_mask_strip(stars, self.xx, self.yy,
+                                                          pad=pad, n_strip=n_strip,
+                                                          wid_strip=wid_strip, dist_strip=dist_strip,
+                                                          wid_cross=wid_cross, dist_cross=dist_cross)
 
-        # combine strips
-        mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
-        mask_cross_all = ~np.logical_or.reduce(mask_cross_s)
+            # combine strips
+            mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
+            mask_cross_all = ~np.logical_or.reduce(mask_cross_s)
+            
+            seg_deep0 = self.seg_deep0
+            
+            # combine deep, crosses and strips
+            seg_comb0 = seg_deep0.copy()
+            ma_extra = (mask_strip_all|~mask_cross_all) & (seg_deep0==0)
+            seg_comb0[ma_extra] = seg_deep0.max()-2
+            mask_comb0 = (seg_comb0!=0)
+            
+            # assign attribute
+            self.mask_comb0 = mask_comb0
+            self.seg_comb0 = seg_comb0
+            
+            # example mask for the brightest star
+            ma_example=[mask_strip_s[0], mask_cross_s[0]],
         
-        seg_deep0 = self.seg_deep0
-        
-        # combine deep, crosses and strips
-        seg_comb0 = seg_deep0.copy()
-        ma_extra = (mask_strip_all|~mask_cross_all) & (seg_deep0==0)
-        seg_comb0[ma_extra] = seg_deep0.max()-2
-        mask_comb0 = (seg_comb0!=0)
-        
-        # assign attribute
-        self.mask_comb0 = mask_comb0
-        self.seg_comb0 = seg_comb0
+        else:
+            print("No very bright stars in the field! Skip bright star mask.")
+            self.seg_comb0 = seg_comb0 = self.seg_deep0
+            self.mask_comb0 = mask_comb0 = (seg_comb0!=0)
+            ma_example = None
+            clean = False
         
         # Clean medium bright stars far from bright stars
         if clean:
@@ -282,9 +293,9 @@ class Mask:
         # Display mask
         if draw:
             from .plotting import draw_mask_map_strip
-            draw_mask_map_strip(image0, seg_comb0, mask_comb0, stars_new,
-                                pad=pad, r_core=self.r_core, 
-                                ma_example=[mask_strip_s[0], mask_cross_s[0]],
+            draw_mask_map_strip(image0, seg_comb0, mask_comb0,
+                                self.stars_new, r_core=self.r_core,
+                                ma_example=ma_example, pad=pad,
                                 save=save, save_dir=save_dir)
             
             

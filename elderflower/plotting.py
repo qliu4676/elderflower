@@ -192,9 +192,6 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     star_pos_A = stars.star_pos_verybright + pad
     star_pos_B = stars.star_pos_medbright + pad
     
-    if ma_example is not None:
-        mask_strip, mask_cross = ma_example
-    
     mu = np.nanmedian(image)
     std = mad_std(image)
     if vmin is None:
@@ -204,9 +201,13 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
         
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6), dpi=100)
     
-    mask_strip[mask_cross.astype(bool)]=0.5
+    if ma_example is not None:
+        mask_strip, mask_cross = ma_example
+        mask_strip[mask_cross.astype(bool)]=0.5
+        ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
+    else:
+        mask_strip = np.zeros_like(image)
     ax1.imshow(mask_strip, cmap="gray_r")
-    ax1.plot(star_pos_A[0][0], star_pos_A[0][1], "r*",ms=18)
     ax1.set_title("Strip/Cross")
     
     n_label = seg_comb.max()

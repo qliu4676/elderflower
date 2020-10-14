@@ -393,16 +393,14 @@ class ImageList(ImageButler):
                                     band=self.band, 
                                     draw=draw, save=save, save_dir=save_dir)
             
-            if stars.n_verybright > 0:
-                # Supplementary Strip + Cross mask
+            # Supplementary Strip + Cross mask
+            if dist_strip is None:
+                dist_strip = max(Image.image_shape)
                 
-                if dist_strip is None:
-                    dist_strip = max(Image.image_shape)
-                    
-                mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
-                                        wid_cross, dist_cross, 
-                                        clean=clean, draw=draw,
-                                        save=save, save_dir=save_dir)
+            mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
+                                    wid_cross, dist_cross, 
+                                    clean=clean, draw=draw,
+                                    save=save, save_dir=save_dir)
 
             masks += [mask]
                 
