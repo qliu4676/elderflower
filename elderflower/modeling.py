@@ -602,20 +602,21 @@ class Stars:
         
         return stars_vb
     
-    def remove_outsider(self, image_shape, d=[36,12], verbose=False):
+    def remove_outsider(self, image_shape, gap=[36,12], verbose=False):
         """ Remove out-of-field stars far from the edge. """
         
         star_pos = self.star_pos
         Flux = self.Flux
         
-        edge_A = np.ones_like(star_pos)*[image_shape[0]+d[0], image_shape[1]+d[0]]
-        edge_B = np.ones_like(star_pos)*[image_shape[0]+d[1], image_shape[1]+d[1]]
-
-        out_A = (star_pos<-d[0]) | (star_pos>edge_A)
-        remove_A = np.logical_or.reduce(out_A, axis=1) & self.verybright
-        
-        out_B = (star_pos<-d[1]) | (star_pos>edge_B)
-        remove_B = np.logical_or.reduce(out_B, axis=1) & self.medbright
+        def out(d):
+            out_max = np.vstack([(star_pos[:,0]>image_shape[1]+d),
+                                 (star_pos[:,1]>image_shape[0]+d)]).T
+            out_min = (star_pos<-d)
+            out = out_min | out_max
+            return np.logical_or.reduce(out, axis=1)
+            
+        remove_A = out(gap[0]) & self.verybright
+        remove_B = out(gap[1]) & self.medbright
 
         remove = remove_A | remove_B
         stars_new = Stars(star_pos[~remove], Flux[~remove],
@@ -1651,6 +1652,9 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         draw_func = generate_image_by_znorm
     elif norm=='flux':
         draw_func = generate_image_by_flux
+        
+    if stars.n_verybright==0: subtract_external = False
+    else: subtract_external = True
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -1658,6 +1662,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                                psf_range=[900, max(image_shape)],
                                psf_scale=psf_fit.pixel_scale,
                                brightest_only=brightest_only,
+                               subtract_external=subtract_external,
                                draw_real=draw_real)
                           
     image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)

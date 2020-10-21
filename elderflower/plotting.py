@@ -565,7 +565,8 @@ def draw_comparison_2D(data, mask, image_fit,
     else:
         uncertainty = np.sqrt(np.std(noise_image)**2+(image_fit-bkg_image)/Gain)
         chi = (image_fit-data)/uncertainty
-        im = ax4.imshow(chi, vmin=-10, vmax=10, cmap="coolwarm")
+        # chi[mask_fit] = 0
+        im = ax4.imshow(chi, vmin=-5, vmax=5, cmap="coolwarm")
         ax4.set_title("$\chi$ [(I$_f$ - I$_0$)/$\sigma$]", fontsize=15); colorbar(im)
         
     residual = (data-image_stars)

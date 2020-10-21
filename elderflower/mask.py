@@ -7,7 +7,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 from .modeling import Stars
-from .utils import background_sub_SE, crop_pad
+from .utils import background_2d, crop_pad
 from .image import DF_pixel_scale
 
 class Mask:
@@ -192,7 +192,7 @@ class Mask:
         self.seg_deep0 = seg_deep0
         
         self.r_core = r_core
-        self.r_core_m = max(np.unique(r_core))
+        self.r_core_m = min(np.unique(r_core))
         
         self.count = count
         
@@ -264,7 +264,7 @@ class Mask:
             self.seg_comb0 = seg_comb0
             
             # example mask for the brightest star
-            ma_example=mask_strip_s[0], mask_cross_s[0]
+            ma_example = mask_strip_s[0], mask_cross_s[0]
         
         else:
             print("No very bright stars in the field! Skip bright star mask.")
@@ -298,26 +298,6 @@ class Mask:
                                 ma_example=ma_example, pad=pad,
                                 save=save, save_dir=save_dir)
             
-            
-# Make mask maps
-
-def make_mask_detection(image, sn_thre=3, b_size=25, npix=5):
-    """ Make mask map with S/N > sn_thre """
-    from photutils import detect_sources, deblend_sources
-    
-    # detect source
-    back, back_rms = background_sub_SE(image, b_size=b_size)
-    threshold = back + (sn_thre * back_rms)
-    segm0 = detect_sources(image, threshold, npixels=npix)
-    
-    # dilation
-    segmap = segm0.data.copy()
-        
-    segmap[(segmap!=0)&(segm0.data==0)] = segmap.max()+1
-    mask_deep = (segmap!=0)
-    
-    return mask_deep, segmap
-
 
 def make_mask_aperture(fname, RA, Dec, A_ang, B_ang, PA_ang, wcs, shape,
                        enlarge=3, pixel_scale=DF_pixel_scale):
@@ -437,7 +417,7 @@ def make_mask_map_dual(image, stars,
     if sn_thre is not None:
         print("Detect and deblend source... Mask S/N > %.1f"%(sn_thre))
         # detect all source first 
-        back, back_rms = background_sub_SE(image, b_size=b_size)
+        back, back_rms = background_2d(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
         segm0 = detect_sources(image, threshold, npixels=npix)
 

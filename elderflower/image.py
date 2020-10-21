@@ -174,61 +174,74 @@ class Image(ImageButler):
         self.d_n0 = d_n0
         return n0, d_n0
                                     
-    def generate_image_psf(self, psf, SE_catalog, seg_map, draw=False, dir_name='./tmp'):
+    def generate_image_psf(self, psf, SE_catalog, seg_map,
+                           use_PS1_DR2=True, draw=False, dir_tmp='./tmp'):
         """ Generate image of stars from a PSF Model"""
         from elderflower.utils import (crop_catalog, identify_extended_source,
-                                       calculate_color_term, cross_match,
+                                       calculate_color_term, cross_match_PS1,
                                        add_supplementary_SE_star, measure_Rnorm_all)
         from .modeling import generate_image_fit
         from .utils import check_save_path
         import shutil
         
-        check_save_path(dir_name, make_new=False, verbose=False)
+        check_save_path(dir_tmp, make_new=False, verbose=False)
         
         band = self.band
-        mag_name = '%smag'%band.lower()
         obj_name = self.obj_name
         bounds = self.bounds
         
         SE_cat = crop_catalog(SE_catalog, bounds)
         SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
-        tab_target, tab_target_full, catalog_star = cross_match(self.wcs,
-                                                                SE_cat_target,
-                                                                bounds,
-                                                                sep=3*u.arcsec,
-                                                                mag_limit=15,
-                                                                mag_name=mag_name,
-                                                                verbose=False)
+
+        # Use PANSTARRS DR1 or DR2?
+        if use_PS1_DR2:
+            mag_name = mag_name_cat = band.lower()+'MeanPSFMag'
+        else:
+            mag_name = band.lower()+'mag'
+            mag_name_cat = band.lower()+'mag_PS'
+
+        # Crossmatch with PANSTRRS mag < mag_limit
+        tab_target, tab_target_full, catalog_star = \
+                                    cross_match_PS1(band, self.wcs,
+                                                    SE_cat_target, bounds,
+                                                    mag_limit=15,
+                                                    use_PS1_DR2=use_PS1_DR2,
+                                                    verbose=False)
         
         CT = calculate_color_term(tab_target_full, mag_range=[13,18],
-                                  mag_name=mag_name+'_PS', draw=draw)
+                                  mag_name=mag_name_cat, draw=draw)
         
+        tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
         catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT #corrected mag
-        tab_target["MAG_AUTO_corr"] = tab_target[mag_name+'_PS'] + CT
         
-        catalog_star_name = os.path.join(dir_name, f'{obj_name}-catalog_PS_{band}_all.txt')
+        catalog_star_name = os.path.join(dir_tmp, f'{obj_name}-catalog_PS_{band}_all.txt')
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
         
         tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
                                                mag_saturate=13, draw=draw)
         
+        # Measure I at r0
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
                                                 self.wcs, self.full_image, seg_map,
                                                 mag_limit=15, r_scale=12, width=1,
-                                                obj_name=obj_name, mag_name=mag_name+'_PS',
-                                                save=True, verbose=False, dir_name=dir_name)
+                                                obj_name=obj_name, mag_name=mag_name_cat,
+                                                save=True, verbose=False, dir_name=dir_tmp)
         
-        self.read_measurement_table(dir_name, r_scale=12, mag_limit=15, use_PS1_DR2=False)
+        self.read_measurement_table(dir_tmp, use_PS1_DR2=use_PS1_DR2,
+                                    r_scale=12, mag_limit=15)
         
+        # Make Star Models
         self.assign_star_props(r_scale=12, mag_threshold=[13.5,10.5],
-                                verbose=False, draw=False, save=False, save_dir='test')
+                                verbose=False, draw=False, save=False)
         
-        stars = self.stars_bright
-        self.stars_gen = stars
+        self.stars_gen = stars = self.stars_bright
         
+        # Generate model star
         image_stars, _, _ = generate_image_fit(psf, stars, self.image_shape)
         print("Image of stars is generated based on the PSF Model!")
-        shutil.rmtree(dir_name)
+        
+        # Delete tmp dir
+        shutil.rmtree(dir_tmp)
         
         return image_stars
 

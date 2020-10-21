@@ -92,8 +92,10 @@ def Run_Detection(hdu_path, obj_name, band,
     
     print(f"Run SExtractor on {hdu_path}...")
     
-    segname = os.path.join(work_dir, f'{obj_name}_seg.fits')
-    catname = os.path.join(work_dir, f'{obj_name}.cat')
+    b_name = band.lower()
+    
+    segname = os.path.join(work_dir, f'{obj_name}-{b_name}_seg.fits')
+    catname = os.path.join(work_dir, f'{obj_name}-{b_name}.cat')
     
     header = fits.getheader(hdu_path)
     
@@ -274,11 +276,10 @@ def Match_Mask_Measure(hdu_path,
         wcs_data = wcs.WCS(header)
 
     # Read output from SExtractor detection
-    SE_cat_full = Table.read(os.path.join(work_dir, f'{obj_name}.cat'), format="ascii.sextractor")
+    SE_cat_full = Table.read(os.path.join(work_dir, f'{obj_name}-{b_name}.cat'), format="ascii.sextractor")
     
-    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}_seg.fits'))
+    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{b_name}_seg.fits'))
 
-     
     # Read global background model ZP from header
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
@@ -317,7 +318,7 @@ def Match_Mask_Measure(hdu_path,
     
     import astropy.units as u
     from .utils import (identify_extended_source,
-                        cross_match_PS1_DR2, cross_match,
+                        cross_match_PS1,
                         calculate_color_term,
                         add_supplementary_SE_star)
     from urllib.error import HTTPError
@@ -325,44 +326,24 @@ def Match_Mask_Measure(hdu_path,
     # Identify bright extended sources and enlarge their mask
     SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
 
-    # Crossmatch with PANSTRRS mag < mag_limit
-    if use_PS1_DR2:
-        # Give 3 attempts in matching PS1 DR2 via MAST.
-        # This could fail if the FoV is too large.
-        for attempt in range(4):
-            try:
-                tab_target, tab_target_full, catalog_star = \
-                            cross_match_PS1_DR2(wcs_data,
-                                                SE_cat_target,
-                                                bounds_list,
-                                                sep=3*u.arcsec,
-                                                mag_limit=mag_limit,
-                                                band=b_name) 
-            except HTTPError:
-                print('Gateway Time-out. Try Again.')
-            else:
-                break
-        else:
-            sys.exit('504 Server Error: 4 Failed Attempts. Exit.')
-            
-    else:
-        mag_name = b_name+'mag'
-        tab_target, tab_target_full, catalog_star = \
-                            cross_match(wcs_data,
-                                        SE_cat_target,
-                                        field_bounds,
-                                        sep=3*u.arcsec,
-                                        mag_limit=mag_limit,
-                                        mag_name=mag_name)
-        
-
     # Use PANSTARRS DR1 or DR2?
     if use_PS1_DR2:
         mag_name = mag_name_cat = b_name+'MeanPSFMag'
+        bounds_crossmatch = bounds_list
         dir_name = os.path.join(work_dir, 'Measure-PS2/')
     else:
+        mag_name = b_name+'mag'
         mag_name_cat = mag_name+'_PS'
+        bounds_crossmatch = field_bounds
         dir_name = os.path.join(work_dir, 'Measure-PS1/')
+    
+    # Crossmatch with PANSTRRS mag < mag_limit
+    tab_target, tab_target_full, catalog_star = \
+                                cross_match_PS1(band, wcs_data,
+                                                SE_cat_target,
+                                                bounds_crossmatch,
+                                                mag_limit=mag_limit,
+                                                use_PS1_DR2=use_PS1_DR2)
    
    # Calculate color correction between PANSTARRS and DF filter
     CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
@@ -673,14 +654,14 @@ def Run_PSF_Fitting(hdu_path,
     from .modeling import PSF_Model
     
     # PSF Parameters (some from fitting stacked PSF)
-    frac = 0.3                  # fraction of aureole
-    beta = 10                   # moffat beta, in arcsec
-    fwhm = 2.3 * pixel_scale    # moffat fwhm, in arcsec
+    frac = 0.3              # fraction of aureole
+    beta = 6.72             # moffat beta, in arcsec
+    fwhm = 6.07             # moffat fwhm, in arcsec
 
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([3.3, 2.2, n_cutoff])         # initial guess
+    n_s = np.array([3.35, 2.2, n_cutoff])         # initial guess
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # initial transition radius in arcsec
 
@@ -752,7 +733,7 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=40, theta_out=300,
+                            theta_in=None, theta_out=300,
                             n_min=1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
@@ -798,6 +779,7 @@ def Run_PSF_Fitting(hdu_path,
             if leg2d: suffix+='l'
             if fit_frac: suffix+='f'
             if brightest_only: suffix += 'b'
+            if use_PS1_DR2: suffix += '_ps2'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
             

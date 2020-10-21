@@ -127,8 +127,8 @@ def extract_bool_bitflags(bitflags, ind):
 
 ### Photometry Funcs ###
 
-def background_sub_SE(field, mask=None, b_size=64, f_size=3, n_iter=5):
-    """ Subtract background using SE estimator with mask """ 
+def background_2d(field, mask=None, b_size=64, f_size=3, n_iter=5):
+    """ Return background using SE estimator with mask """
     from photutils import Background2D, SExtractorBackground, MedianBackground
     try:
         Bkg = Background2D(field, mask=mask, bkg_estimator=SExtractorBackground(),
@@ -163,7 +163,7 @@ def source_detection(data, sn=2, b_size=120,
     from photutils import detect_sources, deblend_sources
     
     if sub_background:
-        back, back_rms = background_sub_SE(data, b_size=b_size)
+        back, back_rms = background_2d(data, b_size=b_size)
         threshold = back + (sn * back_rms)
     else:
         back = np.zeros_like(data)
@@ -461,6 +461,68 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     elif yunit == "SB": 
         return r_rbin, I_rbin, None
 
+def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
+                pixel_scale=2.5, size=1001, plot=False):
+    """ Make 2D PSF from parameters"""
+    from .modeling import PSF_Model
+    
+    cen = ((size-1)/2., (size-1)/2.)
+    x = np.linspace(0,size-1,size)
+    y = np.linspace(0,size-1,size)
+    xx, yy = np.meshgrid(x, y)
+
+    # PSF Parameters
+    n_s = np.atleast_1d(n_s)
+    theta_s = np.atleast_1d(theta_s)
+    params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac, "n_s":n_s, 'theta_s':theta_s}
+    psf = PSF_Model(params=params_mpow, aureole_model='multi-power')
+
+    # Build grid of image for drawing
+    psf.pixelize(pixel_scale)
+
+    # Generate core and aureole PSF
+    psf_c = psf.generate_core()
+    psf_e, psf_size = psf.generate_aureole(contrast=1e7, psf_range=size)
+    star_psf = (1-frac) * psf_c + frac * psf_e
+
+    # Galsim 2D model averaged in 1D
+    if plot: psf.plot1D()
+
+    # 2D DF PSF
+    PSF_DF_aureole = psf.draw_aureole2D_in_real([cen], Flux=np.array([frac]))[0]
+    PSF_DF_core = psf.draw_core2D_in_real([cen], Flux=np.array([1-frac]))[0]
+    D = PSF_DF_core(xx,yy) + PSF_DF_aureole(xx,yy)
+    D = D/D.sum()
+    return D
+
+def make_psf_1D(n_s, theta_s, ZP,
+                frac=0.3, beta=6.7, fwhm=6.1,
+                pixel_scale=2.5, size=1001,
+                dr=0.5, mag=7, plot=True):
+    """ Make 1D PSF from parameters"""
+    
+    Amp = 10**((mag-ZP)/-2.5)
+    if plot:
+        print('Scaled magnitude = ', mag)
+        print('Scaled amplitude = ', Amp)
+        
+    cen = ((size-1)/2., (size-1)/2.)
+    D = make_psf_2D(n_s, theta_s, frac, beta, fwhm,
+                    pixel_scale=pixel_scale, size=size, plot=plot)
+    
+    r, I, _ = cal_profile_1d(D*Amp, cen=cen, mock=True,
+                              ZP=ZP, sky_mean=0, sky_std=1e-9,
+                              dr=dr, lw=4, pixel_scale=pixel_scale,
+                              xunit="arcsec", yunit="SB", plot=plot,
+                              color="lightgreen", label='DF G band', alpha=0.9,
+                              scatter=False, core_undersample=True)
+    if plot:
+        plt.legend()
+        plt.xlim(1,8e2)
+        plt.ylim(31,10)
+
+    return r, I, D
+
 def calculate_fit_SB(psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
     
     frac = psf.frac
@@ -536,7 +598,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     # measure background, use a scalar value if the thumbnail is small 
     b_size = round(img_thumb.shape[0]//5/25)*25
     if img_thumb.shape[0] >= 50:
-        back, back_rms = background_sub_SE(img_thumb, b_size=b_size)
+        back, back_rms = background_2d(img_thumb, b_size=b_size)
     else:
         back, back_rms = (np.median(img_thumb[~mask_thumb])*np.ones_like(img_thumb), 
                             mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
@@ -950,7 +1012,7 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     # Bright stars in model
     stars_bright = Stars(star_pos, Flux, Flux_threshold=Flux_threshold,
                          z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=False)
-    stars_bright = stars_bright.remove_outsider(image_shape, d=[3*r_scale, r_scale], verbose=verbose)
+    stars_bright = stars_bright.remove_outsider(image_shape, gap=[3*r_scale, r_scale], verbose=verbose)
     
     if (table_faint is not None) & ('MAG_AUTO_corr' in table_faint.colnames):
         table_faint['FLUX_AUTO_corr'] = 10**((table_faint['MAG_AUTO_corr']-ZP)/(-2.5))
@@ -983,8 +1045,8 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
 def interp_I0(r, I, r0, r1, r2):
     """ Interpolate I0 at r0 with I(r) between r1 and r2 """
     range_intp = (r>r1) & (r<r2)
-    I0 = np.interp(r0, r[(r>r1)&(r<r2)], I[(r>r1)&(r<r2)])
-    return I0
+    logI0 = np.interp(r0, r[(r>r1)&(r<r2)], np.log10(I[(r>r1)&(r<r2)]))
+    return 10**logI0
 
 def fit_n0(dir_measure, bounds,
            obj_name, band, BKG, ZP,
@@ -1125,7 +1187,9 @@ def fit_n0(dir_measure, bounds,
             ax.set_xscale('log')
             
             from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-            ax_ins = inset_axes(ax, width="35%", height="35%")
+            ax_ins = inset_axes(ax, width="35%", height="35%",
+                                bbox_to_anchor=(-0.02,-0.02, 1, 1),
+                                bbox_transform=ax.transAxes)
             
     else:
         print('Warning: r0 is out of fit_range! Use default.')
@@ -1151,7 +1215,7 @@ def fit_n0(dir_measure, bounds,
     print('n0 = {:.4f}+/-{:.4f}'.format(n0, d_n0))
     
     return n0, d_n0
-    
+
 
 def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
                 pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
@@ -1494,6 +1558,48 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
     
     return tab_target, tab_target_all, catalog_star
         
+def cross_match_PS1(band, wcs_data,
+                    SE_cat_target, bounds_list,
+                    sep=3*u.arcsec,
+                    mag_limit=15,
+                    use_PS1_DR2=False,
+                    verbose=True):
+                    
+    b_name = band.lower()
+    
+    if use_PS1_DR2:
+        # Give 3 attempts in matching PS1 DR2 via MAST.
+        # This could fail if the FoV is too large.
+        for attempt in range(3):
+            try:
+                tab_target, tab_target_full, catalog_star = \
+                            cross_match_PS1_DR2(wcs_data,
+                                                SE_cat_target,
+                                                bounds_list,
+                                                sep=sep,
+                                                mag_limit=mag_limit,
+                                                band=b_name,
+                                                verbose=verbose)
+            except HTTPError:
+                print('Gateway Time-out. Try Again.')
+            else:
+                break
+        else:
+            sys.exit('504 Server Error: 4 Failed Attempts. Exit.')
+            
+    else:
+        mag_name = b_name+'mag'
+        tab_target, tab_target_full, catalog_star = \
+                            cross_match(wcs_data,
+                                        SE_cat_target,
+                                        bounds_list,
+                                        sep=sep,
+                                        mag_limit=mag_limit,
+                                        mag_name=mag_name,
+                                        verbose=verbose)
+                                        
+    return tab_target, tab_target_full, catalog_star
+
 
 def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     """ Add unmatched bright (saturated) stars in SE_catatlogas to tab.
@@ -1508,7 +1614,7 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     # Fit a sigma-clipped piecewise linear
     mag_lim = mag_saturate+2
     popt, _, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
-                                        piecewise_linear, x_max=15, n_iter=5,
+                                        piecewise_linear, x_max=15, n_iter=5, k_std=10,
                                         p0=(1, 2, mag_saturate, mag_saturate),
                                         bounds=(0.9, [2, 4, mag_lim, mag_lim]),
                                         x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
