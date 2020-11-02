@@ -45,3 +45,13 @@ elder.run()
 ```
 
 See doucementaton for paramter retrievement and bright star subtraction using ``samplers``.
+
+Examples
+--------
+The following example shows a simple 2-component PSF model (+ sky) by running elderflower on a 33'x33' cutout of the Dragonfly image:
+
+<img src="docs/source/images/Cornerplot2p_test.png" width="80%">
+
+elderflower can be used for bright star subtraction. The following example shows the bright star subtraction in a cutout of the Dragonfly NGC3432 field.
+
+<img src="docs/source/images/subtract_stars_by_psf.png" width="100%">
