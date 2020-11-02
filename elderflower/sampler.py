@@ -138,8 +138,9 @@ class Sampler:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             res = load_pickle(filename, printout=False)
-            
-        print(f"Read fitting results {filename}\n", res['fit_info'])
+        
+        if hasattr(res, 'fit_info'):
+            print(f"Read fitting results {filename}\n", res['fit_info'])
         
         return cls(res['container'], run=False, results=res['fit_res'])
         
@@ -178,11 +179,7 @@ class Sampler:
         
         ct = self.container
         image_shape = ct.image_shape
-        psf_fit, params = make_psf_from_fit(self.results, ct.n_spline, psf,
-                                            psf_range=max(image_shape),
-                                            leg2d=ct.leg2d, sigma=ct.std_est,
-                                            fit_sigma=ct.fit_sigma,
-                                            fit_frac=ct.fit_frac)
+        psf_fit, params = make_psf_from_fit(self, psf, psf_range=max(image_shape))
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std

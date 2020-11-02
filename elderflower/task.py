@@ -409,17 +409,17 @@ def Match_Mask_Measure(hdu_path,
                                         keys=("X_IMAGE", "Y_IMAGE"))
 
         # Make segmentation map from catalog based on SE seg map of one band
-        seg_map_cat = make_segm_from_catalog(catalog_star_patch,
-                                             bounds,
-                                             estimate_radius,
-                                             mag_name=mag_name,
-                                             cat_name='PS',
-                                             obj_name=obj_name,
-                                             band=band,
-                                             ext_cat=ext_cat,
-                                             draw=draw,
-                                             save=save,
-                                             dir_name=dir_name)
+        seg_map_c = make_segm_from_catalog(catalog_star_patch,
+                                         bounds,
+                                         estimate_radius,
+                                         mag_name=mag_name,
+                                         cat_name='PS',
+                                         obj_name=obj_name,
+                                         band=band,
+                                         ext_cat=ext_cat,
+                                         draw=draw,
+                                         save=save,
+                                         dir_name=dir_name)
 
         # Measure average intensity (source+background) at e_scale
         print("""Measure intensity at R = %d
@@ -661,7 +661,7 @@ def Run_PSF_Fitting(hdu_path,
     theta_0 = 5.                
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([3.35, 2.2, n_cutoff])         # initial guess
+    n_s = np.array([3.4, 2.2, n_cutoff])         # initial guess
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
         # initial transition radius in arcsec
 
@@ -714,8 +714,8 @@ def Run_PSF_Fitting(hdu_path,
 
     ## (a stop for developer)
     if stop:
-        proceed = input('Is the Mask Reasonable?[y/n]')
-        if proceed == 'n': sys.exit("Reset the Mask.")
+        print('Pause... Is the Mask Reasonable? [c/exit]')
+        breakpoint()
     
     ############################################
     # Estimate Background & Fit n0
@@ -733,7 +733,7 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=None, theta_out=300,
+                            theta_in=50, theta_out=300,
                             n_min=1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,

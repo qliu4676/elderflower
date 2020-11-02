@@ -60,7 +60,8 @@ def vmax_2sig(img):
     """ upper limit of visual imshow defined by 2 sigma above median """ 
     return np.median(img)+2*np.std(img)
 
-def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args):
+def colorbar(mappable, pad=0.2, size="5%", loc="right",
+             ticks_rot=None, ticks_size=12, color_nan='gray', **args):
     """ Customized colorbar """
     ax = mappable.axes
     fig = ax.figure
@@ -69,16 +70,16 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right", color_nan='gray', **args
     if loc=="bottom":
         orent = "horizontal"
         pad = 1.5*pad
-        rot = 75
+        rot = 60 if ticks_rot is None else ticks_rot
     else:
         orent = "vertical"
-        rot = 0
+        rot = 0 if ticks_rot is None else ticks_rot
     
     cax = divider.append_axes(loc, size=size, pad=pad)
     
     cb = fig.colorbar(mappable, cax=cax, orientation=orent, **args)
     cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
-    cb.ax.tick_params(labelsize=12)
+    cb.ax.tick_params(labelsize=ticks_size)
     
     cmap = cb.mappable.get_cmap()
     cmap.set_bad(color=color_nan, alpha=0.3)
@@ -299,14 +300,14 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
         plt.ylim(I_aureole.min()-0.25, I_tot.max()+0.25)
         
     elif yunit=='SB':
-        plt.semilogx(r, -14.5+Intensity2SB(I=I_tot, BKG=0,
+        plt.semilogx(r, -14.5+Intensity2SB(I_tot, BKG=0,
                                            ZP=27.1, pixel_scale=pixel_scale),
                      ls="-", lw=4,alpha=0.9, zorder=5, label=label)
         if decompose:
-            plt.semilogx(r, -14.5+Intensity2SB(I=I_core, BKG=0,
+            plt.semilogx(r, -14.5+Intensity2SB(I_core, BKG=0,
                                                ZP=27.1, pixel_scale=pixel_scale),
                          ls="--", lw=3, alpha=0.9, zorder=1, label='core')
-            plt.semilogx(r, -14.5+Intensity2SB(I=I_aureole, BKG=0,
+            plt.semilogx(r, -14.5+Intensity2SB(I_aureole, BKG=0,
                                                ZP=27.1, pixel_scale=pixel_scale),
                          ls="--", lw=3, alpha=0.9, label='aureole')
         plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
@@ -528,7 +529,7 @@ def draw_comparison_2D(data, mask, image_fit,
                        image_stars, bkg_image,
                        noise_image=0, r_core=None,
                        vmin=None, vmax=None, Gain=None,
-                       cmap='gnuplot2', norm=AsinhNorm(0.01),
+                       cmap='gnuplot2', norm=AsinhNorm(0.05),
                        manual_locations=None,
                        save=False, save_dir=".", suffix=""):
                        

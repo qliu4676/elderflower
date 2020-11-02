@@ -53,9 +53,9 @@ def gamma_to_fwhm(gamma, beta):
     """ in arcsec """
     return gamma / fwhm_to_gamma(1, beta)
 
-def Intensity2SB(I, BKG, ZP, pixel_scale=DF_pixel_scale):
+def Intensity2SB(Intensity, BKG, ZP, pixel_scale=DF_pixel_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
-    I = np.atleast_1d(I)
+    I = np.atleast_1d(Intensity.copy())
     I[np.isnan(I)] = BKG
     if np.any(I<=BKG):
         I[I<=BKG] = np.nan
@@ -127,24 +127,31 @@ def extract_bool_bitflags(bitflags, ind):
 
 ### Photometry Funcs ###
 
-def background_2d(field, mask=None, b_size=64, f_size=3, n_iter=5):
-    """ Return background using SE estimator with mask """
-    from photutils import Background2D, SExtractorBackground, MedianBackground
+def background_extraction(field, mask=None, return_rms=True,
+                  b_size=64, f_size=3, n_iter=5, **kwargs):
+    """ Extract background using SE estimator with mask """
+    from photutils import Background2D, SExtractorBackground
+    
     try:
-        Bkg = Background2D(field, mask=mask, bkg_estimator=SExtractorBackground(),
-                           box_size=(b_size, b_size), filter_size=(f_size, f_size),
-                           sigma_clip=SigmaClip(sigma=3., maxiters=n_iter))
+        Bkg = Background2D(field, mask=mask,
+                           bkg_estimator=SExtractorBackground(),
+                           box_size=b_size, filter_size=f_size,
+                           sigma_clip=SigmaClip(sigma=3., maxiters=n_iter),
+                           **kwargs)
         back = Bkg.background
         back_rms = Bkg.background_rms
+        
     except ValueError:
         img = field.copy()
         if mask is not None:
             img[mask] = np.nan
-        back, back_rms = np.nanmedian(field) * np.ones_like(field), np.nanstd(field) * np.ones_like(field)
-    if mask is not None:
-        back *= ~mask
-        back_rms *= ~mask
-    return back, back_rms
+        back = np.nanmedian(field) * np.ones_like(field)
+        back_rms = np.nanstd(field) * np.ones_like(field)
+        
+    if return_rms:
+        return back, back_rms
+    else:
+        return back
 
 def display_background_sub(field, back):
     from .plotting import vmax_2sig, vmin_3mad
@@ -156,14 +163,14 @@ def display_background_sub(field, back):
     ax3.imshow(field - back, aspect="auto", cmap='gray', vmin=0., vmax=vmax_2sig(field - back),norm=LogNorm())
     plt.tight_layout()
 
-def source_detection(data, sn=2, b_size=120,
+def source_detection(data, sn=2.5, b_size=120,
                      k_size=3, fwhm=3, smooth=True, 
                      sub_background=True, mask=None):
     from astropy.convolution import Gaussian2DKernel
     from photutils import detect_sources, deblend_sources
     
     if sub_background:
-        back, back_rms = background_2d(data, b_size=b_size)
+        back, back_rms = background_extraction(data, b_size=b_size)
         threshold = back + (sn * back_rms)
     else:
         back = np.zeros_like(data)
@@ -174,10 +181,12 @@ def source_detection(data, sn=2, b_size=120,
         kernel.normalize()
     else:
         kernel=None
-    segm_sm = detect_sources(data, threshold, npixels=5, filter_kernel=kernel, mask=mask)
+        
+    segm_sm = detect_sources(data, threshold, npixels=5,
+                            filter_kernel=kernel, mask=mask)
 
     data_ma = data.copy() - back
-    data_ma[segm_sm!=0] = np.nan
+    data_ma[segm_sm.data!=0] = np.nan
 
     return data_ma, segm_sm
 
@@ -391,7 +400,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     logzerr_rbin = 0.434 * abs( zstd_rbin / (z_rbin-sky_mean))
     
     if yunit == "SB":
-        I_rbin = Intensity2SB(I=z_rbin, BKG=np.median(back),
+        I_rbin = Intensity2SB(z_rbin, BKG=np.median(back),
                               ZP=ZP, pixel_scale=pixel_scale) + I_shift
     
     if plot:
@@ -416,13 +425,13 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.plot(r_rbin, I_rbin, "-o", mec="k",
                      lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label)   
             if scatter:
-                I = Intensity2SB(I=z, BKG=np.median(back),
+                I = Intensity2SB(z, BKG=np.median(back),
                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
                 
             if errorbar:
-                Ierr_rbin_up = I_rbin - Intensity2SB(I=z_rbin, BKG=np.median(back)-sky_std,
+                Ierr_rbin_up = I_rbin - Intensity2SB(z_rbin, BKG=np.median(back)-sky_std,
                                  ZP=ZP, pixel_scale=pixel_scale)  - I_shift
-                Ierr_rbin_lo = Intensity2SB(I=z_rbin, BKG=np.median(back)+sky_std,
+                Ierr_rbin_lo = Intensity2SB(z_rbin, BKG=np.median(back)+sky_std,
                                 ZP=ZP, pixel_scale=pixel_scale) - I_rbin  + I_shift
                 lolims = np.isnan(Ierr_rbin_lo)
                 uplims = np.isnan(Ierr_rbin_up)
@@ -437,7 +446,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
         plt.xscale("log")
         plt.xlim(max(r_rbin[np.isfinite(r_rbin)][0]*0.8, 1e-1),r_rbin[np.isfinite(r_rbin)][-1]*1.2)
-        plt.xlabel("R [arcsec]") if xunit == "arcsec" else plt.xlabel("r [pix]")
+        plt.xlabel("Radius [arcsec]") if xunit == "arcsec" else plt.xlabel("radius [pix]")
         
         if scatter:
             plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, 
@@ -598,7 +607,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     # measure background, use a scalar value if the thumbnail is small 
     b_size = round(img_thumb.shape[0]//5/25)*25
     if img_thumb.shape[0] >= 50:
-        back, back_rms = background_2d(img_thumb, b_size=b_size)
+        back, back_rms = background_extraction(img_thumb, b_size=b_size)
     else:
         back, back_rms = (np.median(img_thumb[~mask_thumb])*np.ones_like(img_thumb), 
                             mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
@@ -1696,7 +1705,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           mag_range=[13, 22], K=3, degree=2, draw=True):
+                           mag_range=[11, 22], K=3, degree=2, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
@@ -1863,11 +1872,10 @@ def build_independent_priors(priors):
     return prior_transform
     
     
-def make_psf_from_fit(fit_res, n_spline, psf=None,
+def make_psf_from_fit(sampler, psf=None,
                       pixel_scale=DF_pixel_scale,
                       psf_range=None,
-                      leg2d=False, sigma=None,
-                      fit_sigma=True, fit_frac=False):
+                      leg2d=False):
                       
     """
     
@@ -1879,8 +1887,6 @@ def make_psf_from_fit(fit_res, n_spline, psf=None,
         Results of the dynesty dynamic sampler class
     psf : PSF_Model class, optional, default None
         Inherited PSF model. If None, create a new one.
-    n_spline : int, optional, default 3
-        Number of power-law component for the aureole models.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
         
@@ -1894,6 +1900,11 @@ def make_psf_from_fit(fit_res, n_spline, psf=None,
     
     from .modeling import PSF_Model
     from .sampler import get_params_fit
+    
+    fit_res = sampler.results
+    ct = sampler.container
+    n_spline = ct.n_spline
+    fit_sigma, fit_frac = ct.fit_sigma, ct.fit_frac
     
     if psf is None:
         params = {"fwhm":2.28 * pixel_scale, "beta":10, "frac":0.1,
@@ -1950,9 +1961,9 @@ def make_psf_from_fit(fit_res, n_spline, psf=None,
     if fit_sigma:
         sigma_fit = 10**params[-K]
     else:
-        sigma_fit = sigma
+        sigma_fit = ct.std_est
         
-    if leg2d:
+    if ct.leg2d:
         psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
         
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit

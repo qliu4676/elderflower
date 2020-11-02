@@ -7,7 +7,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 from .modeling import Stars
-from .utils import background_2d, crop_pad
+from .utils import background_extraction, crop_pad
 from .image import DF_pixel_scale
 
 class Mask:
@@ -417,7 +417,7 @@ def make_mask_map_dual(image, stars,
     if sn_thre is not None:
         print("Detect and deblend source... Mask S/N > %.1f"%(sn_thre))
         # detect all source first 
-        back, back_rms = background_2d(image, b_size=b_size)
+        back, back_rms = background_extraction(image, b_size=b_size)
         threshold = back + (sn_thre * back_rms)
         segm0 = detect_sources(image, threshold, npixels=npix)
 

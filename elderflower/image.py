@@ -179,6 +179,7 @@ class Image(ImageButler):
         """ Generate image of stars from a PSF Model"""
         from elderflower.utils import (crop_catalog, identify_extended_source,
                                        calculate_color_term, cross_match_PS1,
+                                       fit_empirical_aperture, make_segm_from_catalog,
                                        add_supplementary_SE_star, measure_Rnorm_all)
         from .modeling import generate_image_fit
         from .utils import check_save_path
@@ -192,7 +193,7 @@ class Image(ImageButler):
         
         SE_cat = crop_catalog(SE_catalog, bounds)
         SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
-
+        
         # Use PANSTARRS DR1 or DR2?
         if use_PS1_DR2:
             mag_name = mag_name_cat = band.lower()+'MeanPSFMag'
@@ -235,6 +236,23 @@ class Image(ImageButler):
                                 verbose=False, draw=False, save=False)
         
         self.stars_gen = stars = self.stars_bright
+        
+        # Make mask map
+        estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
+                                                mag_name=mag_name_cat, K=3,
+                                                degree=2, draw=draw)
+                                                
+        seg_map_c = make_segm_from_catalog(catalog_star, bounds,
+                                            estimate_radius,
+                                            mag_name=mag_name,
+                                            cat_name='PS',
+                                            obj_name=obj_name,
+                                            band=band,
+                                            ext_cat=ext_cat,
+                                            draw=draw,
+                                            save=False,
+                                            dir_name=dir_tmp)
+        self.seg_map = seg_map_c
         
         # Generate model star
         image_stars, _, _ = generate_image_fit(psf, stars, self.image_shape)
