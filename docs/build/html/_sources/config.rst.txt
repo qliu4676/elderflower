@@ -33,6 +33,7 @@ An example configuration file looks as follows:
 	    fit_sigma: True
 	    fit_frac: False
 	    leg2d: False
+	    mask_obj: ~
 	    wid_strip: 24
 	    n_strip: 48
 	    n_cpu: 4

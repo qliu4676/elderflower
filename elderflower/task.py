@@ -22,7 +22,7 @@ SE_executable = get_SExtractor_path()
 
 def Run_Detection(hdu_path, obj_name, band,
                   threshold=5, work_dir='./',
-                  config_path=SE_config_path,
+                  config_path=None,
                   executable=SE_executable,
                   ZP_keyname='REFZP', ZP=None,
                   ref_cat='APASSref.cat',
@@ -52,7 +52,7 @@ def Run_Detection(hdu_path, obj_name, band,
         Detection and analysis threshold of SExtractor
     work_dir : str, optional, default current directory
         Full path of directory for saving
-    config_path : str, optional, 'default.sex'
+    config_path : str, optional, None
         Full path of configuration file of running SExtractor.
         By default it uses the one stored in configs/
     executable : str, optional, SE_executable
@@ -98,6 +98,8 @@ def Run_Detection(hdu_path, obj_name, band,
     catname = os.path.join(work_dir, f'{obj_name}-{b_name}.cat')
     
     header = fits.getheader(hdu_path)
+    
+    if config_path is None: config_path = SE_config_path
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():

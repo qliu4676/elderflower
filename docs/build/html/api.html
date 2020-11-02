@@ -36,7 +36,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">elderflower.task</span></code></p>
 <dl class="function">
 <dt id="elderflower.task.Run_Detection">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_Detection</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">threshold=5</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_path='/Users/qliu/Documents/GitHub/elderflower/configs/./default.sex'</em>, <em class="sig-param">executable='/opt/local/bin/source-extractor'</em>, <em class="sig-param">ZP_keyname='REFZP'</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">ref_cat='APASSref.cat'</em>, <em class="sig-param">apass_dir='~/Data/apass/'</em>, <em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_Detection" title="Permalink to this definition">¶</a></dt>
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_Detection</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">threshold=5</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_path=None</em>, <em class="sig-param">executable='/opt/local/bin/source-extractor'</em>, <em class="sig-param">ZP_keyname='REFZP'</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">ref_cat='APASSref.cat'</em>, <em class="sig-param">apass_dir='~/Data/apass/'</em>, <em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_Detection" title="Permalink to this definition">¶</a></dt>
 <dd><dl class="simple">
 <dt>Run a first-step source detection with SExtractor. This step generates a SExtractor catalog</dt><dd><p>and segementation map for the cross-match and measurement in Match_Mask_Measure.</p>
 </dd>
@@ -53,7 +53,7 @@ reference catalog already exists, it can be provided (‘ref_cat’) to save tim
 <li><p><strong>band</strong> (<em>str</em>) – Filter name (‘G’, ‘g’ or ‘R’, ‘r’)</p></li>
 <li><p><strong>threshold</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 5</em>) – Detection and analysis threshold of SExtractor</p></li>
 <li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full path of directory for saving</p></li>
-<li><p><strong>config_path</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>'default.sex'</em>) – Full path of configuration file of running SExtractor.
+<li><p><strong>config_path</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>None</em>) – Full path of configuration file of running SExtractor.
 By default it uses the one stored in configs/</p></li>
 <li><p><strong>executable</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>SE_executable</em>) – Full path of the SExtractor executable. If SExtractor is installed this can be retrieved
 by typing ‘$which sex’  or  ‘$which source-extractor’ in the shell.</p></li>
@@ -80,6 +80,7 @@ overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in cap
 <blockquote>
 <div><p>Run_Detection(…, DETECT_THRESH=10)</p>
 </div></blockquote>
+<p>will override threshold.</p>
 </dd></dl>
 
 <dl class="function">
@@ -131,7 +132,7 @@ could easily fail if a field is too large (&gt; 1 deg^2)</p></li>
 
 <dl class="function">
 <dt id="elderflower.task.Run_PSF_Fitting">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, r_scale=12, mag_limit=15, mag_threshold=[14, 11], mask_type='aper', wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, theta_cutoff=1200, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, r_scale=12, mag_limit=15, mag_threshold=[13.0, 11], mask_type='aper', mask_obj=None, wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, cutoff=True, n_cutoff=4, theta_cutoff=1200, n0=None, fit_n0=True, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=True, stop=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the wide-angle PSF fitting.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -153,6 +154,7 @@ Default is 30” for Dragonfly.</p></li>
 The conversion from brightness is using a static PSF. (* will change to stacked profiles)</p></li>
 <li><p><strong>mask_type</strong> (<em>'aper'</em><em> or </em><em>'brightness'</em><em>, </em><em>optional</em><em>, </em><em>default 'aper'</em>) – “aper”: aperture masking
 “brightness”: brightness-limit masking</p></li>
+<li><p><strong>mask_obj</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – full path to the target object mask (w/ the same shape with image)</p></li>
 <li><p><strong>wid_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 24</em>) – Width of strip for masks of very bright stars.</p></li>
 <li><p><strong>n_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 48</em>) – Number of strip for masks of very bright stars.</p></li>
 <li><p><strong>SB_threshold</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 24.5</em>) – Surface brightness upper limit for masking.
@@ -163,8 +165,14 @@ The speed goes down as n_spline goes up. Default is 3.</p></li>
 bright stars. Default is 1’ for Dragonfly.</p></li>
 <li><p><strong>r_out</strong> (<em>int</em><em> or </em><em>[</em><em>int</em><em>, </em><em>int</em><em>] or </em><em>None</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Radius (in pix) for the outer mask of [very, medium]
 bright stars. If None, turn off outer mask.</p></li>
-<li><p><strong>theta_cutoff</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 1200</em>) – Cutoff range (in arcsec) for the aureole model. The model is cut off beyond it with n=4.
+<li><p><strong>cutoff</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – If True, the aureole will be cutoff at theta_cutoff.</p></li>
+<li><p><strong>n_cutoff</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 4</em>) – Cutoff slope for the aureole model.
+Default is 4 for Dragonfly.</p></li>
+<li><p><strong>theta_cutoff</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 1200</em>) – Cutoff range (in arcsec) for the aureole model.
 Default is 20’ for Dragonfly.</p></li>
+<li><p><strong>n0</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – Power index of the first component, only used if fit_n0=False.
+If not None, n0 will be fixed at that value in the prior.</p></li>
+<li><p><strong>fit_n0</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default True</em>) – Whether to fit n0 with profiles of bright stars in advance.</p></li>
 <li><p><strong>fit_sigma</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to fit the background stddev.
 If False, will use the estimated value</p></li>
 <li><p><strong>fit_frac</strong> (<em>bool</em><em>, </em><em>optional</em><em>, </em><em>default False</em>) – Whether to fit the fraction of the aureole.
