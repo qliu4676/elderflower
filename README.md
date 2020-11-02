@@ -1,6 +1,6 @@
 # elderflower
 
-![](docs/source/images/elderflower.png)
+<img src="docs/source/images/elderflower.png" width="%20">
 
 **ELDERFLOWER** (Mod**E**l**L**ing Wi**DE**-Angle Point Sp**R**ead **F**unction in **LOW** Surfac**E** B**R**ightness)
 
