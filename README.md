@@ -29,7 +29,7 @@ ZP = Run_Detection('cutout.fits', obj_name, filt)
 Match_Mask_Measure('cutout.fits', bounds, obj_name, filt,
                     ZP=ZP, pixel_scale=2.5)
 samplers = Run_PSF_Fitting('cutout.fits', bounds, obj_name, filt,
-                    n_spline=3, ZP=ZP, pixel_scale=2.5)   
+                            n_spline=3, ZP=ZP, pixel_scale=2.5)   
 ```
 
 2. Configuration mode
