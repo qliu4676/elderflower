@@ -1,16 +1,15 @@
 # elderflower
 
-<img src="docs/source/images/elderflower.png" width="%20">
+<img src="docs/source/images/elderflower.png" width="30%">
 
-**ELDERFLOWER** (Mod**E**l**L**ing Wi**DE**-Angle Point Sp**R**ead **F**unction in **LOW** Surfac**E** B**R**ightness)
-
-A Wide-Angle PSF Modeling tool for low-surface brightness imaging with Dragonfly that utilizes [Galsim](https://github.com/GalSim-developers/GalSim) and [Dynesty](https://github.com/joshspeagle/dynesty).
+**ELDERFLOWER** (Mod**E**l**L**ing Wi**DE**-Angle Point Sp**R**ead **F**unction in **LOW** Surfac**E** B**R**ightness) is a wide-angle PSF modeling tool for low-surface brightness imaging with Dragonfly that utilizes [Galsim](https://github.com/GalSim-developers/GalSim) and [Dynesty](https://github.com/joshspeagle/dynesty).
 
 
 Doucmentation: https://elderflower.readthedocs.io/en/latest/
 
-## Installation
----
+Installation
+------------
+
 ```bash
   cd <install directory>
   git clone https://github.com/NGC4676/elderflower.git
@@ -18,10 +17,10 @@ Doucmentation: https://elderflower.readthedocs.io/en/latest/
   pip install -e .
 ```
 
-## Basic Usage
----
+Basic Usage
+-----------
 1. Function mode
-```
+```python
 bounds = ([100,100,700,700])
 obj_name = 'test'
 filt = 'r'
@@ -34,7 +33,7 @@ samplers = Run_PSF_Fitting('cutout.fits', bounds, obj_name, filt,
 ```
 
 2. Configuration mode
-```
+```python
 from elderflower.task import berry
 
 bounds = ([100,100,700,700])
@@ -43,7 +42,6 @@ elder = berry('cutout.fits', bounds,
               config_file='config.yaml')
 elder.detection()
 elder.run()
-
-Configuration mode
-
 ```
+
+See doucementaton for paramter retrievement and bright star subtraction using ``samplers``.
