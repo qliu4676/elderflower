@@ -543,7 +543,7 @@ class ImageList(ImageButler):
                                 theta_in=theta_in, theta_out=theta_out)
 
             # Set Likelihood
-            container.set_likelihood(self.data[i],
+            container.set_likelihood(self.images[i],
                                      self.mask_fit[i],
                                      psf, stars[i],
                                      n0=n0,

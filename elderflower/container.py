@@ -67,7 +67,7 @@ class Container:
         self.std_est = std_est
     
     def set_likelihood(self,
-                       data, mask_fit,
+                       image, mask_fit,
                        psf, stars,
                        norm='brightness',
                        n0=3.3,
@@ -89,7 +89,7 @@ class Container:
         psf_tri = psf.copy()
         
         # Set up likelihood function
-        loglike = set_likelihood(data, mask_fit,
+        loglike = set_likelihood(image, mask_fit,
                                  psf_tri, stars_tri,
                                  norm=norm,
                                  psf_range=psf_range,

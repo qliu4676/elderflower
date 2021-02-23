@@ -323,7 +323,6 @@ def Match_Mask_Measure(hdu_path,
                         cross_match_PS1,
                         calculate_color_term,
                         add_supplementary_SE_star)
-    from urllib.error import HTTPError
     
     # Identify bright extended sources and enlarge their mask
     SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
@@ -713,11 +712,6 @@ def Run_PSF_Fitting(hdu_path,
         stars = [s.use_verybright() for s in DF_Images.stars]
     else:
         stars = DF_Images.stars # for fit
-
-    ## (a stop for developer)
-    if stop:
-        print('Pause... Is the Mask Reasonable? [c/exit]')
-        breakpoint()
     
     ############################################
     # Estimate Background & Fit n0
@@ -729,7 +723,7 @@ def Run_PSF_Fitting(hdu_path,
                          mag_max=12, draw=draw)
     else:
         DF_Images._n0 = n0  # fixed n0 if not None
-
+        
     ############################################
     # Setup Priors and Likelihood Models for Fitting
     ############################################
@@ -742,6 +736,12 @@ def Run_PSF_Fitting(hdu_path,
                             fit_sigma=fit_sigma,
                             fit_frac=fit_frac,
                             brightest_only=brightest_only)
+    
+    ## (a stop for developer)
+    if stop:
+        return DF_Images, psf, stars
+        print('Pause... Is the Mask Reasonable? [c/exit]')
+        breakpoint()
     
     ############################################
     # Run Sampling

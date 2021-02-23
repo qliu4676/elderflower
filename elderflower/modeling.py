@@ -238,7 +238,7 @@ class PSF_Model:
 
             # Parse the image to Galsim PSF model by interpolation
             image_psf = galsim.ImageF(psf_model)
-            self.image_psf = image_psf
+#            self.image_psf = image_psf/image_psf.sum()
             psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
                                                    scale=psf_scale,
                                                    x_interpolant=interpolant,
@@ -364,7 +364,7 @@ class PSF_Model:
         from .plotting import plot_PSF_model_galsim
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
                                           save=save, save_dir=save_dir)
-        self.image_psf = image_psf
+        self.image_psf = image_psf / image_psf.sum()
 
         
     @staticmethod
@@ -1361,15 +1361,13 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
     return image
         
 def generate_image_by_flux(psf, stars, xx, yy,
-                           contrast=[5e4,5e5],
-                           min_psf_range=60,
+                           contrast=[1e5,1e6],
+                           min_psf_range=90,
                            max_psf_range=1200,
                            psf_range=[None,None],
                            psf_scale=2.5,
                            parallel=False,
                            draw_real=True,
-                           n_real=2.5,
-                           subtract_external=False,
                            draw_core=False,
                            brightest_only=False,
                            interpolant='cubic'):
@@ -1387,7 +1385,6 @@ def generate_image_by_flux(psf, stars, xx, yy,
     psf_scale : pixel scale of PSF. iN arcsec/pixel. Default to DF pixel scale.
     parallel : whether to run drawing for medium bright stars in parallel.
     draw_real : whether to draw very bright stars in real.
-    n_real : first power index below which stars will be draw by conv.
     draw_core : whether to draw the core for very bright stars in real.
     brightest_only : whether to draw very bright stars only.
     interpolant : Interpolant method in Galsim.
@@ -1492,7 +1489,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
 
 def generate_image_by_znorm(psf, stars, xx, yy,
                             contrast=[1e5,1e6],
-                            min_psf_range=120, 
+                            min_psf_range=90,
                             max_psf_range=1200,
                             psf_range=[None,None],
                             psf_scale=2.5,
@@ -1832,8 +1829,8 @@ def prior_tf_sp(u, Priors, n_spline=3,
     
     # n prior
     if fix_n0:
-        # v[0] = n_est
-        v[0] = np.random.normal(n_est, d_n0)
+        v[0] = n_est
+#        v[0] = np.random.normal(n_est, d_n0)
     else:
         v[0] = Prior_n0.ppf(u[0])
     
@@ -1940,7 +1937,7 @@ class Legendre2D:
             self.coefs = [H10, H01]
             
 
-def set_likelihood(data, mask_fit, psf, stars,
+def set_likelihood(image, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
                    n0=3.3, fix_n0=False,
                    psf_range=[None,None], leg2d=False,
@@ -1953,10 +1950,10 @@ def set_likelihood(data, mask_fit, psf, stars,
     
     Parameters
     ----------
-    data: 1d data to be fit
+    image: 2d image data to be fit
     mask_fit: mask map (masked region is 1)
-    psf: PSF class
-    stars: Stars class
+    psf: A PSF class to be updated
+    stars: Stars class for the modeling
     
     Returns
     ----------
@@ -1964,11 +1961,14 @@ def set_likelihood(data, mask_fit, psf, stars,
     
     """
     
-    image_shape = mask_fit.shape
+    data = image[~mask_fit].copy().ravel()
+    
+    image_shape = image.shape
     Yimage_size, Ximage_size = image_shape
     yy, xx = np.mgrid[:Yimage_size, :Ximage_size]
     
-    z_norm = stars.z_norm.copy()
+    stars_0 = stars.copy()
+    z_norm = stars_0.z_norm.copy()
     
     if norm=='brightness':
         draw_func = generate_image_by_znorm
@@ -2061,7 +2061,9 @@ def set_likelihood(data, mask_fit, psf, stars,
                     theta_s = np.append(theta_s, theta_c)
                     
                 mu = v[-K-1]
-                loglike = -1000
+                if not np.all(theta_s[1:] > theta_s[:-1]):
+                    loglike = -1e100
+                    return loglike
 
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
 
@@ -2107,17 +2109,21 @@ def set_likelihood(data, mask_fit, psf, stars,
 
                 n_s = v[:3]
                 
-                ### Below is new!
-                if fix_n0:
-                    n_s[0] = n0
-                ###
+#                ### Below is new!
+#                if fix_n0:
+#                    n_s[0] = n0
+#                ###
                 
                 theta_s = [theta_0, 10**v[3], 10**v[4]]
                 
                 if cutoff:
                     n_s = np.append(n_s, n_c)
                     theta_s = np.append(theta_s, theta_c)
-                
+                    
+                if not np.all(theta_s[1:] > theta_s[:-1]):
+                    loglike = -1e100
+                    return loglike
+                    
                 mu = v[-K-1]
 
                 param_update = {'n_s':n_s, 'theta_s':theta_s}
@@ -2170,6 +2176,10 @@ def set_likelihood(data, mask_fit, psf, stars,
                 if cutoff:
                     n_s = np.append(n_s, n_c)
                     theta_s = np.append(theta_s, theta_c)
+                    
+                if not np.all(theta_s[1:] > theta_s[:-1]):
+                    loglike = -1e100
+                    return loglike
                 
                 mu = v[-K-1]
                 

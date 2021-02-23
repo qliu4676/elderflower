@@ -37,6 +37,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 from astropy.stats import mad_std, sigma_clip
+import astropy.units as u
 
 from photutils import CircularAperture
 
@@ -118,6 +119,22 @@ def display(image, mask=None,
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
     ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
               vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
+
+def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
+                   scale=5*u.arcmin, pixel_scale=2.5,
+                   lw=6, fontsize=15, color='w',
+                   border_color='k', border_lw=0.5, alpha=1):
+    """ Draw a scale bar """
+    import matplotlib.patheffects as PathEffects
+    L_bar = scale.to(u.arcsec).value/pixel_scale
+    
+    ax.plot([X_bar-L_bar/2, X_bar+L_bar/2], [Y_bar,Y_bar],
+            color=color, alpha=alpha, lw=lw,
+            path_effects=[PathEffects.SimpleLineShadow(), PathEffects.Normal()])
+    ax.text(X_bar, y_text, '%.1f %s'%(scale.value, scale.unit), color=color, alpha=alpha,
+            ha='center', va='center', fontweight='bold', fontsize=fontsize,
+            path_effects=[PathEffects.SimpleLineShadow(),
+            PathEffects.withStroke(linewidth=border_lw, foreground=border_color)])
 
 def draw_mask_map(image, seg_map, mask_deep, stars,
                   r_core=None, r_out=None, vmin=None, vmax=None,

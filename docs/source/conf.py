@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath('../..'))
 
+# Mock imports, useful when some external dependencies are not met at build time and break the building process.
 autodoc_mock_imports = ['galsim']
 
 # -- Project information -----------------------------------------------------

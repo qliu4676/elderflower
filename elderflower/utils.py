@@ -866,8 +866,8 @@ def crop_image(data, bounds, seg_map=None,
         ax.add_patch(rect)
         
         if sub_bounds is not None:
-            for bounds, l in zip(sub_bounds, string.ascii_uppercase):
-                Xmin, Ymin, Xmax, Ymax = bounds
+            for bounds_, l in zip(sub_bounds, string.ascii_uppercase):
+                Xmin, Ymin, Xmax, Ymax = bounds_
                 width = Xmax-Xmin, Ymax-Ymin
                 rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
                                          linewidth=2.5, edgecolor='indianred', facecolor='none')
@@ -1148,10 +1148,12 @@ def fit_n0(dir_measure, bounds,
         for num in tab_fit['NUMBER']:
             res = res_thumb[num]
             img, ma, cen = res['image'], res['mask'], res['center']
+            bkg = np.mean(res_thumb[num]['bkg'])
+            sky_mean = bkg if BKG is None else BKG
             
             # calculate 1d profile
             r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma,
-                                               ZP=ZP, sky_mean=BKG, sky_std=sky_std,
+                                               ZP=ZP, sky_mean=sky_mean, sky_std=sky_std,
                                                xunit="arcsec", yunit="SB",
                                                errorbar=False, dr=dr,
                                                pixel_scale=pixel_scale,
@@ -1170,11 +1172,11 @@ def fit_n0(dir_measure, bounds,
 
                 if draw:
                     cal_profile_1d(img, cen=cen, mask=ma, dr=1,
-                                   ZP=27.1, sky_mean=BKG, sky_std=2.8,
+                                   ZP=27.1, sky_mean=sky_mean, sky_std=2.8,
                                    xunit="arcsec", yunit="SB", errorbar=False,
                                    pixel_scale=pixel_scale,
                                    core_undersample=False, color='steelblue', lw=2,
-                                   I_shift=24-I_r0, markersize=0, alpha=0.2)
+                                   I_shift=I_norm-I_r0, markersize=0, alpha=0.2)
 
         if plot_brightest:
             num = list(res_thumb.keys())[0]
@@ -1184,7 +1186,7 @@ def fit_n0(dir_measure, bounds,
                            xunit="arcsec", yunit="SB", errorbar=True,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
-                           I_shift=24-I_r0_all[0], markersize=8, alpha=0.9)
+                           I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
 
         if draw:
             ax.text(6, 30, 'N = %d'%len(tab_fit))
@@ -1217,7 +1219,7 @@ def fit_n0(dir_measure, bounds,
         ax_ins.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
         ax_ins.tick_params(direction='in',labelsize=14)
         ax_ins.set_ylabel('')
-#        plt.show()
+        plt.show()
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
@@ -1380,10 +1382,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
     SE_catalog : SE source catalog
     
     bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
-    
-    radius : radius (in astropy unit) of search to PS-1 catalog. 
-            If not given, use the half diagonal length of the region.
-            
+
     clean_catalog : whether to clean the matched catalog. (default True)
             The PS-1 catalog contains duplicate items on a single source with different
             measurements. If True, duplicate items of bright sources will be cleaned by 
@@ -1413,11 +1412,10 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
         coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
         ra, dec = coord_cen.ra.value, coord_cen.dec.value
-
-        if radius is None:
-            L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
-            radius = (L * pixel_scale * u.arcsec).to(u.deg)
-
+        
+        L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
+        radius = (L * pixel_scale * u.arcsec).to(u.deg)
+        
         print("Search", np.around(radius, 3), "around:")
         print(coord_cen)
         
@@ -1577,6 +1575,7 @@ def cross_match_PS1(band, wcs_data,
     b_name = band.lower()
     
     if use_PS1_DR2:
+        from urllib.error import HTTPError
         # Give 3 attempts in matching PS1 DR2 via MAST.
         # This could fail if the FoV is too large.
         for attempt in range(3):
@@ -1907,7 +1906,7 @@ def make_psf_from_fit(sampler, psf=None,
     fit_sigma, fit_frac = ct.fit_sigma, ct.fit_frac
     
     if psf is None:
-        params = {"fwhm":2.28 * pixel_scale, "beta":10, "frac":0.1,
+        params = {"fwhm":6.1, "beta":6.7, "frac":0.3,
                   "n_s":np.array([3.3, 2.5]), "theta_s":np.array([5, 72])}
         psf = PSF_Model(params, aureole_model='multi-power')
         psf.pixelize(pixel_scale)
