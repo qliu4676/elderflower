@@ -6,6 +6,7 @@ import time
 import string
 import random
 
+import warnings
 from functools import partial
 
 import numpy as np
@@ -20,6 +21,7 @@ from astropy.table import Table, Column, setdiff, join
 from astropy.coordinates import SkyCoord
 from astropy.stats import mad_std, biweight_location, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
+from astropy.utils.exceptions import AstropyUserWarning
 
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
@@ -218,7 +220,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     x_test = np.linspace(x_min, x_max)
     clip = np.zeros_like(x_data, dtype='bool')
     
-    # fitst curve_fit
+    # first curve_fit
     popt, pcov = curve_fit(func, x_data, y_data, p0=p0, **kwargs)
     
     if draw:
@@ -266,7 +268,10 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     
     bright = SE_catalog['MAG_AUTO'] < mag_limit
     SE_bright = SE_catalog[bright]
-    x_data, y_data = SE_bright['MAG_AUTO'], SE_bright['MU_MAX']
+    if len(SE_bright)>0:
+        x_data, y_data = SE_bright['MAG_AUTO'], SE_bright['MU_MAX']
+    else:
+        return SE_catalog, None
     
     MU_saturate = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
     MAG_saturate = mag_saturate # guess of saturated MAG_AUTO
@@ -356,11 +361,14 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         
     d_r = dr * pixel_scale if xunit == "arcsec" else dr
     
-#     z = z[~np.isnan(z)]
-    if mock:
+    z = z[~np.isnan(z)]
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', AstropyUserWarning)
+#        if mock:
         clip = lambda z: sigma_clip((z), sigma=5, maxiters=3)
-    else:
-        clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
+#        else:
+#            clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
         
     if bins is None:
         # Radial bins: discrete/linear within r_core + log beyond it
@@ -676,7 +684,8 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     
     annulus_ma = CircularAnnulus([cen], R-wid, R+wid).to_mask()[0]      
     mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
-    mask_clean = mask_ring & (~mask_field)                # sky ring with other sources masked
+    mask_clean = mask_ring & (~mask_field) & (~np.isnan(image))
+        # sky ring with other sources masked
     
     # Whether to mask the cross regions, important if R is small
     if mask_cross:
@@ -688,7 +697,10 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     if len(image[mask_clean]) < 5:
         return [np.nan] * 3 + [1]
     
-    z = sigma_clip(np.log10(image[mask_clean]), sigma=2, maxiters=5)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', AstropyUserWarning)
+        z = sigma_clip(np.log10(image[mask_clean]), sigma=2, maxiters=5)
+        
     I_mean, I_med, I_std = 10**np.mean(z), 10**np.median(z.compressed()), np.std(10**z)
 
     if display:
@@ -731,7 +743,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
-        n_win = 30 if mag_auto < 12 else 25
+        n_win = 40 if mag_auto < 12 else 30
         img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
         
@@ -783,7 +795,7 @@ def measure_Rnorm_all(table, bounds,
         
     """
     
-    Xmin, Ymin, Xmax, Ymax = bounds
+    Xmin, Ymin, Xmax, Ymax = bounds.astype(int)
     
     table_norm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X[%d-%d]Y[%d-%d].txt'\
                                    %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
@@ -1172,7 +1184,7 @@ def fit_n0(dir_measure, bounds,
 
                 if draw:
                     cal_profile_1d(img, cen=cen, mask=ma, dr=1,
-                                   ZP=27.1, sky_mean=sky_mean, sky_std=2.8,
+                                   ZP=ZP, sky_mean=sky_mean, sky_std=2.8,
                                    xunit="arcsec", yunit="SB", errorbar=False,
                                    pixel_scale=pixel_scale,
                                    core_undersample=False, color='steelblue', lw=2,
@@ -1190,7 +1202,7 @@ def fit_n0(dir_measure, bounds,
 
         if draw:
             ax.text(6, 30, 'N = %d'%len(tab_fit))
-            ax.set_ylim(30.5,16.5)
+            ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.set_xlim(5.,5e2)
             ax.axvspan(r1, r2, color='gold', alpha=0.1)
             ax.axvline(r0, ls='--',color='k', alpha=0.9, zorder=1)
@@ -1219,7 +1231,7 @@ def fit_n0(dir_measure, bounds,
         ax_ins.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
         ax_ins.tick_params(direction='in',labelsize=14)
         ax_ins.set_ylabel('')
-        plt.show()
+#        plt.show()
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
@@ -1685,8 +1697,11 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     
     d_mag = d_mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
     mag = mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
-
-    d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', AstropyUserWarning)
+        d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
+        
     CT = biweight_location(d_mag_clip)
     print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
@@ -1704,7 +1719,8 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     return np.around(CT,5)
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           mag_range=[11, 22], K=3, degree=2, draw=True):
+                           K=3, R_min=2, R_max=100,
+                           mag_range=[11, 22], degree=2, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
@@ -1716,6 +1732,8 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     mag_name : column name of magnitude in tab_target 
     mag_range : range of magnitude for stars to be used
     K : enlargement factor on the original segm map
+    R_min : minimum aperture size in pixel (default 2)
+    R_max : maximum aperture size in pixel (default 100)
     degree : degree of polynomial (default 2)
     draw : whether to draw log R vs mag
     
@@ -1770,7 +1788,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
         plt.ylim(0.15,2.2)
         plt.show()
     
-    estimate_radius = lambda m: max(10**min(2, f_poly(m)), 2)
+    estimate_radius = lambda m: max(10**min(np.log10(R_max), f_poly(m)), R_min)
     
     return estimate_radius
 
@@ -1830,7 +1848,6 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                 theta_ = np.mod(theta, 360) * np.pi/180
                 aper = EllipticalAperture(pos, a*10, b*10, theta_)
                 apers.append(aper)
-                
             
     # Draw segment map generated from the catalog
     seg_map = np.zeros((Yimage_size, Ximage_size))

@@ -113,9 +113,9 @@ class Image(ImageButler):
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, pad, ZP, bkg, G_eff, verbose)
         
-        self.bounds0 = bounds0
+        self.bounds0 = np.array(bounds0)
         
-        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = bounds0
+        patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = self.bounds0
         
         Ximage_size0 = (patch_Xmax0 - patch_Xmin0)
         Yimage_size0 = (patch_Ymax0 - patch_Ymin0)
@@ -123,10 +123,10 @@ class Image(ImageButler):
         self.image_shape = (Yimage_size0 - 2 * pad, Ximage_size0 - 2 * pad)
         
         # Crop image
-        self.bounds = (patch_Xmin0+pad, patch_Ymin0+pad,
-                       patch_Xmax0-pad, patch_Ymax0-pad)
+        self.bounds = np.array([patch_Xmin0+pad, patch_Ymin0+pad,
+                                patch_Xmax0-pad, patch_Ymax0-pad])
 
-        self.image0 = crop_image(self.full_image, bounds0, origin=0, draw=False)
+        self.image0 = crop_image(self.full_image, self.bounds0, origin=0, draw=False)
         
         # Cutout of data
         self.image = self.image0[pad:Yimage_size0-pad,
@@ -175,6 +175,7 @@ class Image(ImageButler):
         return n0, d_n0
                                     
     def generate_image_psf(self, psf, SE_catalog, seg_map,
+                           r_scale=12, mag_threshold=[13.5,10.5],
                            use_PS1_DR2=True, draw=False, dir_tmp='./tmp'):
         """ Generate image of stars from a PSF Model"""
         from elderflower.utils import (crop_catalog, identify_extended_source,
@@ -229,10 +230,10 @@ class Image(ImageButler):
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
         self.read_measurement_table(dir_tmp, use_PS1_DR2=use_PS1_DR2,
-                                    r_scale=12, mag_limit=15)
+                                    r_scale=r_scale, mag_limit=15)
         
         # Make Star Models
-        self.assign_star_props(r_scale=12, mag_threshold=[13.5,10.5],
+        self.assign_star_props(r_scale=r_scale, mag_threshold=mag_threshold,
                                 verbose=False, draw=False, save=False)
         
         self.stars_gen = stars = self.stars_bright

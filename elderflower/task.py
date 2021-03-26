@@ -92,10 +92,10 @@ def Run_Detection(hdu_path, obj_name, band,
     
     print(f"Run SExtractor on {hdu_path}...")
     
-    b_name = band.lower()
+    band = band.lower()
     
-    segname = os.path.join(work_dir, f'{obj_name}-{b_name}_seg.fits')
-    catname = os.path.join(work_dir, f'{obj_name}-{b_name}.cat')
+    segname = os.path.join(work_dir, f'{obj_name}-{band}_seg.fits')
+    catname = os.path.join(work_dir, f'{obj_name}-{band}.cat')
     
     header = fits.getheader(hdu_path)
     
@@ -115,7 +115,7 @@ def Run_Detection(hdu_path, obj_name, band,
             SE_catalog = sextractor.run(hdu_path,
                                         extra_params=SE_params,
                                         config_path=config_path,
-                                        catalog_path=catname+'_zp',
+                                        catalog_path=catname,
                                         executable=executable,
                                         DETECT_THRESH=5, ANALYSIS_THRESH=5,
                                         FILTER_NAME=default_SE_conv,

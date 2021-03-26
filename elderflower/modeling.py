@@ -364,7 +364,7 @@ class PSF_Model:
         from .plotting import plot_PSF_model_galsim
         image_psf = plot_PSF_model_galsim(self, contrast=contrast,
                                           save=save, save_dir=save_dir)
-        self.image_psf = image_psf / image_psf.sum()
+        self.image_psf = image_psf / image_psf.array.sum()
 
         
     @staticmethod
@@ -1640,7 +1640,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                        brightest_only=False, draw_real=True, leg2d=False):
     """ Generate the fitted bright stars, the fitted background and
-        a noise images (for display). """
+        a noise images (for display only). """
     
     Yimage_size, Ximage_size = image_shape
     yy, xx = np.mgrid[:Yimage_size, :Ximage_size]
@@ -1661,12 +1661,15 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                                brightest_only=brightest_only,
                                subtract_external=subtract_external,
                                draw_real=draw_real)
-                          
-    image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
-    noise_image = image_stars_noise - image_stars
-    
-    bkg_image = psf_fit.bkg * np.ones((Yimage_size, Ximage_size))
-    
+                               
+    if hasattr(psf_fit, 'bkg_std') & hasattr(psf_fit, 'bkg'):
+        image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
+        noise_image = image_stars_noise - image_stars
+        bkg_image = psf_fit.bkg * np.ones((Yimage_size, Ximage_size))
+        print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+    else:
+        noise_image = bkg_image = None
+   
     if leg2d:
         Xgrid = np.linspace(-(1-1/Ximage_size)/2., (1-1/Ximage_size)/2., Ximage_size)
         Ygrid = np.linspace(-(1-1/Yimage_size)/2., (1-1/Yimage_size)/2., Yimage_size)
@@ -1674,9 +1677,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         H01 = leggrid2d(Xgrid, Ygrid, c=[[0,0],[1,0]])
 
         bkg_image += psf_fit.A10 * H10 + psf_fit.A01 * H01
-    
-    print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
-    
+
     return image_stars, noise_image, bkg_image
 
 

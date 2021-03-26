@@ -122,7 +122,7 @@ def display(image, mask=None,
 
 def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
                    scale=5*u.arcmin, pixel_scale=2.5,
-                   lw=6, fontsize=15, color='w',
+                   lw=6, fontsize=15, color='w', format='.1f',
                    border_color='k', border_lw=0.5, alpha=1):
     """ Draw a scale bar """
     import matplotlib.patheffects as PathEffects
@@ -131,8 +131,10 @@ def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
     ax.plot([X_bar-L_bar/2, X_bar+L_bar/2], [Y_bar,Y_bar],
             color=color, alpha=alpha, lw=lw,
             path_effects=[PathEffects.SimpleLineShadow(), PathEffects.Normal()])
-    ax.text(X_bar, y_text, '%.1f %s'%(scale.value, scale.unit), color=color, alpha=alpha,
-            ha='center', va='center', fontweight='bold', fontsize=fontsize,
+    
+    ax.text(X_bar, y_text, '{0:{1}} {2}'.format(scale.value, format, scale.unit),
+            color=color, alpha=alpha, fontsize=fontsize,
+            ha='center', va='center', fontweight='bold',
             path_effects=[PathEffects.SimpleLineShadow(),
             PathEffects.withStroke(linewidth=border_lw, foreground=border_color)])
 
@@ -334,7 +336,7 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     plt.xlabel('r [pix]', fontsize=14)
 
     
-def plot_PSF_model_galsim(psf, image_shape, contrast=None,
+def plot_PSF_model_galsim(psf, image_shape=(1001,1001), contrast=None,
                           figsize=(7,6), save=False, save_dir='.'):
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     from .utils import Intensity2SB, cal_profile_1d
@@ -393,6 +395,7 @@ def plot_PSF_model_galsim(psf, image_shape, contrast=None,
     plt.xlim(r_rbin.min()*0.8, r_rbin.max()*1.2)
     
     plt.tight_layout()
+    plt.show()
     if save:
         plt.savefig(os.path.join(save_dir, "Model_PSF.png"), dpi=100)
         plt.close()
