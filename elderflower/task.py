@@ -126,7 +126,7 @@ def Run_Detection(hdu_path, obj_name, band,
             if os.path.exists(ref_cat):
                 refcat = Table.read(ref_cat, format='ascii')
             else:
-                print("Generate APASS reference catalog... It takes time.")
+                print("Generate APASS reference catalog... It will take some time.")
                 ra_range = header['CRPIX1'] * header['CD1_1']
                 dec_range = header['CRPIX2'] * header['CD2_2']
 
@@ -307,10 +307,9 @@ def Match_Mask_Measure(hdu_path,
     [print("%r"%b) for b in bounds_list.tolist()]
     
     # Display field_bounds and sub-regions to be matched
-    patch, _ = crop_image(data, field_bounds,
-                          sub_bounds=bounds_list,
-                          seg_map=seg_map,
-                          origin=0, draw=draw)
+    patch = crop_image(data, field_bounds,
+                       sub_bounds=bounds_list,
+                       seg_map=seg_map, draw=draw)
     
     # Crop parent SE catalog
     SE_cat = crop_catalog(SE_cat_full, field_bounds)
@@ -344,6 +343,7 @@ def Match_Mask_Measure(hdu_path,
                                 cross_match_PS1(band, wcs_data,
                                                 SE_cat_target,
                                                 bounds_crossmatch,
+                                                pixel_scale=pixel_scale,
                                                 mag_limit=mag_limit,
                                                 use_PS1_DR2=use_PS1_DR2)
    
@@ -389,7 +389,7 @@ def Match_Mask_Measure(hdu_path,
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
-                                             mag_range=[10,22], K=3,
+                                             mag_range=[10,22], K=2,
                                              degree=2, draw=draw)
     
     for bounds in bounds_list:
@@ -432,7 +432,9 @@ def Match_Mask_Measure(hdu_path,
                     measure_Rnorm_all(tab_target_patch, bounds,
                                       wcs_data, data, seg_map,
                                       mag_limit=mag_limit,
-                                      r_scale=r_scale, width=1,
+                                      r_scale=r_scale,
+                                      width_ring=0.5,
+                                      width_cross=20/pixel_scale, # mask 20 arcsec
                                       obj_name=obj_name,
                                       mag_name=mag_name_cat,
                                       save=save, dir_name=dir_name)
@@ -525,7 +527,7 @@ def Run_PSF_Fitting(hdu_path,
     mask_obj : str, optional, default None
         full path to the target object mask (w/ the same shape with image)
     wid_strip : int, optional, default 24
-        Width of strip for masks of very bright stars.
+        Width of strip in pixel for masks of very bright stars.
     n_strip : int, optional, default 48
         Number of strip for masks of very bright stars.
     SB_threshold : float, optional, default 24.5

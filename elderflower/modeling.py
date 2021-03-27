@@ -67,7 +67,7 @@ class PSF_Model:
         self.core_model = core_model
         self.aureole_model = aureole_model
         
-        
+        self.cutoff = True   # with cutoff by default
         
         # Build attribute for parameters from dictionary keys 
         for key, val in params.items():
@@ -95,8 +95,6 @@ class PSF_Model:
             self.n0 = params['n_s'][0]
             self.theta_0 = params['theta_s'][0]
             self.theta_s = np.array(self.theta_s)
-        
-        self.cutoff = True
         
     def __str__(self):
         return "A PSF Model Class"
@@ -133,14 +131,14 @@ class PSF_Model:
 
     @property
     def f_core1D(self):
-        """ 1D Core function in pix """
+        """ 1D Core function *in pix* """
         gamma_pix, beta = self.gamma_pix, self.beta
         c_mof2Dto1D = C_mof2Dto1D(gamma_pix, beta)
         return lambda r: moffat1d_normed(r, gamma_pix, beta) / c_mof2Dto1D
 
     @property
     def f_aureole1D(self):
-        """ 1D Aureole function in pix """
+        """ 1D Aureole function *in pix* """
         if self.aureole_model == "moffat":
             gamma1_pix, beta1 = self.gamma1_pix, self.beta1
             c_mof2Dto1D = C_mof2Dto1D(gamma1_pix, beta1)
@@ -1274,15 +1272,15 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=T
         print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
     
     start = time.time()
-    Ximage_size0 = image_shape[1] + 2 * pad
-    Yimage_size0 = image_shape[0] + 2 * pad
-    full_image0 = galsim.ImageF(Ximage_size0, Yimage_size0)
+    nX0 = image_shape[1] + 2 * pad
+    nY0 = image_shape[0] + 2 * pad
+    full_image0 = galsim.ImageF(nX0, nY0)
     
     star_pos = stars.star_pos_faint + pad
     Flux = stars.Flux_faint
     
     if len(star_pos) == 0:
-        return np.zeros((Yimage_size0, Ximage_size0))
+        return np.zeros((nY0, nX0))
     
     # draw faint stars with fixed PSF using galsim in Fourier space   
     for k in range(len(star_pos)):
@@ -1300,7 +1298,7 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=T
     end = time.time()
     if verbose: print("Total Time: %.3f s\n"%(end-start))
     
-    return image_gs0[pad:Yimage_size0-pad, pad:Ximage_size0-pad]
+    return image_gs0[pad:nY0-pad, pad:nX0-pad]
 
 
 def make_truth_image(psf, stars, image_shape, contrast=1e6,
@@ -1320,14 +1318,14 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
     gamma_pix = psf.gamma_pix
     beta = psf.beta
     
-    Yimage_size, Ximage_size = image_shape
-    yy, xx = np.mgrid[:Yimage_size, :Ximage_size]
+    nY, nX = image_shape
+    yy, xx = np.mgrid[:nY, :nX]
     
     psf_core = psf.psf_core
         
     psf_aureole = psf.psf_aureole
     
-    full_image = galsim.ImageF(Ximage_size, Yimage_size)
+    full_image = galsim.ImageF(nX, nY)
     
     Flux_A = stars.Flux_bright
     star_pos_A = stars.star_pos_bright
@@ -1402,7 +1400,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
     
     """
     
-    Yimage_size, Ximage_size = xx.shape
+    nY, nX = xx.shape
     
     frac = psf.frac
     
@@ -1413,7 +1411,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
         psf_c = psf.psf_core
     
     # Setup the canvas
-    full_image = galsim.ImageF(Ximage_size, Yimage_size)
+    full_image = galsim.ImageF(nX, nY)
         
     if not brightest_only:
         # Draw medium bright stars with galsim in Fourier space
@@ -1531,7 +1529,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
     image : drawn image
     
     """
-    Yimage_size, Ximage_size = xx.shape
+    nY, nX = xx.shape
     
     frac = psf.frac
     r_scale = stars.r_scale
@@ -1556,7 +1554,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         stars.update_Flux(Flux) 
         
     # Setup the canvas
-    full_image = galsim.ImageF(Ximage_size, Yimage_size)
+    full_image = galsim.ImageF(nX, nY)
         
     if not brightest_only:
         # 1. Draw medium bright stars with galsim in Fourier space
@@ -1649,8 +1647,8 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
     """ Generate the fitted bright stars, the fitted background and
         a noise images (for display only). """
     
-    Yimage_size, Ximage_size = image_shape
-    yy, xx = np.mgrid[:Yimage_size, :Ximage_size]
+    nY, nX = image_shape
+    yy, xx = np.mgrid[:nY, :nX]
     
     if norm=='brightness':
         draw_func = generate_image_by_znorm
@@ -1672,14 +1670,14 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
     if hasattr(psf_fit, 'bkg_std') & hasattr(psf_fit, 'bkg'):
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
         noise_image = image_stars_noise - image_stars
-        bkg_image = psf_fit.bkg * np.ones((Yimage_size, Ximage_size))
+        bkg_image = psf_fit.bkg * np.ones((nY, nX))
         print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = None
    
     if leg2d:
-        Xgrid = np.linspace(-(1-1/Ximage_size)/2., (1-1/Ximage_size)/2., Ximage_size)
-        Ygrid = np.linspace(-(1-1/Yimage_size)/2., (1-1/Yimage_size)/2., Yimage_size)
+        Xgrid = np.linspace(-(1-1/nX)/2., (1-1/nX)/2., nX)
+        Ygrid = np.linspace(-(1-1/nY)/2., (1-1/nY)/2., nY)
         H10 = leggrid2d(Xgrid, Ygrid, c=[[0,1],[0,0]])
         H01 = leggrid2d(Xgrid, Ygrid, c=[[0,0],[1,0]])
 
@@ -1927,15 +1925,15 @@ class Legendre2D:
     
     def __init__(self, image_shape, K=0, order=1):
         self.image_shape = image_shape
-        Yimage_size, Ximage_size = image_shape
+        nY, nX = image_shape
         
         #x_grid = y_grid = np.linspace(0,image_size-1, image_size)
         #self.x_grid = x_grid
         #self.y_grid = y_grid
         #self.cen = ((Ximage_size-1)/2., (Yimage_size-1)/2.)
         
-        X_grid = np.linspace(-(1-1/Ximage_size)/2., (1-1/Ximage_size)/2., Ximage_size)
-        Y_grid = np.linspace(-(1-1/Yimage_size)/2., (1-1/Yimage_size)/2., Yimage_size)
+        X_grid = np.linspace(-(1-1/nX)/2., (1-1/nX)/2., nX)
+        Y_grid = np.linspace(-(1-1/nY)/2., (1-1/nY)/2., nY)
         self.X_grid = X_grid
         self.Y_grid = Y_grid
         
@@ -1972,8 +1970,8 @@ def set_likelihood(image, mask_fit, psf, stars,
     data = image[~mask_fit].copy().ravel()
     
     image_shape = image.shape
-    Yimage_size, Ximage_size = image_shape
-    yy, xx = np.mgrid[:Yimage_size, :Ximage_size]
+    nY, nX = image_shape
+    yy, xx = np.mgrid[:nY, :nX]
     
     stars_0 = stars.copy()
     z_norm = stars_0.z_norm.copy()
@@ -1998,7 +1996,7 @@ def set_likelihood(image, mask_fit, psf, stars,
                           parallel=parallel, draw_real=draw_real)
         
     if image_base is None:
-        image_base = np.zeros((Yimage_size, Ximage_size))
+        image_base = np.zeros((nY, nX))
         
     # K : position order of background in the proposal (dafault -2)
     K = 0

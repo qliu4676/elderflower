@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 from astropy import wcs
 from astropy import units as u
 from astropy.io import fits, ascii
-from astropy.table import Table, Column, setdiff, join
+from astropy.nddata import Cutout2D
 from astropy.coordinates import SkyCoord
+from astropy.table import Table, Column, setdiff, join
 from astropy.stats import mad_std, biweight_location, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from astropy.utils.exceptions import AstropyUserWarning
@@ -562,7 +563,7 @@ def get_star_pos(id, star_cat):
     return (X_c, Y_c)
 
 def get_star_thumb(id, star_cat, wcs, data, seg_map, 
-                   n_win=15, seeing=2.5, origin=1, verbose=True):
+                   n_win=20, seeing=2.5, origin=1, verbose=True):
     """ Crop the data and segment map into thumbnails.
         Return thumbnail of image/segment/mask, and center of the star. """
     
@@ -577,6 +578,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     Y_min, Y_max = max(1, Y_c - win_size), min(data.shape[0], Y_c + win_size)
     x_min, y_min = coord_Im2Array(X_min, Y_min, origin)
     x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
+        # Note: origin=1 for SE pixel coordinates
     
     if verbose:
         num = star_cat[id]["NUMBER"]
@@ -602,7 +604,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
 def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=2.5, n_win=25,
+                 seeing=2.5, sn_thre=2.5, n_win=20,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
@@ -661,7 +663,9 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     return img_thumb, star_ma, back, cen_star
 
 
-def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=False):
+def compute_Rnorm(image, mask_field, cen,
+                  R=12, wid_ring=0.5, wid_cross=8,
+                  mask_cross=True, display=False):
     """ Compute (3 sigma-clipped) normalization using an annulus.
     Note the output values of normalization contain background.
     
@@ -670,8 +674,9 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     image : input image for measurement
     mask_field : mask map with nearby sources masked as 1.
     cen : center of target
-    R : radius of annulus
-    wid : half-width of annulus
+    R : radius of annulus in pix
+    wid_ring : half-width of annulus in pix
+    wid_cross : half-width of spike mask in pix
         
     Returns
     -------
@@ -682,7 +687,7 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
     
     """
     
-    annulus_ma = CircularAnnulus([cen], R-wid, R+wid).to_mask()[0]      
+    annulus_ma = CircularAnnulus([cen], R-wid_ring, R+wid_ring).to_mask()[0]
     mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
     mask_clean = mask_ring & (~mask_field) & (~np.isnan(image))
         # sky ring with other sources masked
@@ -729,8 +734,8 @@ def compute_Rnorm(image, mask_field, cen, R=12, wid=1, mask_cross=True, display=
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=12, wid=1, return_full=False,
-                        display=False, verbose=True):
+                        R=12, wid_ring=0.5, wid_cross=8,
+                        return_full=False, display=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
     
@@ -743,14 +748,17 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
-        n_win = 40 if mag_auto < 12 else 30
+        n_win = 30 if mag_auto < 12 else 20
         img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
         
         res_thumb[num] = {"image":img, "mask":ma, "bkg":bkg, "center":cen}
         
         # Measure the mean, med and std of intensity at R
-        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R, wid=wid, display=display)
+        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R,
+                                                    wid_ring=wid_ring,
+                                                    wid_cross=wid_cross,
+                                                    display=display)
         
         if (Iflag==1) & verbose: print ("Errorenous measurement: #", num)
         
@@ -763,7 +771,8 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 
 def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
-                      r_scale=12, width=1, mag_limit=15,
+                      r_scale=12, mag_limit=15,
+                      width_ring=0.5, width_cross=8,
                       mag_name='rmag_PS', read=False,
                       obj_name="", save=True, dir_name='.',
                       display=False, verbose=True):
@@ -779,8 +788,9 @@ def measure_Rnorm_all(table, bounds,
     image : image data
     
     seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
-    r_scale : radius at which the flux scaling is measured (default: 12)
-    width : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
+    r_scale : radius at which the flux scaling is measured (default: 12 pix)
+    width_ring : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
+    width_cross : half-width of spike mask (default: 8 pix)
     mag_name : magnitude column name
     mag_limit : magnitude upper limit below which are measured
     read : whether to read existed outputs
@@ -808,7 +818,8 @@ def measure_Rnorm_all(table, bounds,
     else:
         tab = table[table[mag_name]<mag_limit]
         res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                  R=r_scale, wid=width,
+                                                  R=r_scale, wid_ring=width_ring,
+                                                  wid_cross=width_cross,
                                                   return_full=True, display=display, verbose=verbose)
         
         
@@ -856,43 +867,34 @@ def crop_pad(image, pad):
     shape = image.shape
     return image[pad:shape[0]-pad, pad:shape[1]-pad]
     
-def crop_image(data, bounds, seg_map=None,
-               sub_bounds=None, origin=1, color="w", draw=False):
-    """ Crop the data (and segm map if given) with the given bouds. """
-    from matplotlib import patches
+def crop_image(data, bounds, wcs=None, draw=False, **kwargs):
+    """ Crop the data (and segm map if given) with the given bouds.
+        Note boundaries are in 1-based pixel coordianates. """
+    
+#    Xmin, Ymin, Xmax, Ymax = bounds
+#    xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
+#    xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
+#    patch = np.copy(data[xmin:xmax, ymin:ymax])
     
     Xmin, Ymin, Xmax, Ymax = bounds
-    xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
-    xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
-
-    patch = np.copy(data[xmin:xmax, ymin:ymax])
+    
+    # X, Y image size
+    nX, nY = (Xmax-Xmin, Ymax-Ymin)
+    # center in 1-based pixel coordinates
+    cen = (Xmin+(nX-1)/2., Ymin+(nY-1)/2.)
+    
+    # make cutout
+    cutout = Cutout2D(data, cen, (nY, nX), wcs=wcs)
     
     if draw:
-        from .plotting import display
-        fig, ax = plt.subplots(figsize=(12,8))       
-        display(data, mask=seg_map, fig=fig, ax=ax)
-        
-        width = Xmax-Xmin, Ymax-Ymin
-        rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
-                                 linewidth=2.5, edgecolor=color, facecolor='none')
-        ax.add_patch(rect)
-        
-        if sub_bounds is not None:
-            for bounds_, l in zip(sub_bounds, string.ascii_uppercase):
-                Xmin, Ymin, Xmax, Ymax = bounds_
-                width = Xmax-Xmin, Ymax-Ymin
-                rect = patches.Rectangle((Xmin, Ymin), width[0], width[1],
-                                         linewidth=2.5, edgecolor='indianred', facecolor='none')
-                ax.text(Xmin+80, Ymin+80, r"$\bf %s$"%l, color='indianred',
-                        ha='center', va='center', fontsize=20)
-                ax.add_patch(rect)
-        plt.show()
-        
-    if seg_map is None:
-        return patch
+        from .plotting import draw_bounds
+        draw_bounds(data, bounds, **kwargs)
+    
+    # also return cutout of wcs if given
+    if wcs is None:
+        return cutout.data
     else:
-        seg_patch = seg_map.copy()[xmin:xmax, ymin:ymax]
-        return patch, seg_patch
+        return cutout.data, cutout.wcs
 
 def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
     """ Query catalog in Vizier database with the given catalog name,
@@ -1194,7 +1196,7 @@ def fit_n0(dir_measure, bounds,
             num = list(res_thumb.keys())[0]
             img0, ma0, cen0 = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
             cal_profile_1d(img0, cen=cen0, mask=ma0, dr=0.8,
-                           ZP=27.1, sky_mean=BKG, sky_std=2.8,
+                           ZP=ZP, sky_mean=BKG, sky_std=2.8,
                            xunit="arcsec", yunit="SB", errorbar=True,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
@@ -1381,8 +1383,8 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
 
 def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
                         band='g', radius=None, clean_catalog=True,
-                        pixel_scale=DF_pixel_scale, mag_limit=15, sep=5*u.arcsec,
-                        verbose=True):
+                        pixel_scale=DF_pixel_scale, sep=5*u.arcsec,
+                        mag_limit=15, verbose=True):
     """
     Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
     Note this could be (much) slower compared to cross-match using Vizier.
@@ -1579,12 +1581,14 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         
 def cross_match_PS1(band, wcs_data,
                     SE_cat_target, bounds_list,
-                    sep=3*u.arcsec,
-                    mag_limit=15,
-                    use_PS1_DR2=False,
-                    verbose=True):
+                    pixel_scale=DF_pixel_scale,
+                    sep=None, mag_limit=15,
+                    use_PS1_DR2=False, verbose=True):
                     
     b_name = band.lower()
+    
+    if sep is None:
+        sep = pixel_scale * u.arcsec
     
     if use_PS1_DR2:
         from urllib.error import HTTPError
@@ -1596,6 +1600,7 @@ def cross_match_PS1(band, wcs_data,
                             cross_match_PS1_DR2(wcs_data,
                                                 SE_cat_target,
                                                 bounds_list,
+                                                pixel_scale=pixel_scale,
                                                 sep=sep,
                                                 mag_limit=mag_limit,
                                                 band=b_name,
@@ -1613,6 +1618,7 @@ def cross_match_PS1(band, wcs_data,
                             cross_match(wcs_data,
                                         SE_cat_target,
                                         bounds_list,
+                                        pixel_scale=pixel_scale,
                                         sep=sep,
                                         mag_limit=mag_limit,
                                         mag_name=mag_name,
@@ -1819,8 +1825,8 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     """
     
     Xmin, Ymin, Xmax, Ymax = bounds
-    Ximage_size = Xmax - Xmin
-    Yimage_size = Ymax - Ymin
+    nX = Xmax - Xmin
+    nY = Ymax - Ymin
     X_key, Y_key = 'X_IMAGE'+'_'+cat_name, 'Y_IMAGE'+'_'+cat_name
     
     try:
@@ -1850,11 +1856,11 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                 apers.append(aper)
             
     # Draw segment map generated from the catalog
-    seg_map = np.zeros((Yimage_size, Ximage_size))
+    seg_map = np.zeros((nY, nX))
     
     # Segmentation k sorted by mag of source catalog
     for (k, aper) in enumerate(apers):
-        star_ma = aper.to_mask(method='center').to_image((Yimage_size, Ximage_size))
+        star_ma = aper.to_mask(method='center').to_image((nY, nX))
         if star_ma is not None:
             seg_map[star_ma.astype(bool)] = k+2
     

@@ -30,12 +30,12 @@ class Mask:
         
         self.bounds0 = Image.bounds0
         self.image_shape = Image.image_shape
-        self.Ximage_size = Image.image_shape[1]
-        self.Yimage_size = Image.image_shape[0]
+        self.nX = Image.image_shape[1]
+        self.nY = Image.image_shape[0]
         self.pad = Image.pad
         
-        self.yy, self.xx = np.mgrid[:self.Yimage_size + 2 * self.pad,
-                                    :self.Ximage_size + 2 * self.pad]
+        self.yy, self.xx = np.mgrid[:self.nY + 2 * self.pad,
+                                    :self.nX + 2 * self.pad]
         
         self.pad = Image.pad
         self.bkg = Image.bkg
@@ -205,8 +205,8 @@ class Mask:
             
             
     def make_mask_advanced(self, n_strip=48,
-                           wid_strip=16, dist_strip=800,
-                           wid_cross=10, dist_cross=72,
+                           wid_strip=30, dist_strip=1800,
+                           wid_cross=30, dist_cross=180,
                            clean=True, draw=True, 
                            save=False, save_dir='.'):
         
@@ -219,10 +219,10 @@ class Mask:
         Parameters
         ----------
         n_strip : number of each strip mask
-        wid_strip : width of each strip mask
-        dist_strip : furthest range of each strip mask
-        wid_cross : half-width of spike mask
-        dist_cross: furthest range of each spike mask
+        wid_strip : width of each strip mask (in arcsec) (default: 0.5 arcmin)
+        dist_strip : furthest range of each strip mask (in arcsec) (default: 0.5 deg)
+        wid_cross : half-width of spike mask (in arcsec) (default: 0.5 arcmin)
+        dist_cross: furthest range of each spike mask (in arcsec) (default: 3 arcmin)
         clean : whether to remove medium bright stars far from any available
                 pixels for fitting. A new Stars object will be stored in
                 stars_new, otherwise it is simply a copy.
@@ -238,14 +238,22 @@ class Mask:
         image0 = self.image0
         stars = self.stars
         
-        pad = self.pad 
+        pad = self.pad
+        pixel_scale = self.pixel_scale
+        
+        dist_strip_pix = dist_strip / pixel_scale
+        dist_cross_pix = dist_cross / pixel_scale
+        wid_strip_pix = wid_strip / pixel_scale
+        wid_cross_pix = wid_cross / pixel_scale
         
         if stars.n_verybright > 0:
             # Strip + Cross mask
             mask_strip_s, mask_cross_s =  make_mask_strip(stars, self.xx, self.yy,
                                                           pad=pad, n_strip=n_strip,
-                                                          wid_strip=wid_strip, dist_strip=dist_strip,
-                                                          wid_cross=wid_cross, dist_cross=dist_cross)
+                                                          wid_strip=wid_strip_pix,
+                                                          dist_strip=dist_strip_pix,
+                                                          wid_cross=wid_cross_pix,
+                                                          dist_cross=dist_cross_pix)
 
             # combine strips
             mask_strip_all = ~np.logical_or.reduce(mask_strip_s)
@@ -485,9 +493,9 @@ def make_mask_map_dual(image, stars,
 
 
 def make_mask_strip(stars, xx, yy, pad=0, n_strip=24,
-                    wid_strip=16, dist_strip=800,
-                    wid_cross=10, dist_cross=72):    
-    """ Make mask map in strips with width=width """
+                    wid_strip=12, dist_strip=720,
+                    wid_cross=8, dist_cross=72):    
+    """ Make mask map in strips with width *in pixel unit* """
     
     print("Use sky strips crossing very bright stars")
     

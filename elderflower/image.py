@@ -117,24 +117,26 @@ class Image(ImageButler):
         
         patch_Xmin0, patch_Ymin0, patch_Xmax0, patch_Ymax0 = self.bounds0
         
-        Ximage_size0 = (patch_Xmax0 - patch_Xmin0)
-        Yimage_size0 = (patch_Ymax0 - patch_Ymin0)
-        self.image_shape0 = (Yimage_size0, Ximage_size0)
-        self.image_shape = (Yimage_size0 - 2 * pad, Ximage_size0 - 2 * pad)
+        nX0 = (patch_Xmax0 - patch_Xmin0)
+        nY0 = (patch_Ymax0 - patch_Ymin0)
+        self.image_shape0 = (nY0, nX0)
+        self.image_shape = (nY0 - 2 * pad, nX0 - 2 * pad)
         
-        self.cen0 = ((Ximage_size0-1)/2., (Yimage_size0-1)/2.)
-        self.cen = ((Ximage_size0 - 2 * pad-1)/2.,
-                    (Yimage_size0 - 2 * pad-1)/2.)
+        self.cen0 = ((nX0-1)/2., (nY0-1)/2.)
+        self.cen = ((nX0 - 2 * pad-1)/2.,
+                    (nY0 - 2 * pad-1)/2.)
         
-        # Crop image
+        full_wcs = self.full_wcs
+        # Image cutout
         self.bounds = np.array([patch_Xmin0+pad, patch_Ymin0+pad,
                                 patch_Xmax0-pad, patch_Ymax0-pad])
 
-        self.image0 = crop_image(self.full_image, self.bounds0, origin=0, draw=False)
+        self.image0, self.wcs0 = crop_image(self.full_image,
+                                            self.bounds0, wcs=full_wcs)
         
-        # Cutout of data
-        self.image = self.image0[pad:Yimage_size0-pad,
-                                 pad:Ximage_size0-pad]
+        # Cutout with pad
+        self.image, self.wcs = crop_image(self.full_image,
+                                          self.bounds, wcs=full_wcs)
         
     def __str__(self):
         return "An Image Class"
@@ -178,9 +180,14 @@ class Image(ImageButler):
         self.d_n0 = d_n0
         return n0, d_n0
                                     
-    def generate_image_psf(self, psf, SE_catalog, seg_map,
-                           r_scale=12, mag_threshold=[13.5,10.5],
-                           use_PS1_DR2=True, draw=False, dir_tmp='./tmp'):
+    def generate_image_psf(self, psf,
+                           SE_catalog, seg_map,
+                           r_scale=12,
+                           mag_threshold=[13.5,10.5],
+                           mag_saturate=13,
+                           use_PS1_DR2=True,
+                           draw=False,
+                           dir_tmp='./tmp'):
         """ Generate image of stars from a PSF Model"""
         from elderflower.utils import (crop_catalog, identify_extended_source,
                                        calculate_color_term, cross_match_PS1,
@@ -210,6 +217,7 @@ class Image(ImageButler):
         tab_target, tab_target_full, catalog_star = \
                                     cross_match_PS1(band, self.full_wcs,
                                                     SE_cat_target, bounds,
+                                                    pixel_scale=self.pixel_scale,
                                                     mag_limit=15,
                                                     use_PS1_DR2=use_PS1_DR2,
                                                     verbose=False)
@@ -224,12 +232,13 @@ class Image(ImageButler):
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
         
         tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
-                                               mag_saturate=13, draw=draw)
+                                               mag_saturate=mag_saturate, draw=draw)
         
         # Measure I at r0
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
                                                 self.full_wcs, self.full_image, seg_map,
-                                                mag_limit=15, r_scale=12, width=1,
+                                                mag_limit=15, r_scale=r_scale, width_ring=0.5,
+                                                width_cross=20/self.pixel_scale,
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
@@ -396,8 +405,8 @@ class ImageList(ImageButler):
     def make_mask(self, stars_list, dir_measure='../output/Measure',
                   by='aper',  r_core=24, r_out=None,
                   sn_thre=2.5, count=None, mask_obj=None,
-                  n_strip=48, wid_strip=16, dist_strip=None,
-                  wid_cross=10, dist_cross=72, clean=True,
+                  n_strip=48, wid_strip=30, dist_strip=None,
+                  wid_cross=30, dist_cross=180, clean=True,
                   draw=True, save=False, save_dir='../output/pic'):
         
         """Make Strip + Cross Mask"""
@@ -416,9 +425,7 @@ class ImageList(ImageButler):
             
             # crop the full mask map into smaller one
             if hasattr(mask, 'mask_obj_field'):
-                mask.mask_obj0 = crop_image(mask.mask_obj_field,
-                                            Image.bounds0,
-                                            origin=0, draw=False)
+                mask.mask_obj0 = crop_image(mask.mask_obj_field, Image.bounds0)
             else:
                 mask.mask_obj0 = np.zeros(mask.shape, dtype=bool)
 
@@ -431,7 +438,7 @@ class ImageList(ImageButler):
             
             # Supplementary Strip + Cross mask
             if dist_strip is None:
-                dist_strip = max(Image.image_shape)
+                dist_strip = max(Image.image_shape) * self.pixel_scale
                 
             mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
                                     wid_cross, dist_cross, 

@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import string
 
 from copy import deepcopy
 
@@ -109,7 +110,6 @@ def display(image, mask=None,
             k_std=10, cmap="gray_r",
             a=0.1, fig=None, ax=None):
     """ Visualize an image """
-    
     if mask is not None:
         sky = image[(mask==0)]
     else:
@@ -119,6 +119,30 @@ def display(image, mask=None,
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
     ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
               vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
+
+def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
+                ec='w', color='indianred', lw=2.5):
+    """ Draw boundaries of image """
+    from matplotlib import patches
+    fig, ax = plt.subplots(figsize=(12,8))
+    display(data, mask=seg_map, fig=fig, ax=ax)
+    
+    Xmin, Ymin, Xmax, Ymax = bounds
+    rect = patches.Rectangle((Xmin, Ymin), Xmax-Xmin, Ymax-Ymin,
+                             linewidth=lw, edgecolor=ec, facecolor='none')
+    ax.add_patch(rect)
+    
+    if sub_bounds is not None:
+        for bounds_, l in zip(np.atleast_2d(sub_bounds), string.ascii_uppercase):
+            Xmin, Ymin, Xmax, Ymax = bounds_
+            rect = patches.Rectangle((Xmin, Ymin), Xmax-Xmin, Ymax-Ymin,
+                                     linewidth=2.5, edgecolor=color,
+                                     facecolor='none')
+            ax.text(Xmin+80, Ymin+80, r"$\bf %s$"%l, color=color,
+                    ha='center', va='center', fontsize=20)
+            ax.add_patch(rect)
+            
+    plt.show()
 
 def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
                    scale=5*u.arcmin, pixel_scale=2.5,
@@ -341,7 +365,7 @@ def plot_PSF_model_galsim(psf, image_shape=(1001,1001), contrast=None,
     """ Plot and 1D PSF model and Galsim 2D model averaged in 1D """
     from .utils import Intensity2SB, cal_profile_1d
     
-    Yimage_size, Ximage_size = image_shape
+    nY, nX = image_shape
     pixel_scale = psf.pixel_scale
     
     frac = psf.frac
@@ -352,7 +376,7 @@ def plot_PSF_model_galsim(psf, image_shape=(1001,1001), contrast=None,
     
     img_core = psf_core.drawImage(scale=pixel_scale, method="no_pixel")
     img_aureole = psf_aureole.drawImage(nx=201, ny=201, scale=pixel_scale, method="no_pixel")
-    img_star = psf_star.drawImage(nx=Ximage_size, ny=Yimage_size, scale=pixel_scale, method="no_pixel")
+    img_star = psf_star.drawImage(nx=nX, ny=nY, scale=pixel_scale, method="no_pixel")
     
     if figsize is not None:
         fig, ax = plt.subplots(1,1, figsize=figsize)
@@ -651,7 +675,7 @@ def plot_fit_PSF1D(results, psf,
     
     psf_fit = psf.copy()
     
-    r = np.logspace(0., np.log10(psf_size), 100)
+    r = np.logspace(0., np.log10(psf_size), 100)  # r in pix
     comp1 = psf.f_core1D(r)
     
     if psf.cutoff:
@@ -739,11 +763,11 @@ def plot_fit_PSF1D(results, psf,
         
         if figsize is not None:
             if psf.cutoff:
-                psf_range = theta_c/pixel_scale
+                xlim = theta_c/pixel_scale
             else:
-                psf_range = psf_size*pixel_scale
+                xlim = psf_size
                 
-            plt.axvspan(np.atleast_1d(r_core).max(), psf_range,
+            plt.axvspan(np.atleast_1d(r_core).max(), xlim,
                         color='steelblue', alpha=0.15, zorder=1)
             plt.axvspan(np.atleast_1d(r_core).min(), np.atleast_1d(r_core).max(),
                         color='seagreen', alpha=0.15, zorder=1)
