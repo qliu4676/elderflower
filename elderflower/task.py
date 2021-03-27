@@ -91,6 +91,7 @@ def Run_Detection(hdu_path, obj_name, band,
     from dfreduce.detection import sextractor
     
     print(f"Run SExtractor on {hdu_path}...")
+    check_save_path(work_dir, make_new=False, verbose=False)
     
     band = band.lower()
     

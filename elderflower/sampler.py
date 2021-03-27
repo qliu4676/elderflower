@@ -143,7 +143,10 @@ class Sampler:
             print(f"Read fitting results {filename}\n", res['fit_info'])
         
         return cls(res['container'], run=False, results=res['fit_res'])
-        
+    
+    # Old alias. Deprecated in the future
+    read_results = load_results
+    
     
     def cornerplot(self, truths=None, figsize=(16,15),
                    save=False, save_dir='.', suffix='', **kwargs):

@@ -562,7 +562,7 @@ def get_star_pos(id, star_cat):
     return (X_c, Y_c)
 
 def get_star_thumb(id, star_cat, wcs, data, seg_map, 
-                   n_win=20, seeing=2.5, origin=1, verbose=True):
+                   n_win=15, seeing=2.5, origin=1, verbose=True):
     """ Crop the data and segment map into thumbnails.
         Return thumbnail of image/segment/mask, and center of the star. """
     

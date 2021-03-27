@@ -63,7 +63,7 @@ class ImageButler:
             if verbose: print("Read Image :", hdu_path)
             self.full_image = hdul[0].data
             self.header = header = hdul[0].header
-            self.wcs = wcs.WCS(header)
+            self.full_wcs = wcs.WCS(header)
             
         self.bkg = bkg
         self.ZP = ZP
@@ -121,6 +121,10 @@ class Image(ImageButler):
         Yimage_size0 = (patch_Ymax0 - patch_Ymin0)
         self.image_shape0 = (Yimage_size0, Ximage_size0)
         self.image_shape = (Yimage_size0 - 2 * pad, Ximage_size0 - 2 * pad)
+        
+        self.cen0 = ((Ximage_size0-1)/2., (Yimage_size0-1)/2.)
+        self.cen = ((Ximage_size0 - 2 * pad-1)/2.,
+                    (Yimage_size0 - 2 * pad-1)/2.)
         
         # Crop image
         self.bounds = np.array([patch_Xmin0+pad, patch_Ymin0+pad,
@@ -204,7 +208,7 @@ class Image(ImageButler):
 
         # Crossmatch with PANSTRRS mag < mag_limit
         tab_target, tab_target_full, catalog_star = \
-                                    cross_match_PS1(band, self.wcs,
+                                    cross_match_PS1(band, self.full_wcs,
                                                     SE_cat_target, bounds,
                                                     mag_limit=15,
                                                     use_PS1_DR2=use_PS1_DR2,
@@ -224,7 +228,7 @@ class Image(ImageButler):
         
         # Measure I at r0
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
-                                                self.wcs, self.full_image, seg_map,
+                                                self.full_wcs, self.full_image, seg_map,
                                                 mag_limit=15, r_scale=12, width=1,
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)

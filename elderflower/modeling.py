@@ -67,12 +67,16 @@ class PSF_Model:
         self.core_model = core_model
         self.aureole_model = aureole_model
         
-        self.params = params
+        
         
         # Build attribute for parameters from dictionary keys 
         for key, val in params.items():
+            if type(val) is list:
+                params[key] = val = np.array(val)
             exec('self.' + key + ' = val')
             
+        self.params = params
+        
         if hasattr(self, 'fwhm'):
             self.gamma = fwhm_to_gamma(self.fwhm, self.beta)
             self.params['gamma'] = self.gamma
@@ -90,6 +94,7 @@ class PSF_Model:
         elif aureole_model == "multi-power":
             self.n0 = params['n_s'][0]
             self.theta_0 = params['theta_s'][0]
+            self.theta_s = np.array(self.theta_s)
         
         self.cutoff = True
         
@@ -244,6 +249,8 @@ class PSF_Model:
                                                    x_interpolant=interpolant,
                                                    k_interpolant=interpolant)
         self.psf_aureole = psf_aureole
+        self.theta_out = max_psf_range
+        
         return psf_aureole, psf_size   
 
         
