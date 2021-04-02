@@ -32,9 +32,16 @@ from .io import save_pickle, load_pickle, check_save_path
 from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .plotting import LogNorm, AsinhNorm, colorbar
 
+try:
+    from reproject import reproject_interp
+    reproject_install = True
+except ImportError:
+    warnings.warn("reproject is not installed. no rescaling.")
+    reproject_install = False
+
 # default SE columns for cross_match
 SE_COLUMNS = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
-"MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "FLAGS"]
+              "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "MU_MAX", "FLAGS"]
 
 ### Baisc Funcs ###
 
@@ -58,7 +65,7 @@ def gamma_to_fwhm(gamma, beta):
 
 def Intensity2SB(Intensity, BKG, ZP, pixel_scale=DF_pixel_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
-    I = np.atleast_1d(Intensity.copy())
+    I = np.atleast_1d(np.copy(Intensity))
     I[np.isnan(I)] = BKG
     if np.any(I<=BKG):
         I[I<=BKG] = np.nan
@@ -95,7 +102,7 @@ def round_good_fft(x):
     else:
         return min(a,b)
 
-def calculate_psf_size(n0, theta_0, contrast=1e5, psf_scale=2.5,
+def calculate_psf_size(n0, theta_0, contrast=1e5, psf_scale=DF_pixel_scale,
                        min_psf_range=60, max_psf_range=720):
     A0 = theta_0**n0
     opt_psf_range = int((contrast * A0) ** (1./n0))
@@ -156,16 +163,6 @@ def background_extraction(field, mask=None, return_rms=True,
     else:
         return back
 
-def display_background_sub(field, back):
-    from .plotting import vmax_2sig, vmin_3mad
-    # Display and save background subtraction result with comparison 
-    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-    ax1.imshow(field, aspect="auto", cmap="gray", vmin=vmin_3mad(field), vmax=vmax_2sig(field),norm=LogNorm())
-    im2 = ax2.imshow(back, aspect="auto", cmap='gray')
-    colorbar(im2)
-    ax3.imshow(field - back, aspect="auto", cmap='gray', vmin=0., vmax=vmax_2sig(field - back),norm=LogNorm())
-    plt.tight_layout()
-
 def source_detection(data, sn=2.5, b_size=120,
                      k_size=3, fwhm=3, smooth=True, 
                      sub_background=True, mask=None):
@@ -207,7 +204,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
                    x_lab='', y_lab='',c_lab='',
                    n_iter=3, k_std=5, draw=True,
                    fig=None, ax=None, **kwargs):
-    """ Iterative curve_fit """
+    """ Wrapper for iterative curve_fit """
     
     # min-max cutoff
     if x_min is None: x_min = x_data.min()
@@ -304,6 +301,7 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
+    """ Remove items of stars far away from mask """
     
     star_pos = star_pos + pad
     
@@ -431,8 +429,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             # plot radius in Surface Brightness
             I_sky = -2.5*np.log10(sky_std) + ZP + 2.5 * math.log10(pixel_scale**2)
 
-            plt.plot(r_rbin, I_rbin, "-o", mec="k",
-                     lw=lw, ms=markersize, color=color, alpha=alpha, zorder=3, label=label)   
+            p = plt.plot(r_rbin, I_rbin, "-o", mec="k",
+                         lw=lw, ms=markersize, color=color,
+                         alpha=alpha, zorder=3, label=label)
             if scatter:
                 I = Intensity2SB(z, BKG=np.median(back),
                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
@@ -447,7 +446,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                 Ierr_rbin_lo[lolims] = 4
                 Ierr_rbin_up[uplims] = 4
                 plt.errorbar(r_rbin, I_rbin, yerr=[Ierr_rbin_up, Ierr_rbin_lo],
-                             fmt='', ecolor=color, capsize=2, alpha=0.5)
+                             fmt='', ecolor=p[0].get_color(), capsize=2, alpha=0.5)
                 
             plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
             plt.gca().invert_yaxis()
@@ -515,7 +514,8 @@ def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
 
 def make_psf_1D(n_s, theta_s, ZP,
                 frac=0.3, beta=6.7, fwhm=6.1,
-                pixel_scale=2.5, size=1001,
+                pixel_scale=DF_pixel_scale,
+                seeing=DF_pixel_scale, size=1001,
                 dr=0.5, mag=7, plot=True):
     """ Make 1D PSF from parameters"""
     
@@ -530,9 +530,11 @@ def make_psf_1D(n_s, theta_s, ZP,
     
     r, I, _ = cal_profile_1d(D*Amp, cen=cen, mock=True,
                               ZP=ZP, sky_mean=0, sky_std=1e-9,
-                              dr=dr, lw=4, pixel_scale=pixel_scale,
-                              xunit="arcsec", yunit="SB", plot=plot,
-                              color="lightgreen", label='DF G band', alpha=0.9,
+                              dr=dr, seeing=seeing,
+                              pixel_scale=pixel_scale,
+                              xunit="arcsec", yunit="SB",
+                              color="lightgreen", label='DF G band',
+                              lw=4, alpha=0.9, plot=plot,
                               scatter=False, core_undersample=True)
     if plot:
         plt.legend()
@@ -623,6 +625,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
                             mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
     if display_bg:
         # show background subtraction
+        from .plotting import display_background_sub
         display_background_sub(img_thumb, back)  
             
     if seg_thumb is None:
@@ -823,7 +826,7 @@ def measure_Rnorm_all(table, bounds,
                                                   return_full=True, display=display, verbose=verbose)
         
         
-        keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', mag_name] \
+        keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', 'MU_MAX', mag_name] \
                             + [name for name in tab.colnames if 'IMAGE' in name]
         for name in keep_columns:
             if name not in tab.colnames:
@@ -843,6 +846,76 @@ def measure_Rnorm_all(table, bounds,
             table_norm.write(table_norm_name, overwrite=True, format='ascii')
             
     return table_norm, res_thumb
+
+### Rescaling ###
+
+def downsample_wcs(wcs_input, scale):
+    """ Downsample the input wcs along an axis using {CDELT, CRPIX} FITS convention """
+
+    header = wcs_input.to_header()
+
+    for axis in [1, 2]:
+        cd = 'CDELT{0:d}'.format(axis)
+        cp = 'CRPIX{0:d}'.format(axis)
+        na = 'NAXIS{0:d}'.format(axis)
+
+        header[cp] = (header[cp]-1) * scale + scale/2. + 0.5
+        header[cd] = header[cd]/scale
+        header[na] = int(wcs_input.pixel_shape[axis-1]*scale)
+
+    return wcs.WCS(header)
+
+def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
+    """
+    Write fits data downsampled by factor. Alternatively a target wcs can be provided.
+    
+    Parameters
+    ----------
+    fn: str
+        full path of fits file
+    fn_out: str
+        full path of output fits file
+    factor: int, optional, default 2
+        scaling factor
+    order: int, optional, default 3 ('bicubic')
+        order of interpolation (see docs of reproject)
+    wcs_out: wcs, optional, default None
+        output target wcs. must have shape info.
+        
+    """
+    if reproject_install == False:
+        return None
+
+    scalefactor = 1/factor
+
+    # read fits
+    header = fits.getheader(fn)
+    data = fits.getdata(fn)
+    wcs_input = wcs.WCS(header)
+
+    if (wcs_out is not None) & hasattr(wcs_out, 'pixel_shape'):
+        # use input wcs and shape
+        shape_out = wcs_out.pixel_shape
+    else:
+        # make new wcs and shape according to scale factor
+        wcs_out = downsample_wcs(wcs_input, scalefactor)
+        shape_out = (int(data.shape[0]*scalefactor), int(data.shape[1]*scalefactor))
+
+    # reproject the image by new wcs
+    data_rp, _ = reproject_interp((data, wcs_input), wcs_out,
+                                   shape_out=shape_out, order=3)
+
+    # write new header
+    header_out = wcs_out.to_header()
+    for key in ['NFRAMES', 'BACKVAL', 'EXP_EFF', 'FILTNAM']:
+        if key in header.keys():
+            header_out[key] = header[key]
+
+    # write new fits
+    fits.writeto(fn_out, data_rp, header=header_out, overwrite=True)
+    print('Resampled image saved to: ', fn_out)
+
+    return True
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
@@ -928,6 +1001,7 @@ def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ200
 
 def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
+    """ Crossmatch and merge two catalogs by coordinates"""
     
     c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
     c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
@@ -1070,13 +1144,20 @@ def interp_I0(r, I, r0, r1, r2):
     range_intp = (r>r1) & (r<r2)
     logI0 = np.interp(r0, r[(r>r1)&(r<r2)], np.log10(I[(r>r1)&(r<r2)]))
     return 10**logI0
+    
+def compute_mean_I(r, I, r1, r2):
+    """ Compute mean I under I(r) between r1 and r2 """
+    range_intg = (r>r1) & (r<r2)
+    r_range = r[range_intg]
+    return np.trapz(I[range_intg], r_range)/(r_range.max()-r_range.min())
 
 def fit_n0(dir_measure, bounds,
            obj_name, band, BKG, ZP,
            pixel_scale=DF_pixel_scale,
-           fit_range=[20,40], dr=0.2,
-           N_max=15, mag_max=13, I_norm=24,
-           r_scale=12, mag_limit=15, sky_std=3,
+           fit_range=[20,40], dr=0.1,
+           N_max=15, mag_max=13, mag_limit=15,
+           I_norm=24, norm='intp',
+           r_scale=12, sky_std=3,
            plot_brightest=True, draw=True):
            
     """
@@ -1107,6 +1188,9 @@ def fit_n0(dir_measure, bounds,
         max magnitude of stars used to fit n0
     I_norm : float, optional, default 24
         SB at which profiles are normed
+    norm : 'intp' or 'intg', optional, default 'intg'
+        normalization method to scale profiles.
+        use mean value by 'intg', use interpolated value by 'intp'
     r_scale : int, optional, default 12
         Radius (in pix) at which the brightness is measured
         Default is 30" for Dragonfly.
@@ -1162,7 +1246,7 @@ def fit_n0(dir_measure, bounds,
         for num in tab_fit['NUMBER']:
             res = res_thumb[num]
             img, ma, cen = res['image'], res['mask'], res['center']
-            bkg = np.mean(res_thumb[num]['bkg'])
+            bkg = np.median(res_thumb[num]['bkg'])
             sky_mean = bkg if BKG is None else BKG
             
             # calculate 1d profile
@@ -1175,8 +1259,11 @@ def fit_n0(dir_measure, bounds,
 
             range_intp = (r_rbin>r1) & (r_rbin<r2)
             if len(r_rbin[range_intp]) > 5:
-                # interpolate I0 at r0, r in arcsec
-                I_r0 = interp_I0(r_rbin, I_rbin, r0, r1, r2)
+                if norm=="intp":
+                    # interpolate I0 at r0, r in arcsec
+                    I_r0 = interp_I0(r_rbin, I_rbin, r0, r1, r2)
+                elif norm=="intg":
+                    I_r0 = compute_mean_I(r_rbin, I_rbin, r1, r2)
 
                 r_rbin_all = np.append(r_rbin_all, r_rbin)
                 I_rbin_all = np.append(I_rbin_all, I_rbin)
@@ -1204,11 +1291,10 @@ def fit_n0(dir_measure, bounds,
 
         if draw:
             ax.text(6, 30, 'N = %d'%len(tab_fit))
-            ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.set_xlim(5.,5e2)
+            ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.axvspan(r1, r2, color='gold', alpha=0.1)
             ax.axvline(r0, ls='--',color='k', alpha=0.9, zorder=1)
-            ax.scatter(r0, I_norm, marker='*',color='r', s=300, zorder=4)
             ax.set_xscale('log')
             
             from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -1220,17 +1306,31 @@ def fit_n0(dir_measure, bounds,
         print('Warning: r0 is out of fit_range! Use default.')
         return None, None
 
-    p_log_linear = partial(log_linear, x0=r_scale*pixel_scale, y0=I_norm)
-    popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
-                                           x_min=r1, x_max=r2, p0=10,
-                                           bounds=(3, 15), n_iter=3,
-                                           x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
-                                           draw=draw, fig=fig, ax=ax_ins)
+    if norm=="intp":
+        p_log_linear = partial(log_linear, x0=r0, y0=I_norm)
+        popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
+                                               x_min=r1, x_max=r2, p0=10,
+                                               bounds=(3, 15), n_iter=3,
+                                               x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
+                                               draw=draw, fig=fig, ax=ax_ins)
+        r_n, I_n = r0, I_norm
+
+    elif norm=="intg":
+        p_log_linear = partial(log_linear)
+        popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
+                                               x_min=r1, x_max=r2, p0=(10, r0, I_norm),
+                                               bounds=([3,r1,I_norm-1], [15,r2,I_norm+1]), n_iter=3,
+                                               x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
+                                               draw=draw, fig=fig, ax=ax_ins)
+        r_n, I_n = r0, p_log_linear(r0, *popt)
+
     if draw:
+        ax.scatter(r_n, I_n, marker='*',color='r', s=300, zorder=4)
+        
         ax_ins.set_ylim(I_norm+1.75, I_norm-2.25)
         ax_ins.axvline(r0, lw=2, ls='--', color='k', alpha=0.7, zorder=1)
         ax_ins.axvspan(r1, r2, color='gold', alpha=0.1)
-        ax_ins.scatter(r0, I_norm, marker='*',color='r', s=200, zorder=4)
+        ax_ins.scatter(r_n, I_n, marker='*',color='r', s=200, zorder=4)
         ax_ins.tick_params(direction='in',labelsize=14)
         ax_ins.set_ylabel('')
 #        plt.show()
@@ -1547,7 +1647,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         
         # Merge Catalog
         SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
-                      "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE"]
+                      "MAG_AUTO", "FLUX_AUTO", "MU_MAX", "FWHM_IMAGE"]
         keep_columns = SE_columns + ["ID"+'_'+c_name] + columns + \
                                     ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
         tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,

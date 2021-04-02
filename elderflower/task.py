@@ -286,10 +286,9 @@ def Match_Mask_Measure(hdu_path,
     # Read global background model ZP from header
     if bkg is None: bkg = find_keyword_header(header, "BACKVAL")
     if ZP is None: ZP = find_keyword_header(header, "ZP")
-    
-    std = mad_std(data)
    
     # Short summary
+    std = mad_std(data)
     print("BACKVAL: %.2f +/- %.2f , ZP: %.2f\n"%(bkg, std, ZP))
 
     # Convert SE measured flux into mag
@@ -742,8 +741,8 @@ def Run_PSF_Fitting(hdu_path,
     
     ## (a stop for developer)
     if stop:
+        print('Pause for check... Does everything look good? [c/exit]')
         return DF_Images, psf, stars
-        print('Pause... Is the Mask Reasonable? [c/exit]')
         breakpoint()
     
     ############################################

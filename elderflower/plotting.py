@@ -120,6 +120,18 @@ def display(image, mask=None,
     ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
               vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
 
+def display_background_sub(field, back):
+    """ Display fitted background """
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
+    ax1.imshow(field, aspect="auto", cmap="gray",
+                vmin=vmin_3mad(field), vmax=vmax_2sig(field), norm=LogNorm())
+    im2 = ax2.imshow(back, aspect="auto", cmap='gray')
+    colorbar(im2)
+    ax3.imshow(field - back, aspect="auto", cmap='gray',
+                vmin=0., vmax=vmax_2sig(field - back), norm=LogNorm())
+    plt.tight_layout()
+
+
 def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
                 ec='w', color='indianred', lw=2.5):
     """ Draw boundaries of image """
@@ -482,17 +494,29 @@ def draw_independent_priors(priors, xlabels=None, plabels=None,
         plt.close()
 
         
-def draw_cornerplot(results, ndim, labels=None, truths=None, figsize=(16,14),
-                    save=False, save_dir='.', suffix='', **kwargs):
+def draw_cornerplot(results, dims, labels=None, truths=None, figsize=(16,14),
+                save=False, save_dir='.', suffix='', **kwargs):
     from dynesty import plotting as dyplot
-    
+
+    nsamps, ndim = results.samples.shape
+
+    # if truth is given, show all dimensions
+    if truths is not None:
+        dims = None
+
+    # show subsets of dimensions
+    if dims is not None:
+        labels = labels[1:]
+        ndim = ndim - 1
+
     fig = plt.subplots(ndim, ndim, figsize=figsize)
     plot_kw = {'color':"royalblue", 'truth_color':"indianred",
-               'truths':truths, 'labels':labels,
+               'dims': dims, 'truths':truths, 'labels':labels,
                'title_kwargs':{'fontsize':16, 'y': 1.04},
                'title_fmt':'.3f', 'show_titles':True,
                'label_kwargs':{'fontsize':16}}
     plot_kw.update(kwargs)
+    
     fg, axes = dyplot.cornerplot(results, fig=fig, **plot_kw)
     
     if save:
@@ -797,7 +821,7 @@ def plot_bright_star_profile(tab_target, table_norm, res_thumb,
     
     from .utils import Intensity2SB, cal_profile_1d
     
-    r = np.logspace(0.03,3,100)
+    #r = np.logspace(0.03,3,100)
     
     z_mean_s, z_med_s = table_norm['Imean'], table_norm['Imed']
     z_std_s, sky_mean_s = table_norm['Istd'], table_norm['Isky']
@@ -825,8 +849,9 @@ def plot_bright_star_profile(tab_target, table_norm, res_thumb,
             
         img, ma, cen = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
         
-        r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma, dr=1.25,
+        r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma,
                                            ZP=ZP, sky_mean=bkg_sky, sky_std=std_sky,
+                                           pixel_scale=pixel_scale, dr=1.2,
                                            xunit="pix", yunit="SB", errorbar=errorbar,
                                            core_undersample=False, color=None, lw=lw,
                                            markersize=ms, alpha=alpha)
