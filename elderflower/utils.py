@@ -479,7 +479,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         return r_rbin, I_rbin, None
 
 def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
-                pixel_scale=2.5, size=1001, plot=False):
+                pixel_scale=DF_pixel_scale, size=1001, plot=False):
     """ Make 2D PSF from parameters"""
     from .modeling import PSF_Model
     
@@ -499,7 +499,8 @@ def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
 
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
-    psf_e, psf_size = psf.generate_aureole(contrast=1e7, psf_range=size)
+    psf_e, psf_size = psf.generate_aureole(contrast=1e7,
+                                           pixel_scale=pixel_scale, psf_range=size)
     star_psf = (1-frac) * psf_c + frac * psf_e
 
     # Galsim 2D model averaged in 1D
@@ -2091,7 +2092,7 @@ def make_psf_from_fit(sampler, psf=None,
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
-    _, _ = psf_fit.generate_aureole(psf_range=psf_range)
+    _, _ = psf_fit.generate_aureole(psf_range=psf_range, psf_scale=pixel_scale)
     
     return psf_fit, params
 

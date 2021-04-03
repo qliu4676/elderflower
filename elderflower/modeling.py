@@ -182,7 +182,7 @@ class PSF_Model:
                          psf_scale=None,
                          psf_range=None,
                          min_psf_range=60,
-                         max_psf_range=960,
+                         max_psf_range=1200,
                          interpolant="linear"):
         """
         Generate Galsim PSF of aureole.
@@ -1370,7 +1370,7 @@ def generate_image_by_flux(psf, stars, xx, yy,
                            min_psf_range=90,
                            max_psf_range=1200,
                            psf_range=[None,None],
-                           psf_scale=2.5,
+                           psf_scale=DF_pixel_scale,
                            parallel=False,
                            draw_real=True,
                            draw_core=False,
@@ -1497,7 +1497,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
                             min_psf_range=90,
                             max_psf_range=1200,
                             psf_range=[None,None],
-                            psf_scale=2.5,
+                            psf_scale=DF_pixel_scale,
                             parallel=False,
                             draw_real=True,
                             brightest_only=False,
@@ -1618,7 +1618,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         image = image_gs + image_aureole
         
     else:
-        # Draw very bright star in Fourier space 
+        # Draw very bright star in real space
         psf_e_2, psf_size_2 = psf.generate_aureole(contrast=contrast[1],
                                                    psf_scale=psf_scale,
                                                    psf_range=psf_range[1],
