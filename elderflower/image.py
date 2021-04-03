@@ -8,7 +8,7 @@ from astropy.io import fits
 import astropy.units as u
 from astropy.utils import lazyproperty
 
-from .plotting import display, AsinhNorm
+from .plotting import display, AsinhNorm, colorbar
 
 # Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
 DF_pixel_scale = 2.5
@@ -148,6 +148,22 @@ class Image(ImageButler):
         """ Display the image """
         display(self.image, **kwargs)
         
+    def make_base_image(self, psf_star, stars, vmax=30, draw=False):
+        """ Make basement image with fixed PSF and stars """
+
+        from .modeling import make_base_image
+
+        psf_size = int(120/self.pixel_scale) # 2 arcmin
+        # Draw dim stars
+        self.image_base = make_base_image(self.image_shape, stars,
+                                          psf_star, self.pad, psf_size,
+                                          verbose=self.verbose)
+        if draw:
+            #display
+            m = plt.imshow(self.image_base, vmin=0, vmax=vmax, norm=AsinhNorm(a=0.1))
+            colorbar(m)
+            plt.show()
+        
     def read_measurement_table(self, dir_measure, **kwargs):
         """ Read faint stars info and brightness measurement """
         from .utils import read_measurement_table
@@ -238,7 +254,7 @@ class Image(ImageButler):
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
                                                 self.full_wcs, self.full_image, seg_map,
                                                 mag_limit=15, r_scale=r_scale, width_ring=0.5,
-                                                width_cross=20/self.pixel_scale,
+                                                width_cross=int(20/self.pixel_scale),
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
@@ -379,28 +395,12 @@ class ImageList(ImageButler):
         return stars_bright, stars_all
         
     
-    def make_base_image(self, psf_star, stars_all, psf_size=64, vmax=30, draw=True):
+    def make_base_image(self, psf_star, stars_all, vmax=30, draw=True):
         
         """ Make basement image with fixed PSF and stars """
         
-        from .modeling import make_base_image
-        
-        image_base = np.zeros_like(self.images)
-        
         for i, (Image, stars) in enumerate(zip(self.Images, stars_all)):
-        # Make sky background and draw dim stars
-            image_base[i] = make_base_image(Image.image_shape, stars,
-                                            psf_star, self.pad, psf_size,
-                                            verbose=self.verbose)
-            
-            if draw:
-                #display
-                plt.imshow(image_base[i], vmin=0, vmax=vmax, norm=AsinhNorm(a=0.1))
-                plt.colorbar()
-                plt.show()
-            
-        self.image_base= image_base
-            
+            Image.make_base_image(psf_star, stars)
     
     def make_mask(self, stars_list, dir_measure='../output/Measure',
                   by='aper',  r_core=24, r_out=None,
@@ -562,7 +562,7 @@ class ImageList(ImageButler):
                                      psf_range=[None, None],
                                      norm='brightness',
                                      G_eff=self.G_eff,
-                                     image_base=self.image_base[i])
+                                     image_base=self.Images[i].image_base)
             
             # Set a few attributes to container for convenience
             container.image = self.images[i]

@@ -389,6 +389,7 @@ def Match_Mask_Measure(hdu_path,
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
                                              mag_range=[10,22], K=2,
+                                             R_max=int(200/pixel_scale),
                                              degree=2, draw=draw)
     
     for bounds in bounds_list:
@@ -433,7 +434,7 @@ def Match_Mask_Measure(hdu_path,
                                       mag_limit=mag_limit,
                                       r_scale=r_scale,
                                       width_ring=0.5,
-                                      width_cross=20/pixel_scale, # mask 20 arcsec
+                                      width_cross=int(20/pixel_scale), # mask 20 arcsec
                                       obj_name=obj_name,
                                       mag_name=mag_name_cat,
                                       save=save, dir_name=dir_name)
@@ -681,8 +682,9 @@ def Run_PSF_Fitting(hdu_path,
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e6,
-                                           psf_range=1000)
-                   
+                                           psf_range=1200,
+                                           psf_scale=DF_pixel_scale)
+                
     ############################################
     # Setup Basement Image
     ############################################
@@ -800,7 +802,7 @@ def Run_PSF_Fitting(hdu_path,
         suffix = str(n_spline)+'p'+'_'+obj_name
         
         # Recovered 1D PSF
-        s.generate_fit(psf, stars[i])
+        s.generate_fit(psf, stars[i], image_base=DF_Images[i].image_base)
         
         if draw:
             s.cornerplot(figsize=(18, 16),

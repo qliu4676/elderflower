@@ -152,7 +152,14 @@ class Sampler:
                    save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
         
-        return draw_cornerplot(self.results, self.ndim,
+        # hide n0 subplots if n0 is fixed during the fitting
+        if self.container.fix_n0:
+            nsamps, ndim = self.results.samples.shape
+            dims = np.ix_(np.arange(1,ndim,1), range(nsamps))
+        else:
+            dims = None
+
+        return draw_cornerplot(self.results, dims,
                                 labels=self.labels, truths=truths, figsize=figsize,
                                 save=save, save_dir=save_dir, suffix=suffix, **kwargs)
         
@@ -173,7 +180,7 @@ class Sampler:
         plot_fit_PSF1D(self.results, psf,
                        psf_size=psf_size, n_spline=n_spline, **kwargs)
     
-    def generate_fit(self, psf, stars, add_base=True, norm='brightness'):
+    def generate_fit(self, psf, stars, image_base=None, norm='brightness'):
     
         """ Build psf from fitting results """
         
@@ -196,7 +203,8 @@ class Sampler:
                                         draw_real=ct.draw_real)
 
         image_fit = image_stars + bkg_image
-        if add_base: image_fit += ct.image_base
+        if (image_base is not None) & (~ct.brightest_only):
+            image_fit += image_base
         
         # Images constructed from fitting
         self.image_fit = image_fit

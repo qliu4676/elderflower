@@ -96,7 +96,6 @@ class Container:
                                  n0=n0, fix_n0=self.fix_n0,
                                  std_est=self.std_est,
                                  G_eff=G_eff,
-                                 image_base=image_base,
                                  n_spline=self.n_spline,
                                  leg2d=self.leg2d,
                                  fit_sigma=self.fit_sigma,

@@ -1889,14 +1889,14 @@ def prior_tf_sp(u, Priors, n_spline=3,
 def draw_proposal(draw_func,
                   proposal,
                   psf, stars,
-                  image_base, K=1, leg=None):
+                  K=1, leg=None):
     
     # Draw image and calculate log-likelihood
     # K : position order of background in the proposal (dafault -2)
     mu = proposal[-K-1] 
     
     image_tri = draw_func(psf, stars)
-    image_tri +=  image_base + mu
+    image_tri += mu
         
     if leg is not None:
         A10, A01 = 10**proposal[-K-2], 10**proposal[-K-3]
@@ -1947,7 +1947,7 @@ def set_likelihood(image, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
                    n0=3.3, fix_n0=False,
                    psf_range=[None,None], leg2d=False,
-                   std_est=None, G_eff=1e5, image_base=None,
+                   std_est=None, G_eff=1e5,
                    fit_sigma=True, fit_frac=False,
                    brightest_only=False, parallel=False, draw_real=False):
     
@@ -1995,9 +1995,6 @@ def set_likelihood(image, mask_fit, psf, stars,
                           subtract_external=subtract_external,
                           parallel=parallel, draw_real=draw_real)
         
-    if image_base is None:
-        image_base = np.zeros((nY, nX))
-        
     # K : position order of background in the proposal (dafault -2)
     K = 0
     if fit_frac: K += 1
@@ -2034,7 +2031,7 @@ def set_likelihood(image, mask_fit, psf, stars,
                 stars.z_norm = z_norm + (stars.BKG - mu)
 
             image_tri = p_draw_func(psf, stars)
-            image_tri = image_tri + image_base + mu 
+            image_tri += mu
             
             ypred = image_tri[~mask_fit].ravel()
 
@@ -2086,7 +2083,7 @@ def set_likelihood(image, mask_fit, psf, stars,
 
                 image_tri = p_draw_func(psf, stars)
 
-                image_tri += image_base + mu 
+                image_tri += mu
 
                 if leg2d:
                     A10, A01 = 10**v[-K-2], 10**v[-K-3]
@@ -2145,7 +2142,7 @@ def set_likelihood(image, mask_fit, psf, stars,
                     stars.z_norm = z_norm + (stars.BKG - mu)
 
                 image_tri = p_draw_func(psf, stars)
-                image_tri += image_base + mu 
+                image_tri += mu
 
                 if leg2d:
                     A10, A01 = 10**v[-K-2], 10**v[-K-3]
@@ -2202,7 +2199,7 @@ def set_likelihood(image, mask_fit, psf, stars,
                     stars.z_norm = z_norm + (stars.BKG - mu)
 
                 image_tri = draw_proposal(p_draw_func, v,
-                                          psf, stars, image_base,
+                                          psf, stars,
                                           K=K, leg=leg)
                 
                 ypred = image_tri[~mask_fit].ravel()
