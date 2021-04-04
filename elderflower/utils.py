@@ -560,7 +560,7 @@ def calculate_fit_SB(psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
 ### Funcs for measuring scaling ###
 
 def get_star_pos(id, star_cat):
-    """ Get the position of an object from the catalog"""
+    """ Get the position of an object from the SExtractor catalog"""
     
     X_c, Y_c = star_cat[id]["X_IMAGE"], star_cat[id]["Y_IMAGE"]
     return (X_c, Y_c)
@@ -602,7 +602,7 @@ def get_star_thumb(id, star_cat, wcs, data, seg_map,
     
     # the center position is converted from world with wcs
     X_cen, Y_cen = wcs.wcs_world2pix(star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"], origin)
-    cen_star = X_cen - X_min, Y_cen - Y_min
+    cen_star = [X_cen - X_min, Y_cen - Y_min]
     
     return (img_thumb, seg_thumb, mask_thumb), cen_star
     
@@ -668,7 +668,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
 
 
 def compute_Rnorm(image, mask_field, cen,
-                  R=12, wid_ring=0.5, wid_cross=8,
+                  R=12, wid_ring=1, wid_cross=4,
                   mask_cross=True, display=False):
     """ Compute (3 sigma-clipped) normalization using an annulus.
     Note the output values of normalization contain background.
@@ -690,55 +690,63 @@ def compute_Rnorm(image, mask_field, cen,
     I_flag : 0 good / 1 bad (available pixles < 5)
     
     """
-    
-    annulus_ma = CircularAnnulus([cen], R-wid_ring, R+wid_ring).to_mask()[0]
-    mask_ring = annulus_ma.to_image(image.shape) > 0.5    # sky ring (R-wid, R+wid)
-    mask_clean = mask_ring & (~mask_field) & (~np.isnan(image))
+    cen = (cen[0], cen[1])
+    anl = CircularAnnulus([cen], R-wid_ring, R+wid_ring)
+    anl_ma = anl.to_mask()[0].to_image(image.shape)
+    in_ring = anl_ma > 0.5        # sky ring (R-wid, R+wid)
+    mask = in_ring & (~mask_field) & (~np.isnan(image))
         # sky ring with other sources masked
     
     # Whether to mask the cross regions, important if R is small
     if mask_cross:
         yy, xx = np.indices(image.shape)
         rr = np.sqrt((xx-cen[0])**2+(yy-cen[1])**2)
-        cross = ((abs(xx-cen[0])<4)|(abs(yy-cen[1])<4))
-        mask_clean = mask_clean * (~cross)
+        in_cross = ((abs(xx-cen[0])<wid_cross))|(abs(yy-cen[1])<wid_cross)
+        mask = mask * (~in_cross)
     
-    if len(image[mask_clean]) < 5:
+    if len(image[mask]) < 5:
         return [np.nan] * 3 + [1]
     
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', AstropyUserWarning)
-        z = sigma_clip(np.log10(image[mask_clean]), sigma=2, maxiters=5)
+#        z = sigma_clip(np.log10(image[mask]), sigma=3, maxiters=3)
+#        z = 10**z
+        z_ = sigma_clip(image[mask], sigma=3, maxiters=5)
+        z = z_.compressed()
         
-    I_mean, I_med, I_std = 10**np.mean(z), 10**np.median(z.compressed()), np.std(10**z)
-
+    I_mean = np.average(z, weights=anl_ma[mask][~z_.mask])
+    I_med, I_std = np.median(z), np.std(z)
+    
     if display:
-        z = 10**z
-        fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask_clean, cmap="gray", alpha=0.7)
-        ax1.imshow(image, vmin=image.min(), vmax=I_med+50*I_std,
-                   cmap='viridis', norm=AsinhNorm(), alpha=0.7)
-        ax1.plot(cen[0], cen[1], 'r*', ms=10)
+        L = int(mask.shape[0])
         
-        ax2.hist(sigma_clip(z),alpha=0.7)
+        fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
+        ax1.imshow(mask[L//4:-L//4,L//4:-L//4], cmap="gray", alpha=0.7)
+        ax1.imshow(image[L//4:-L//4,L//4:-L//4], vmin=image.min(), vmax=I_med+50*I_std,
+                   cmap='viridis', norm=AsinhNorm(), alpha=0.7)
+        ax1.plot(cen[0]-L//4, cen[1]-L//4, 'r+', ms=10)
+        
+        ax2.hist(z,alpha=0.7)
         
         # Label mean value
         plt.axvline(I_mean, color='k')
         plt.text(0.5, 0.9, "%.1f"%I_mean, color='darkorange', ha='center', transform=ax2.transAxes)
         
         # Label 20% / 80% quantiles
-        I_20 = np.quantile(z.compressed(), 0.2)
-        I_80 = np.quantile(z.compressed(), 0.8)
+        I_20 = np.quantile(z, 0.2)
+        I_80 = np.quantile(z, 0.8)
         for I, x_txt in zip([I_20, I_80], [0.2, 0.8]):
             plt.axvline(I, color='k', ls="--")
             plt.text(x_txt, 0.9, "%.1f"%I, color='orange',
                      ha='center', transform=ax2.transAxes)
+                     
+        plt.show()
         
     return I_mean, I_med, I_std, 0
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=12, wid_ring=0.5, wid_cross=8,
+                        R=12, wid_ring=0.5, wid_cross=4,
                         return_full=False, display=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
@@ -776,7 +784,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
                       r_scale=12, mag_limit=15,
-                      width_ring=0.5, width_cross=8,
+                      width_ring_pix=0.5, width_cross_pix=4,
                       mag_name='rmag_PS', read=False,
                       obj_name="", save=True, dir_name='.',
                       display=False, verbose=True):
@@ -793,8 +801,8 @@ def measure_Rnorm_all(table, bounds,
     
     seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
     r_scale : radius at which the flux scaling is measured (default: 12 pix)
-    width_ring : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
-    width_cross : half-width of spike mask (default: 8 pix)
+    width_ring_pix : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
+    width_cross_pix : half-width of spike mask(default: 4 pix)
     mag_name : magnitude column name
     mag_limit : magnitude upper limit below which are measured
     read : whether to read existed outputs
@@ -822,8 +830,8 @@ def measure_Rnorm_all(table, bounds,
     else:
         tab = table[table[mag_name]<mag_limit]
         res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                  R=r_scale, wid_ring=width_ring,
-                                                  wid_cross=width_cross,
+                                                  R=r_scale, wid_ring=width_ring_pix,
+                                                  wid_cross=width_cross_pix,
                                                   return_full=True, display=display, verbose=verbose)
         
         

@@ -203,7 +203,7 @@ class Sampler:
                                         draw_real=ct.draw_real)
 
         image_fit = image_stars + bkg_image
-        if (image_base is not None) & (~ct.brightest_only):
+        if (image_base is not None):
             image_fit += image_base
         
         # Images constructed from fitting

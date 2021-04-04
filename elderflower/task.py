@@ -433,8 +433,8 @@ def Match_Mask_Measure(hdu_path,
                                       wcs_data, data, seg_map,
                                       mag_limit=mag_limit,
                                       r_scale=r_scale,
-                                      width_ring=0.5,
-                                      width_cross=int(20/pixel_scale), # mask 20 arcsec
+                                      width_ring_pix=0.5,
+                                      width_cross_pix=int(10/pixel_scale),
                                       obj_name=obj_name,
                                       mag_name=mag_name_cat,
                                       save=save, dir_name=dir_name)
@@ -708,6 +708,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
+                        dist_cross=180, wid_cross=30,
                         sn_thre=2.5, draw=draw, mask_obj=mask_obj,
                         save=save, save_dir=plot_dir)
 

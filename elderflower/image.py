@@ -254,7 +254,7 @@ class Image(ImageButler):
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
                                                 self.full_wcs, self.full_image, seg_map,
                                                 mag_limit=15, r_scale=r_scale, width_ring=0.5,
-                                                width_cross=int(20/self.pixel_scale),
+                                                width_cross=int(10/self.pixel_scale),
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
