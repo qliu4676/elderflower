@@ -67,7 +67,8 @@ def get_SExtractor_path():
         return ''
     
 
-def find_keyword_header(header, keyword, default=None, input_val=False):
+def find_keyword_header(header, keyword,
+                        default=None, input_val=False, raise_error=False):
     """ Search keyword value in header (converted to float).
         Input a value by user if keyword is not found. """
         
@@ -86,7 +87,10 @@ def find_keyword_header(header, keyword, default=None, input_val=False):
             print(f'Set {keyword} to default value = ', default)
             val = default
         else:
-            raise KeyError("%s needs to be specified in the keywords."%keyword)
+            if raise_error:
+                raise KeyError("%s needs to be specified in the keywords."%keyword)
+            else:
+                return None
             
     return val
     

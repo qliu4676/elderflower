@@ -164,8 +164,12 @@ class PSF_Model:
         plot_PSF_model_1D(self.frac, self.f_core1D, self.f_aureole1D, **kwargs)
         
         if self.aureole_model == "multi-power":
-            for t in self.theta_s_pix:
-                plt.axvline(t, ls="--", color="k", alpha=0.3, zorder=1)
+            if kwargs.get("xunit") == "arcsec":
+                vline_pos = self.theta_s
+            else:
+                vline_pos = self.theta_s_pix
+            for pos in vline_pos:
+                plt.axvline(pos, ls="--", color="k", alpha=0.3, zorder=0)
                 
     def generate_core(self):
         """ Generate Galsim PSF of core. """

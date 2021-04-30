@@ -132,7 +132,7 @@ could easily fail if a field is too large (&gt; 1 deg^2)</p></li>
 
 <dl class="function">
 <dt id="elderflower.task.Run_PSF_Fitting">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, r_scale=12, mag_limit=15, mag_threshold=[13.0, 11], mask_type='aper', mask_obj=None, wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, cutoff=True, n_cutoff=4, theta_cutoff=1200, n0=None, fit_n0=True, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=True, stop=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
+<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, factor=1, r_scale=12, mag_limit=15, mag_threshold=[13.0, 11], mask_type='aper', mask_obj=None, wid_strip=24, n_strip=48, SB_threshold=24.5, n_spline=3, r_core=24, r_out=None, cutoff=True, n_cutoff=4, theta_cutoff=1200, n0=None, fit_n0=True, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=True, stop=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the wide-angle PSF fitting.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -155,7 +155,7 @@ The conversion from brightness is using a static PSF. (* will change to stacked 
 <li><p><strong>mask_type</strong> (<em>'aper'</em><em> or </em><em>'brightness'</em><em>, </em><em>optional</em><em>, </em><em>default 'aper'</em>) – “aper”: aperture masking
 “brightness”: brightness-limit masking</p></li>
 <li><p><strong>mask_obj</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default None</em>) – full path to the target object mask (w/ the same shape with image)</p></li>
-<li><p><strong>wid_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 24</em>) – Width of strip for masks of very bright stars.</p></li>
+<li><p><strong>wid_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 24</em>) – Width of strip in pixel for masks of very bright stars.</p></li>
 <li><p><strong>n_strip</strong> (<em>int</em><em>, </em><em>optional</em><em>, </em><em>default 48</em>) – Number of strip for masks of very bright stars.</p></li>
 <li><p><strong>SB_threshold</strong> (<em>float</em><em>, </em><em>optional</em><em>, </em><em>default 24.5</em>) – Surface brightness upper limit for masking.
 Only used if mask_type = ‘brightness’.</p></li>

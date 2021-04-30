@@ -187,7 +187,7 @@ Plotting options can be changed by passing them as ``**kwargs`` of the function 
 To reconstruct the PSF, one can run::
 
 	from elderflower.utils import make_psf_from_fit
-	psf, params = make_psf_from_fit(sampler.results)
+	psf, params = make_psf_from_fit(sampler)
 
 	psf_core = psf.generate_core()
 	psf_aureole, psf_size = psf.generate_aureole(psf_range=1200) # arcsec

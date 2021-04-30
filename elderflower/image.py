@@ -45,7 +45,7 @@ class ImageButler:
     """
     
     def __init__(self, hdu_path, obj_name='', band='G',
-                 pixel_scale=DF_pixel_scale, pad=50,
+                 pixel_scale=DF_pixel_scale, pad=0,
                  ZP=None, bkg=None, G_eff=None, verbose=True):
         from .utils import crop_image
     
@@ -107,7 +107,7 @@ class Image(ImageButler):
         
     def __init__(self, hdu_path, bounds0,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=50, ZP=None, bkg=None, G_eff=None, verbose=True):
+                 pad=0, ZP=None, bkg=None, G_eff=None, verbose=True):
         from .utils import crop_image
         
         super().__init__(hdu_path, obj_name, band,
@@ -201,10 +201,12 @@ class Image(ImageButler):
                            r_scale=12,
                            mag_threshold=[13.5,10.5],
                            mag_saturate=13,
-                           use_PS1_DR2=True,
-                           draw=False,
-                           dir_tmp='./tmp'):
+                           mag_limit=15,
+                           make_segm=False, K=2.5,
+                           use_PS1_DR2=False, draw=False,
+                           keep_tmp=False, dir_tmp='./tmp'):
         """ Generate image of stars from a PSF Model"""
+        
         from elderflower.utils import (crop_catalog, identify_extended_source,
                                        calculate_color_term, cross_match_PS1,
                                        fit_empirical_aperture, make_segm_from_catalog,
@@ -234,7 +236,7 @@ class Image(ImageButler):
                                     cross_match_PS1(band, self.full_wcs,
                                                     SE_cat_target, bounds,
                                                     pixel_scale=self.pixel_scale,
-                                                    mag_limit=15,
+                                                    mag_limit=mag_limit,
                                                     use_PS1_DR2=use_PS1_DR2,
                                                     verbose=False)
         
@@ -247,19 +249,20 @@ class Image(ImageButler):
         catalog_star_name = os.path.join(dir_tmp, f'{obj_name}-catalog_PS_{band}_all.txt')
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
         
-        tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
-                                               mag_saturate=mag_saturate, draw=draw)
+#        tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
+#                                               mag_saturate=mag_saturate, draw=draw)
+        
+        self.tab_target = tab_target
         
         # Measure I at r0
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
                                                 self.full_wcs, self.full_image, seg_map,
-                                                mag_limit=15, r_scale=r_scale, width_ring=0.5,
-                                                width_cross=int(10/self.pixel_scale),
+                                                mag_limit=mag_limit, r_scale=r_scale, width_ring_pix=0.5,
+                                                width_cross_pix=int(10/self.pixel_scale),
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
-        self.read_measurement_table(dir_tmp, use_PS1_DR2=use_PS1_DR2,
-                                    r_scale=r_scale, mag_limit=15)
+        self.read_measurement_table(dir_tmp,  r_scale=r_scale, mag_limit=mag_limit)
         
         # Make Star Models
         self.assign_star_props(r_scale=r_scale, mag_threshold=mag_threshold,
@@ -267,29 +270,31 @@ class Image(ImageButler):
         
         self.stars_gen = stars = self.stars_bright
         
-        # Make mask map
-        estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
-                                                mag_name=mag_name_cat, K=3,
-                                                degree=2, draw=draw)
-                                                
-        seg_map_c = make_segm_from_catalog(catalog_star, bounds,
-                                            estimate_radius,
-                                            mag_name=mag_name,
-                                            cat_name='PS',
-                                            obj_name=obj_name,
-                                            band=band,
-                                            ext_cat=ext_cat,
-                                            draw=draw,
-                                            save=False,
-                                            dir_name=dir_tmp)
-        self.seg_map = seg_map_c
+        if make_segm:
+            # Make mask map
+            estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
+                                                    mag_name=mag_name_cat, K=K,
+                                                    degree=2, draw=draw)
+
+            seg_map_cat = make_segm_from_catalog(catalog_star, bounds,
+                                                estimate_radius,
+                                                mag_name=mag_name,
+                                                cat_name='PS',
+                                                obj_name=obj_name,
+                                                band=band,
+                                                ext_cat=ext_cat,
+                                                draw=draw,
+                                                save=False,
+                                                dir_name=dir_tmp)
+            self.seg_map = seg_map_cat
         
         # Generate model star
         image_stars, _, _ = generate_image_fit(psf, stars, self.image_shape)
-        print("Image of stars is generated based on the PSF Model!")
+        print("Image of stars has been generated based on the PSF Model!")
         
         # Delete tmp dir
-        shutil.rmtree(dir_tmp)
+        if not keep_tmp:
+            shutil.rmtree(dir_tmp)
         
         return image_stars
 
@@ -326,7 +331,7 @@ class ImageList(ImageButler):
     
     def __init__(self, hdu_path, bounds0_list,
                  obj_name='', band='G', pixel_scale=DF_pixel_scale,
-                 pad=50, ZP=None, bkg=None, G_eff=None, verbose=False):
+                 pad=0, ZP=None, bkg=None, G_eff=None, verbose=False):
         
         super().__init__(hdu_path, obj_name, band,
                          pixel_scale, pad, ZP, bkg, G_eff, verbose)

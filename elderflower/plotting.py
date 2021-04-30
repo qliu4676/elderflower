@@ -42,6 +42,9 @@ import astropy.units as u
 
 from photutils import CircularAperture
 
+# Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
+DF_pixel_scale = 2.5
+DF_raw_pixel_scale = 2.85
 
 ### Plotting Helpers ###
 
@@ -133,7 +136,7 @@ def display_background_sub(field, back):
 
 
 def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
-                ec='w', color='indianred', lw=2.5):
+                ec='w', color='indianred', lw=2.5, hide_axis=True):
     """ Draw boundaries of image """
     from matplotlib import patches
     fig, ax = plt.subplots(figsize=(12,8))
@@ -154,6 +157,10 @@ def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
                     ha='center', va='center', fontsize=20)
             ax.add_patch(rect)
             
+    if hide_axis:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        
     plt.show()
 
 def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
@@ -330,8 +337,9 @@ def Fit_background_distribution(image, mask_deep):
     plt.legend(fontsize=12)
     
 def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
-                      yunit='Intensity', label='combined', log_scale=True,
-                      ZP=27.1, pixel_scale=2.5, decompose=True):
+                      xunit='pix', yunit='Intensity',
+                      ZP=27.1, pixel_scale=DF_pixel_scale,
+                      label='combined', alpha=0.8, decompose=True):
     from .utils import Intensity2SB
     
     r = np.logspace(0, np.log10(psf_range), 100)
@@ -340,36 +348,38 @@ def plot_PSF_model_1D(frac, f_core, f_aureole, psf_range=400,
     I_aureole = frac * f_aureole(r)
     I_tot = I_core + I_aureole
     
-    if log_scale:
-        I_core, I_aureole, I_tot = np.log10(I_core), np.log10(I_aureole), np.log10(I_tot) 
-    
-    if yunit=='Intensity':
-        plt.semilogx(r, I_tot,
-                 ls="-", lw=4,alpha=0.9, zorder=5, label=label)
+    if xunit=="arcsec":
+        r *= pixel_scale
+        plt.xlabel('r [arcsec]', fontsize=14)
+    else:
+        plt.xlabel('r [pix]', fontsize=14)
+
+    if yunit=="Intensity":
+        plt.loglog(r, I_tot,
+                    ls="-", lw=4, alpha=alpha, zorder=5, label=label)
         if decompose:
-            plt.semilogx(r, I_core,
-                     ls="--", lw=3, alpha=0.9, zorder=1, label='core')
-            plt.semilogx(r, I_aureole,
-                     ls="--", lw=3, alpha=0.9, label='aureole')
-        plt.ylabel('log Intensity', fontsize=14)
-        plt.ylim(I_aureole.min()-0.25, I_tot.max()+0.25)
+            plt.loglog(r, I_core,
+                     ls="--", lw=3, alpha=alpha, zorder=3, label='core')
+            plt.loglog(r, I_aureole,
+                     ls="--", lw=3, alpha=alpha, zorder=4, label='aureole')
+        plt.ylabel("log Intensity", fontsize=14)
+        plt.ylim(0.5*I_aureole.min(), I_tot.max()*2)
         
-    elif yunit=='SB':
+    elif yunit=="SB":
         plt.semilogx(r, -14.5+Intensity2SB(I_tot, BKG=0,
-                                           ZP=27.1, pixel_scale=pixel_scale),
-                     ls="-", lw=4,alpha=0.9, zorder=5, label=label)
+                                           ZP=ZP, pixel_scale=pixel_scale),
+                     ls="-", lw=4,alpha=alpha, zorder=5, label=label)
         if decompose:
             plt.semilogx(r, -14.5+Intensity2SB(I_core, BKG=0,
-                                               ZP=27.1, pixel_scale=pixel_scale),
-                         ls="--", lw=3, alpha=0.9, zorder=1, label='core')
+                                               ZP=ZP, pixel_scale=pixel_scale),
+                         ls="--", lw=3, alpha=alpha, zorder=3, label='core')
             plt.semilogx(r, -14.5+Intensity2SB(I_aureole, BKG=0,
-                                               ZP=27.1, pixel_scale=pixel_scale),
-                         ls="--", lw=3, alpha=0.9, label='aureole')
-        plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
+                                               ZP=ZP, pixel_scale=pixel_scale),
+                         ls="--", lw=3, alpha=alpha, zorder=4, label='aureole')
+        plt.ylabel("Surface Brightness [mag/arcsec$^2$]")
         plt.ylim(31,17)
 
     plt.legend(loc=1, fontsize=12)
-    plt.xlabel('r [pix]', fontsize=14)
 
     
 def plot_PSF_model_galsim(psf, image_shape=(1001,1001), contrast=None,

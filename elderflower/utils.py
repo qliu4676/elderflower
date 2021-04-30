@@ -22,7 +22,6 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, Column, setdiff, join
 from astropy.stats import mad_std, biweight_location, gaussian_fwhm_to_sigma
 from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
-from astropy.utils.exceptions import AstropyUserWarning
 
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
@@ -136,6 +135,23 @@ def extract_bool_bitflags(bitflags, ind):
 
 
 ### Photometry Funcs ###
+
+def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
+    """ Check if background stored in header + short stats """
+    from astropy.stats import sigma_clipped_stats
+    from .io import find_keyword_header
+    
+    # Short estimate summary
+    mean, med, std = sigma_clipped_stats(data, mask, **kwargs)
+    print("Background stats: mean = %.2f  med = %.2f  std = %.2f"%(mean, med, std))
+    
+    # check header key
+    bkg = find_keyword_header(header, bkg_keyname)
+    if bkg is None: bkg = med
+    
+    return bkg, std
+    
+    
 
 def background_extraction(field, mask=None, return_rms=True,
                   b_size=64, f_size=3, n_iter=5, **kwargs):
@@ -360,12 +376,10 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         
     d_r = dr * pixel_scale if xunit == "arcsec" else dr
     
-    z = z[~np.isnan(z)]
-    
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', AstropyUserWarning)
+        warnings.simplefilter('ignore')
 #        if mock:
-        clip = lambda z: sigma_clip((z), sigma=5, maxiters=3)
+        clip = lambda z: sigma_clip((z), sigma=3, maxiters=5)
 #        else:
 #            clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
         
@@ -375,11 +389,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             # for undersampled core, bin in individual pixels 
             bins_inner = np.unique(r[r<r_core]) + 1e-3
         else: 
-            bins_inner = np.linspace(0, r_core, int(min((r_core/d_r*2), 5))) - 1e-5
+            bins_inner = np.linspace(0, r_core+d_r, int(min((r_core/d_r*2), 5))) - 1e-5
 
         n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
         if r_max > (r_core+d_r):
-            bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max-d_r), n_bin_outer)
+            bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max+2*d_r), n_bin_outer)
         else:
             bins_outer = []
         bins = np.concatenate([bins_inner, bins_outer])
@@ -392,7 +406,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     for k, b in enumerate(bins[:-1]):
         in_bin = (r>bins[k])&(r<bins[k+1])
         
-        z_clip = clip(z[in_bin])
+        z_clip = clip(z[~np.isnan(z) & in_bin])
         if len(z_clip)==0:
             continue
 
@@ -464,7 +478,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             
 
         # Decide the radius within which the intensity saturated for bright stars w/ intersity drop half
-        dz_rbin = np.diff(np.log10(z_rbin)) 
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            dz_rbin = np.diff(np.log10(z_rbin))
         dz_cum = np.cumsum(dz_rbin)
 
         if plot_line:
@@ -499,8 +515,7 @@ def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
 
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
-    psf_e, psf_size = psf.generate_aureole(contrast=1e7,
-                                           pixel_scale=pixel_scale, psf_range=size)
+    psf_e, psf_size = psf.generate_aureole(contrast=1e7, psf_range=size)
     star_psf = (1-frac) * psf_c + frac * psf_e
 
     # Galsim 2D model averaged in 1D
@@ -707,12 +722,10 @@ def compute_Rnorm(image, mask_field, cen,
     if len(image[mask]) < 5:
         return [np.nan] * 3 + [1]
     
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', AstropyUserWarning)
-#        z = sigma_clip(np.log10(image[mask]), sigma=3, maxiters=3)
-#        z = 10**z
-        z_ = sigma_clip(image[mask], sigma=3, maxiters=5)
-        z = z_.compressed()
+    
+#    z = 10**sigma_clip(np.log10(image[mask]), sigma=3, maxiters=3)
+    z_ = sigma_clip(image[mask], sigma=3, maxiters=5)
+    z = z_.compressed()
         
     I_mean = np.average(z, weights=anl_ma[mask][~z_.mask])
     I_med, I_std = np.median(z), np.std(z)
@@ -760,7 +773,13 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         ind = np.where(table_target['NUMBER']==num)[0][0]
         
         # For very bright sources, use a broader window
-        n_win = 30 if mag_auto < 12 else 20
+        if mag_auto <= 11:
+            n_win = 40
+        elif 11 < mag_auto < 13:
+            n_win = 30
+        else:
+            n_win = 20
+            
         img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
         
@@ -817,22 +836,25 @@ def measure_Rnorm_all(table, bounds,
         
     """
     
-    Xmin, Ymin, Xmax, Ymax = bounds.astype(int)
+    range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
     
-    table_norm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_X[%d-%d]Y[%d-%d].txt'\
-                                   %(obj_name, r_scale, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
-    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_X[%d-%d]Y[%d-%d].pkl'\
-                                  %(obj_name, mag_name[0], mag_limit, Xmin, Xmax, Ymin, Ymax))
+    table_norm_name = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_%s.txt'\
+                                   %(obj_name, r_scale, mag_name[0], mag_limit, range_str))
+    res_thumb_name = os.path.join(dir_name, '%s-thumbnail_%smag%d_%s.pkl'\
+                                  %(obj_name, mag_name[0], mag_limit, range_str))
     if read:
         table_norm = Table.read(table_norm_name, format="ascii")
         res_thumb = load_pickle(res_thumb_name)
         
     else:
         tab = table[table[mag_name]<mag_limit]
-        res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                  R=r_scale, wid_ring=width_ring_pix,
-                                                  wid_cross=width_cross_pix,
-                                                  return_full=True, display=display, verbose=verbose)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
+                                                      R=r_scale, wid_ring=width_ring_pix,
+                                                      wid_cross=width_cross_pix,
+                                                      return_full=True, display=display, verbose=verbose)
         
         
         keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', 'MU_MAX', mag_name] \
@@ -856,25 +878,54 @@ def measure_Rnorm_all(table, bounds,
             
     return table_norm, res_thumb
 
-### Rescaling ###
+### Resamling ###
 
-def downsample_wcs(wcs_input, scale):
+def transform_rescale(val, scale=0.5):
+    """ transform coordinates after resampling """
+    return (val-1) * scale + scale/2. + 0.5
+    
+def transform_table_coordinates(table, filename, scale=0.5):
+    """ transform coordinates in a table and write to a new one """
+    table_ = table.copy()
+    
+    # transform coordiantes for X/Y_IMAGE and A/B_IMAGE
+    for coln in table_.colnames:
+        if 'IMAGE' in coln:
+            if ('X' in coln) | ('X' in coln):
+                table_[coln] = transform_rescale(table[coln], scale)
+            else:
+                table_[coln] *= scale
+                
+    table_.write(filename, format='ascii', overwrite=True)
+    
+
+def downsample_wcs(wcs_input, scale=0.5):
     """ Downsample the input wcs along an axis using {CDELT, CRPIX} FITS convention """
 
     header = wcs_input.to_header()
-
+    shape = wcs_input.pixel_shape
+    
+    if 'CDELT1' in header.keys(): cdname = 'CDELT'
+    if 'CD1_1' in header.keys(): cdname = 'CD'
+    
     for axis in [1, 2]:
-        cd = 'CDELT{0:d}'.format(axis)
+        if cdname=='CDELT':
+            cd = 'CDELT{0:d}'.format(axis)
+        elif cdname == 'CD':
+            cd = 'CD{0:d}_{0:d}'.format(axis)
+        else:
+            raise KeyError('Fits header has no CDELT or CD keywords!')
+            
         cp = 'CRPIX{0:d}'.format(axis)
         na = 'NAXIS{0:d}'.format(axis)
 
-        header[cp] = (header[cp]-1) * scale + scale/2. + 0.5
+        header[cp] = transform_rescale(header[cp], scale)
         header[cd] = header[cd]/scale
-        header[na] = int(wcs_input.pixel_shape[axis-1]*scale)
+        header[na] = int(round(shape[axis-1]*scale))
 
     return wcs.WCS(header)
 
-def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
+def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
     """
     Write fits data downsampled by factor. Alternatively a target wcs can be provided.
     
@@ -884,7 +935,7 @@ def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
         full path of fits file
     fn_out: str
         full path of output fits file
-    factor: int, optional, default 2
+    scale: int, optional, default 0.5
         scaling factor
     order: int, optional, default 3 ('bicubic')
         order of interpolation (see docs of reproject)
@@ -894,8 +945,6 @@ def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
     """
     if reproject_install == False:
         return None
-
-    scalefactor = 1/factor
 
     # read fits
     header = fits.getheader(fn)
@@ -907,8 +956,8 @@ def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
         shape_out = wcs_out.pixel_shape
     else:
         # make new wcs and shape according to scale factor
-        wcs_out = downsample_wcs(wcs_input, scalefactor)
-        shape_out = (int(data.shape[0]*scalefactor), int(data.shape[1]*scalefactor))
+        wcs_out = downsample_wcs(wcs_input, scale)
+        shape_out = (int(data.shape[0]*scale), int(data.shape[1]*scale))
 
     # reproject the image by new wcs
     data_rp, _ = reproject_interp((data, wcs_input), wcs_out,
@@ -919,12 +968,100 @@ def write_downsample_fits(fn, fn_out, factor=2, order=3, wcs_out=None):
     for key in ['NFRAMES', 'BACKVAL', 'EXP_EFF', 'FILTNAM']:
         if key in header.keys():
             header_out[key] = header[key]
-
+            
+    header_out['RESCALE'] = scale
+    
     # write new fits
     fits.writeto(fn_out, data_rp, header=header_out, overwrite=True)
     print('Resampled image saved to: ', fn_out)
 
     return True
+
+def downsample_segmentation(fn, fn_out, scale=0.5):
+    """ Downsample segmentation and write to fits """
+    from scipy.ndimage import zoom
+    
+    if os.path.isfile(fn):
+        segm = fits.getdata(fn)
+        segm_out = zoom(segm, zoom=0.5, order=1)
+        fits.writeto(fn_out, segm_out, overwrite=True)
+        
+    else:
+        pass
+    
+def process_resampling(fn, bounds, obj_name, band,
+                        pixel_scale=DF_pixel_scale, r_scale=12,
+                        mag_limit=15, dir_measure='./', work_dir='./',
+                        factor=1, verbose=True):
+                        
+    from .image import ImageList
+    
+    # turn bounds_list into 2d array
+    bounds = np.atleast_2d(bounds).astype(int)
+    
+    if factor!=1:
+        if verbose:
+            print('Resampling image by a factor of {0:.1g}...'.format(factor))
+        
+        scale = 1/factor
+        
+        fn_rp = "{0}_{2}.{1}".format(*os.path.basename(fn).rsplit('.', 1) + ['rp'])
+        fn_rp = os.path.join(work_dir, fn_rp)
+        
+        bounds_rp = np.array([np.round(b_*scale) for b_ in bounds], dtype=int)
+        
+        # resample image if it does not exist
+        if not os.path.exists(fn_rp):
+            write_downsample_fits(fn, fn_rp, scale, order=3)
+        
+        # construct Image List for original image
+        DF_Images = ImageList(fn, bounds, obj_name, band,
+                              pixel_scale=pixel_scale)
+        
+        # read faint stars info and brightness measurement
+        DF_Images.read_measurement_tables(dir_measure,
+                                          r_scale=r_scale,
+                                          mag_limit=mag_limit)
+                                          
+        # new quantities and names
+        r_scale *= scale
+        pixel_scale /= scale
+        obj_name_rp = obj_name + '_rp'
+        
+        if verbose:
+            print('Transforming coordinates for measurement tables...')
+            
+        for Img, bound, bound_rp in zip(DF_Images, bounds, bounds_rp):
+        
+            # transform coordinates and write as new tables
+            old_range = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bound)
+            new_range = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bound_rp)
+            
+            table_faint, table_norm = Img.table_faint, Img.table_norm
+            
+            fn_catalog = os.path.join(dir_measure,
+                        "%s-catalog_PS_%s_all.txt"%(obj_name_rp, band.lower()))
+            fn_norm = os.path.join(dir_measure, "%s-norm_%dpix_%smag%s_%s.txt"\
+                         %(obj_name_rp, r_scale, band.lower(), mag_limit, new_range))
+                        
+            transform_table_coordinates(table_faint, fn_catalog, scale)
+            transform_table_coordinates(table_norm, fn_norm, scale)
+            
+            # reproject segmentation
+            print('Resampling segmentation...')
+            fn_seg = os.path.join(dir_measure,
+                        "%s-segm_%s_catalog_%s.fits"\
+                        %(obj_name, band.lower(), old_range))
+            fn_seg_out = os.path.join(dir_measure, "%s-segm_%s_catalog_%s.fits"\
+                        %(obj_name_rp, band.lower(), new_range))
+                        
+            downsample_segmentation(fn_seg, fn_seg_out, scale)
+        
+    else:
+        fn_rp, bounds_rp, obj_name_rp = fn, bounds, obj_name
+        
+    return fn_rp, bounds_rp, obj_name_rp, pixel_scale, r_scale
+
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
@@ -1031,8 +1168,11 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 def read_measurement_table(dir_name, bounds0,
                            obj_name='', band='G',
                            pad=50, r_scale=12,
-                           mag_limit=15, use_PS1_DR2=True):
+                           mag_limit=15,
+                           verbose=False):
     """ Read measurement tables from the directory """
+    
+    use_PS1_DR2 = True if 'PS2' in dir_name else False
     
     # Magnitude name
     b_name = band.lower()
@@ -1050,7 +1190,8 @@ def read_measurement_table(dir_name, bounds0,
 
     # Check if the file exist before read
     assert os.path.isfile(fname_catalog), f"Table {fname_catalog} does not exist!"
-    print(f"Read {fname_catalog}.")
+    if verbose:
+        print(f"Read {fname_catalog}.")
     table_catalog = Table.read(fname_catalog, format="ascii")
     mag_catalog = table_catalog[mag_name]
 
@@ -1067,7 +1208,8 @@ def read_measurement_table(dir_name, bounds0,
                                    patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
     # Check if the file exist before read
     assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
-    print(f"Read {fname_norm}.")
+    if verbose:
+        print(f"Read {fname_norm}.")
     table_norm = Table.read(fname_norm, format="ascii")
 
     # Crop the catalog
@@ -1697,7 +1839,7 @@ def cross_match_PS1(band, wcs_data,
     b_name = band.lower()
     
     if sep is None:
-        sep = pixel_scale * u.arcsec
+        sep = pixel_scale
     
     if use_PS1_DR2:
         from urllib.error import HTTPError
@@ -1710,7 +1852,7 @@ def cross_match_PS1(band, wcs_data,
                                                 SE_cat_target,
                                                 bounds_list,
                                                 pixel_scale=pixel_scale,
-                                                sep=sep,
+                                                sep=sep * u.arcsec,
                                                 mag_limit=mag_limit,
                                                 band=b_name,
                                                 verbose=verbose)
@@ -1728,7 +1870,7 @@ def cross_match_PS1(band, wcs_data,
                                         SE_cat_target,
                                         bounds_list,
                                         pixel_scale=pixel_scale,
-                                        sep=sep,
+                                        sep=sep * u.arcsec,
                                         mag_limit=mag_limit,
                                         mag_name=mag_name,
                                         verbose=verbose)
@@ -1758,14 +1900,14 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     f_corr = lambda x: piecewise_linear(x, *popt)
     mag_corr = f_corr(tab['MAG_AUTO'])
     
-    # Remove rows with uncanny matched magnitude
+    # Remove rows with large magnitude offset
     loc_rm = np.where(abs(tab['MAG_AUTO_corr']-mag_corr)>2)
     if draw: plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
                          marker='s', s=40, facecolors='none', edgecolors='lime'); plt.show()
     tab.remove_rows(loc_rm[0])
 
-    # Below are new lines to add back supplementary (unmatched bright) stars
-    cond_sup = (SE_catatlog['MAG_AUTO']<mag_saturate) & (SE_catatlog['CLASS_STAR']>0.5)
+    # Add supplementary stars (bright stars failed to matched)
+    cond_sup = (SE_catatlog['MAG_AUTO']<mag_saturate) & (SE_catatlog['CLASS_STAR']>0.7)
     SE_cat_bright = SE_catatlog[cond_sup]
     num_SE_sup = np.setdiff1d(SE_cat_bright['NUMBER'], tab['NUMBER'])
 
@@ -1814,7 +1956,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     mag = mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
     
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', AstropyUserWarning)
+        warnings.simplefilter('ignore')
         d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
         
     CT = biweight_location(d_mag_clip)
@@ -1961,7 +2103,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
                                               ext_cat['THETA_IMAGE'],):
                 pos = (X_c-Xmin, Y_c-Ymin)
                 theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*10, b*10, theta_)
+                aper = EllipticalAperture(pos, a*8, b*8, theta_)
                 apers.append(aper)
             
     # Draw segment map generated from the catalog
@@ -1984,8 +2126,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         check_save_path(dir_name, make_new=False, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map.astype(int))
         
-        b_name = band.lower()
-        file_name = os.path.join(dir_name, "%s-segm_%smag_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, b_name, Xmin, Xmax, Ymin, Ymax))
+        file_name = os.path.join(dir_name, "%s-segm_%s_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, band.lower(), Xmin, Xmax, Ymin, Ymax))
         hdu_seg.writeto(file_name, overwrite=True)
         print("Save segmentation map made from catalog as %s\n"%file_name)
         
@@ -2014,8 +2155,8 @@ def make_psf_from_fit(sampler, psf=None,
     
     Parameters
     ----------
-    fit_res : dynesty.results.Results
-        Results of the dynesty dynamic sampler class
+    sampler : Sampler.sampler class
+        The output sampler file (.res)
     psf : PSF_Model class, optional, default None
         Inherited PSF model. If None, create a new one.
     pixel_scale : float, optional, default 2.5
@@ -2077,7 +2218,7 @@ def make_psf_from_fit(sampler, psf=None,
                 n_s_fit = np.append(n_s_fit, n_c)
                 theta_s_fit = np.append(theta_s_fit, theta_c)
                 
-            param_update = {'n_s':n_s_fit, 'theta_s':theta_s_fit}
+            param_update = {'n0':n_s_fit[0], 'n_s':n_s_fit, 'theta_s':theta_s_fit}
 
     if fit_frac:
         frac = 10**params[-1]
