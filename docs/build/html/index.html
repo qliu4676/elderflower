@@ -1,17 +1,18 @@
 
 <!DOCTYPE html>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
     <title>Welcome to elderflower’s documentation! &#8212; elderflower 0.1 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
     <script src="_static/jquery.js"></script>
     <script src="_static/underscore.js"></script>
     <script src="_static/doctools.js"></script>
-    <script src="_static/language_data.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Installation" href="install.html" />
@@ -31,10 +32,10 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="welcome-to-elderflower-s-documentation">
+  <section id="welcome-to-elderflower-s-documentation">
 <h1>Welcome to elderflower’s documentation!<a class="headerlink" href="#welcome-to-elderflower-s-documentation" title="Permalink to this headline">¶</a></h1>
-<a class="reference internal image-reference" href="_images/elderflower.png"><img alt="_images/elderflower.png" class="align-center" src="_images/elderflower.png" style="width: 240.0px; height: 232.0px;" /></a>
-<div class="section" id="introduction">
+<img alt="_images/elderflower.png" class="no-scaled-link" src="_images/elderflower.png" style="width: 240.0px; height: 232.0px;" />
+<section id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">elderflower</span></code> is a python package to fit the wide-angle point spread function (PSF) in wide-field low-surface brightness images, especially developed for the <a class="reference external" href="https://www.dragonflytelescope.org/">Dragonfly telescope</a>. It mainly utilizes Galsim and Dynesty to generate forward models of PSF for bright stars in the image and fit the parameters of the PSF wing in a Bayesian way.</p>
 <div class="toctree-wrapper compound">
@@ -54,22 +55,21 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="example.html">Examples</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="example.html#ngc3432">NGC3432</a></li>
-<li class="toctree-l2"><a class="reference internal" href="example.html#m44">M44</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
 </ul>
 </div>
-</div>
-<div class="section" id="why-called-elderflower">
+</section>
+<section id="why-called-elderflower">
 <h2>Why called ‘elderflower’?<a class="headerlink" href="#why-called-elderflower" title="Permalink to this headline">¶</a></h2>
 <p>Well, reason #1 – I am an elderflower lover (also a lover of Fanta Shokata)!</p>
 <p>For another, check the image below which displays the open cluster M44 taken by the Dragonfly telescope. Look how similar it is to the beautiful picture of elderflower above!</p>
-<a class="reference internal image-reference" href="_images/M44-1229.png"><img alt="_images/M44-1229.png" class="align-center" src="_images/M44-1229.png" style="width: 403.20000000000005px; height: 403.20000000000005px;" /></a>
-<p>The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness images.</p>
-</div>
-<div class="section" id="getting-started">
+<img alt="_images/M44-1229.png" class="no-scaled-link" src="_images/M44-1229.png" style="width: 403.20000000000005px; height: 403.20000000000005px;" />
+<p>The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness level.</p>
+</section>
+<section id="getting-started">
 <h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.task</span> <span class="kn">import</span> <span class="n">berry</span>
 
@@ -88,16 +88,16 @@
 <img alt="_images/test_2d.png" class="align-center" src="_images/test_2d.png" />
 <p>For further examples in detail, refer to examples page.
 For parameters tweaking, refer to configuration page.</p>
-</div>
-</div>
-<div class="section" id="indices-and-tables">
+</section>
+</section>
+<section id="indices-and-tables">
 <h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
 <ul class="simple">
 <li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
 <li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
 <li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
 </ul>
-</div>
+</section>
 
 
           </div>
@@ -159,7 +159,7 @@ For parameters tweaking, refer to configuration page.</p>
       &copy;2020, Q. Liu.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.0.2</a>
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
       
       |

@@ -8,8 +8,8 @@ Welcome to elderflower's documentation!
 
 
 .. image:: images/elderflower.png
-	:align: center
-	:scale: 20
+	:class: no-scaled-link
+	:scale: 20%
 
 
 Introduction
@@ -37,10 +37,10 @@ For another, check the image below which displays the open cluster M44 taken by 
 
 
 .. image:: images/M44-1229.png
-	:align: center
-	:scale: 80
+	:class: no-scaled-link
+	:scale: 80%
 
-The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness images.
+The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness level.
 
 
 Getting Started

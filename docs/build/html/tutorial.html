@@ -1,17 +1,18 @@
 
 <!DOCTYPE html>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
     <title>Tutorial &#8212; elderflower 0.1 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
     <script src="_static/jquery.js"></script>
     <script src="_static/underscore.js"></script>
     <script src="_static/doctools.js"></script>
-    <script src="_static/language_data.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Examples" href="example.html" />
@@ -32,7 +33,7 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="tutorial">
+  <section id="tutorial">
 <h1>Tutorial<a class="headerlink" href="#tutorial" title="Permalink to this headline">¶</a></h1>
 <p>This chapter illustrates how to run the wide angle PSF fitting using <code class="docutils literal notranslate"><span class="pre">elderflower</span></code>. <code class="docutils literal notranslate"><span class="pre">elderflower</span></code> can be run in two ways: in a functional way or thourough a <code class="docutils literal notranslate"><span class="pre">yaml</span></code> configuration file. We use a 800x800 cutout image in the test directory (<code class="docutils literal notranslate"><span class="pre">test/cutout.fits</span></code>) as an example. The data is observed by the Dragonfly telescope with the SloanR band filter.</p>
 <p>We first set out the object name, the working directory and the filter in use:</p>
@@ -52,9 +53,9 @@
 </dl>
 <p>Multiple boundaries can be passed in sequence as an Nx4 list or turples.</p>
 <p>The following procedure can be run with functions step-by-step or through a configuration file.</p>
-<div class="section" id="run-with-functions">
+<section id="run-with-functions">
 <h2>1. Run with functions<a class="headerlink" href="#run-with-functions" title="Permalink to this headline">¶</a></h2>
-<div class="section" id="detection">
+<section id="detection">
 <h3>(1) Detection<a class="headerlink" href="#detection" title="Permalink to this headline">¶</a></h3>
 <p>We first import the functions from <code class="docutils literal notranslate"><span class="pre">elderflower.task</span></code>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.task</span> <span class="kn">import</span> <span class="n">Run_Detection</span><span class="p">,</span> <span class="n">Match_Mask_Measure</span><span class="p">,</span> <span class="n">Run_PSF_Fitting</span>
@@ -81,8 +82,8 @@
 <div><p>NUMBER, X_WORLD, Y_WORLD, FLUXERR_AUTO, MAG_AUTO, MU_MAX, CLASS_STAR, ELLIPTICITY</p>
 </div></blockquote>
 <p>and a segementation map <code class="docutils literal notranslate"><span class="pre">{obj_name}_seg.fits</span></code> in <code class="docutils literal notranslate"><span class="pre">work_dir</span></code>.</p>
-</div>
-<div class="section" id="preparation">
+</section>
+<section id="preparation">
 <h3>(2) Preparation<a class="headerlink" href="#preparation" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">Match_Mask_Measure</span></code> does all the fussy preparatory work, including:</p>
 <ol class="arabic simple">
@@ -116,8 +117,8 @@
 <li><p>Modified segmentation map.</p></li>
 <li><p>1d profiles of stars &lt; <code class="docutils literal notranslate"><span class="pre">mag_limit</span></code> (default: 15 mag). The colors indicate the catalog magnitude.</p></li>
 </ol>
-</div>
-<div class="section" id="fitting">
+</section>
+<section id="fitting">
 <h3>(3) Fitting<a class="headerlink" href="#fitting" title="Permalink to this headline">¶</a></h3>
 <p>Finally, <code class="docutils literal notranslate"><span class="pre">Run_PSF_Fitting</span></code> does the fitting work:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">samplers</span> <span class="o">=</span> <span class="n">Run_PSF_Fitting</span><span class="p">(</span><span class="s1">&#39;cutout.fits&#39;</span><span class="p">,</span>
@@ -141,9 +142,9 @@
 <p>Below shows the output of the fitting (stars + background), the fitted bright stars and the data after subtraction of bright stars.</p>
 <img alt="_images/Comparison_fit_data2D2p_test.png" class="align-center" src="_images/Comparison_fit_data2D2p_test.png" />
 <p><em>Run_PSF_Fitting</em> returns a list of <code class="docutils literal notranslate"><span class="pre">Sampler</span></code> class which contains all the fitting info. Each item corresponds to the region specified in <code class="docutils literal notranslate"><span class="pre">bounds</span></code> in sequence.</p>
-</div>
-</div>
-<div class="section" id="run-with-config-yaml">
+</section>
+</section>
+<section id="run-with-config-yaml">
 <h2>2. Run with <code class="docutils literal notranslate"><span class="pre">config.yaml</span></code><a class="headerlink" href="#run-with-config-yaml" title="Permalink to this headline">¶</a></h2>
 <p>The fitting can also be run with a <code class="docutils literal notranslate"><span class="pre">.yaml</span></code> configuration file. The functions are wrapped ino a class <code class="docutils literal notranslate"><span class="pre">berry</span></code>. Parameters of <code class="docutils literal notranslate"><span class="pre">Match_Mask_Measure</span></code> and <code class="docutils literal notranslate"><span class="pre">Run_PSF_Fitting</span></code> can be provided through the <code class="docutils literal notranslate"><span class="pre">.yaml</span></code> file. In addition, parameters of <code class="docutils literal notranslate"><span class="pre">Run_Detection</span></code> can be provided as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> to <code class="docutils literal notranslate"><span class="pre">.detection</span></code>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.task</span> <span class="kn">import</span> <span class="n">berry</span>
@@ -159,8 +160,8 @@
 </pre></div>
 </div>
 <p>It will complete procedures above in the functional way and generate the same outputs.</p>
-</div>
-<div class="section" id="read-fitting-results">
+</section>
+<section id="read-fitting-results">
 <h2>3. Read fitting results<a class="headerlink" href="#read-fitting-results" title="Permalink to this headline">¶</a></h2>
 <p>The fitting results are saved as a pickled file <code class="docutils literal notranslate"><span class="pre">.res</span></code> under <code class="docutils literal notranslate"><span class="pre">work_dir</span></code>. It can be read as a <code class="docutils literal notranslate"><span class="pre">Sampler</span></code> class through:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.sampler</span> <span class="kn">import</span> <span class="n">Sampler</span>
@@ -204,8 +205,8 @@
 </pre></div>
 </div>
 <p>The fitted image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image_fit</span></code> and image of bright stars is saved as <code class="docutils literal notranslate"><span class="pre">sampler.image_stars</span></code>. The original image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image</span></code>.</p>
-</div>
-<div class="section" id="apply-subtraction-on-image">
+</section>
+<section id="apply-subtraction-on-image">
 <h2>4. Apply Subtraction on Image<a class="headerlink" href="#apply-subtraction-on-image" title="Permalink to this headline">¶</a></h2>
 <p>The readed PSF can be applied on a broader region of the image and create an image of bright stars with the fitted model. For example, we would like to use our fitted PSF above to subtract the bright stars in a broader region in the original NGC3432 image. To do so we first read the Image into an <code class="docutils literal notranslate"><span class="pre">Image</span></code> class:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.image</span> <span class="kn">import</span> <span class="n">Image</span>
@@ -238,8 +239,8 @@
 </pre></div>
 </div>
 <img alt="_images/subtract_stars_by_psf.png" class="align-center" src="_images/subtract_stars_by_psf.png" />
-</div>
-</div>
+</section>
+</section>
 
 
           </div>
@@ -308,7 +309,7 @@
       &copy;2020, Q. Liu.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.0.2</a>
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
       
       |

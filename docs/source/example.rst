@@ -44,15 +44,3 @@ This example illustrates fitting multiple regions in an image. The data is the c
 	:align: center
 
 
-
-M44
----
-
-.. image:: images/M44_panoram.png
-	:scale: 50
-	:align: center
-
-.. image:: images/M44_example.png
-	:align: center
-
-

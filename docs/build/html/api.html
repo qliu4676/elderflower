@@ -1,17 +1,18 @@
 
 <!DOCTYPE html>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
     <title>API reference &#8212; elderflower 0.1 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
     <script src="_static/jquery.js"></script>
     <script src="_static/underscore.js"></script>
     <script src="_static/doctools.js"></script>
-    <script src="_static/language_data.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="prev" title="Configuration" href="config.html" />
@@ -31,12 +32,12 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="api-reference">
+  <section id="api-reference">
 <h1>API reference<a class="headerlink" href="#api-reference" title="Permalink to this headline">¶</a></h1>
 <p><code class="docutils literal notranslate"><span class="pre">elderflower.task</span></code></p>
-<dl class="function">
-<dt id="elderflower.task.Run_Detection">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_Detection</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">threshold=5</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_path=None</em>, <em class="sig-param">executable='/opt/local/bin/source-extractor'</em>, <em class="sig-param">ZP_keyname='REFZP'</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">ref_cat='APASSref.cat'</em>, <em class="sig-param">apass_dir='~/Data/apass/'</em>, <em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_Detection" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="elderflower.task.Run_Detection">
+<span class="sig-prename descclassname"><span class="pre">elderflower.task.</span></span><span class="sig-name descname"><span class="pre">Run_Detection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hdu_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obj_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/opt/local/bin/source-extractor'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ZP_keyname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'REFZP'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ZP</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref_cat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'APASSref.cat'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">apass_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'~/Data/apass/'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_Detection" title="Permalink to this definition">¶</a></dt>
 <dd><dl class="simple">
 <dt>Run a first-step source detection with SExtractor. This step generates a SExtractor catalog</dt><dd><p>and segementation map for the cross-match and measurement in Match_Mask_Measure.</p>
 </dd>
@@ -83,9 +84,9 @@ overwritten by passing them as kwargs, e.g. (note SExtractor keywords are in cap
 <p>will override threshold.</p>
 </dd></dl>
 
-<dl class="function">
-<dt id="elderflower.task.Match_Mask_Measure">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Match_Mask_Measure</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">bounds_list</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">pixel_scale=2.5</em>, <em class="sig-param">ZP=None</em>, <em class="sig-param">bkg=None</em>, <em class="sig-param">field_pad=50</em>, <em class="sig-param">sep=2.5</em>, <em class="sig-param">r_scale=12</em>, <em class="sig-param">mag_limit=15</em>, <em class="sig-param">mag_saturate=13</em>, <em class="sig-param">draw=True</em>, <em class="sig-param">save=True</em>, <em class="sig-param">use_PS1_DR2=False</em>, <em class="sig-param">work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Match_Mask_Measure" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="elderflower.task.Match_Mask_Measure">
+<span class="sig-prename descclassname"><span class="pre">elderflower.task.</span></span><span class="sig-name descname"><span class="pre">Match_Mask_Measure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hdu_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obj_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixel_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ZP</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bkg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_pad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">12</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mag_limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mag_saturate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">13</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">draw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_PS1_DR2</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Match_Mask_Measure" title="Permalink to this definition">¶</a></dt>
 <dd><p>Generate a series of files as preparations for the fitting.</p>
 <p>The function completes by the following steps:
 1) Identify bright extended sources empirically and mask them.
@@ -130,9 +131,9 @@ could easily fail if a field is too large (&gt; 1 deg^2)</p></li>
 </dl>
 </dd></dl>
 
-<dl class="function">
-<dt id="elderflower.task.Run_PSF_Fitting">
-<code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">Run_PSF_Fitting</code><span class="sig-paren">(</span><em class="sig-param">hdu_path, bounds_list, obj_name, band, pixel_scale=2.5, ZP=None, bkg=None, G_eff=None, pad=50, r_scale=12, mag_limit=15, mag_threshold=[13.0, 11], mask_type='aper', mask_obj=None, wid_strip=24, n_strip=48, SB_threshold=24.5, resampling_factor=1, n_spline=3, r_core=24, r_out=None, cutoff=True, n_cutoff=4, theta_cutoff=1200, n0=None, fit_n0=True, fit_sigma=True, fit_frac=False, leg2d=False, draw_real=True, brightest_only=False, parallel=True, n_cpu=None, nlive_init=None, sample_method='auto', print_progress=True, draw=True, save=True, stop=False, use_PS1_DR2=False, work_dir='./'</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="elderflower.task.Run_PSF_Fitting">
+<span class="sig-prename descclassname"><span class="pre">elderflower.task.</span></span><span class="sig-name descname"><span class="pre">Run_PSF_Fitting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hdu_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obj_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixel_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ZP</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bkg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">G_eff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">12</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mag_limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mag_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[13.0,</span> <span class="pre">11]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'aper'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_obj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wid_strip</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">24</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_strip</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">48</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">SB_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">24.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resampling_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_spline</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_core</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">24</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_cutoff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_cutoff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_n0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">leg2d</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">draw_real</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">brightest_only</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parallel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_cpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nlive_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">draw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_PS1_DR2</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.Run_PSF_Fitting" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the wide-angle PSF fitting.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -209,16 +210,16 @@ if a field is too large (&gt; 1 deg^2)</p></li>
 </dl>
 </dd></dl>
 
-<dl class="class">
-<dt id="elderflower.task.berry">
-<em class="property">class </em><code class="sig-prename descclassname">elderflower.task.</code><code class="sig-name descname">berry</code><span class="sig-paren">(</span><em class="sig-param">hdu_path</em>, <em class="sig-param">bounds_list</em>, <em class="sig-param">obj_name</em>, <em class="sig-param">band</em>, <em class="sig-param">work_dir='./'</em>, <em class="sig-param">config_file=None</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry" title="Permalink to this definition">¶</a></dt>
+<dl class="py class">
+<dt class="sig sig-object py" id="elderflower.task.berry">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">elderflower.task.</span></span><span class="sig-name descname"><span class="pre">berry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hdu_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obj_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'./'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry" title="Permalink to this definition">¶</a></dt>
 <dd><p>Fruit of elderflower.
 A class wrapper for running the package.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>hdu_path</strong> (<em>str</em>) – path of hdu data</p></li>
-<li><p><strong>bounds_list</strong> (<em>list</em><em> [</em><em>[</em><em>X min</em><em>, </em><em>Y min</em><em>, </em><em>X max</em><em>, </em><em>Y max</em><em>]</em><em>,</em><em>[</em><em>..</em><em>]</em><em>,</em><em>..</em><em>]</em>) – list of boundaries of regions to be fit (Nx4)</p></li>
+<li><p><strong>bounds_list</strong> (<em>list</em><em> [</em><em>[</em><em>X min</em><em>, </em><em>Y min</em><em>, </em><em>X max</em><em>, </em><em>Y max</em><em>]</em><em>,</em><em>[</em><em>...</em><em>]</em><em>,</em><em>...</em><em>]</em>) – list of boundaries of regions to be fit (Nx4)</p></li>
 <li><p><strong>obj_name</strong> (<em>str</em>) – object name</p></li>
 <li><p><strong>band</strong> (<em>str</em>) – filter name</p></li>
 <li><p><strong>work_dir</strong> (<em>str</em><em>, </em><em>optional</em><em>, </em><em>default current directory</em>) – Full Path of directory for saving</p></li>
@@ -238,27 +239,27 @@ If None, use the default configuration file.</p></li>
 <p>elder.run()</p>
 </dd>
 </dl>
-<dl class="method">
-<dt id="elderflower.task.berry.detection">
-<code class="sig-name descname">detection</code><span class="sig-paren">(</span><em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.detection" title="Permalink to this definition">¶</a></dt>
+<dl class="py method">
+<dt class="sig sig-object py" id="elderflower.task.berry.detection">
+<span class="sig-name descname"><span class="pre">detection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.detection" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the source detection.</p>
 </dd></dl>
 
-<dl class="method">
-<dt id="elderflower.task.berry.parameters">
-<em class="property">property </em><code class="sig-name descname">parameters</code><a class="headerlink" href="#elderflower.task.berry.parameters" title="Permalink to this definition">¶</a></dt>
+<dl class="py property">
+<dt class="sig sig-object py" id="elderflower.task.berry.parameters">
+<em class="property"><span class="pre">property</span> </em><span class="sig-name descname"><span class="pre">parameters</span></span><a class="headerlink" href="#elderflower.task.berry.parameters" title="Permalink to this definition">¶</a></dt>
 <dd><p>Keyword parameter list in the configuration file</p>
 </dd></dl>
 
-<dl class="method">
-<dt id="elderflower.task.berry.run">
-<code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.run" title="Permalink to this definition">¶</a></dt>
+<dl class="py method">
+<dt class="sig sig-object py" id="elderflower.task.berry.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#elderflower.task.berry.run" title="Permalink to this definition">¶</a></dt>
 <dd><p>Run the task (Match_Mask_Measure + Run_PSF_Fitting).</p>
 </dd></dl>
 
 </dd></dl>
 
-</div>
+</section>
 
 
           </div>
@@ -320,7 +321,7 @@ If None, use the default configuration file.</p></li>
       &copy;2020, Q. Liu.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.0</a>
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.0.2</a>
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
       
       |
