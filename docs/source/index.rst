@@ -6,6 +6,12 @@
 Welcome to elderflower's documentation!
 =======================================
 
+
+.. image:: images/elderflower.png
+	:align: center
+	:scale: 20
+
+
 Introduction
 ------------
 
@@ -22,6 +28,19 @@ Introduction
    config.rst
    api.rst
 
+
+Why called 'elderflower'?
+-------------------------
+Well, reason #1 -- I am an elderflower lover (also a lover of Fanta Shokata)! 
+
+For another, check the image below which displays the open cluster M44 taken by the Dragonfly telescope. Look how similar it is to the beautiful picture of elderflower above!
+
+
+.. image:: images/M44-1229.png
+	:align: center
+	:scale: 80
+
+The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness images.
 
 
 Getting Started
