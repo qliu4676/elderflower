@@ -9,24 +9,23 @@ from functools import partial
 from astropy.io import fits
 from astropy.table import Table
 
-from .io import (find_keyword_header, check_save_path, get_SExtractor_path,
-                 default_SE_config, default_SE_conv, default_SE_nnw)
+from .io import find_keyword_header, check_save_path, get_SExtractor_path
+from .detection import default_SE_config, default_conv, default_nnw
 from .image import DF_pixel_scale
 
 
-SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
-             'MU_MAX','CLASS_STAR','ELLIPTICITY']
-SE_config_path = default_SE_config
-SE_executable = get_SExtractor_path()
-
-
-def Run_Detection(hdu_path, obj_name, band,
-                  threshold=5, work_dir='./',
+def Run_Detection(hdu_path,
+                  obj_name,
+                  band,
+                  threshold=5,
+                  work_dir='./',
                   config_path=None,
-                  executable=SE_executable,
-                  ZP_keyname='REFZP', ZP=None,
+                  executable=None,
+                  ZP_keyname='REFZP',
+                  ZP=None,
                   ref_cat='APASSref.cat',
-                  apass_dir='~/Data/apass/', **kwargs):
+                  apass_dir='~/Data/apass/',
+                  **kwargs):
                   
     """
     
@@ -55,9 +54,10 @@ def Run_Detection(hdu_path, obj_name, band,
     config_path : str, optional, None
         Full path of configuration file of running SExtractor.
         By default it uses the one stored in configs/
-    executable : str, optional, SE_executable
+    executable : str, optional, None
         Full path of the SExtractor executable. If SExtractor is installed this can be retrieved
         by typing '$which sex'  or  '$which source-extractor' in the shell.
+        By default it will searched with an attempt.
     ZP_keyname : str, optional, default REFZP
         Keyword names of zero point in the header.
         If not found, a value can be passed by ZP.
@@ -89,6 +89,7 @@ def Run_Detection(hdu_path, obj_name, band,
     """
                 
     from dfreduce.detection import sextractor
+    from .detection import run as run_sextractor
     
     print(f"Run SExtractor on {hdu_path}...")
     check_save_path(work_dir, make_new=False, verbose=False)
@@ -100,7 +101,11 @@ def Run_Detection(hdu_path, obj_name, band,
     
     header = fits.getheader(hdu_path)
     
-    if config_path is None: config_path = SE_config_path
+    if config_path is None: config_path = default_SE_config
+    if executable is None: executable = get_SExtractor_path()
+    
+    SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
+                 'FWHM_IMAGE','MU_MAX','CLASS_STAR','ELLIPTICITY']
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
@@ -119,14 +124,14 @@ def Run_Detection(hdu_path, obj_name, band,
                     header[cd] = header['CDELT{0}'.format(axis)]
                     
             # Run sextractor with free zero-point
-            SE_catalog = sextractor.run(hdu_path,
+            SE_catalog = run_sextractor(hdu_path,
                                         extra_params=SE_params,
                                         config_path=config_path,
                                         catalog_path=catname,
                                         executable=executable,
                                         DETECT_THRESH=10, ANALYSIS_THRESH=10,
-                                        FILTER_NAME=default_SE_conv,
-                                        STARNNW_NAME=default_SE_nnw)
+                                        FILTER_NAME=default_conv,
+                                        STARNNW_NAME=default_nnw)
                                         
             # Load (APASS) reference catalog
             ref_cat = os.path.join(work_dir, "{0}.{1}".format(*os.path.basename(ref_cat).rsplit('.', 1)))
@@ -160,12 +165,12 @@ def Run_Detection(hdu_path, obj_name, band,
     SE_key = kwargs.keys()
     for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
         if THRE not in SE_key: kwargs[THRE] = threshold
-    if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_SE_conv
-    if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_SE_nnw
+    if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_conv
+    if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_nnw
     for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
         if key in SE_key: SE_key.pop(key, None); print(f'WARNING: {NAME} are reserved.')
    
-    SE_catalog = sextractor.run(hdu_path,
+    SE_catalog = run_sextractor(hdu_path,
                                 extra_params=SE_params,
                                 config_path=config_path,
                                 catalog_path=catname,
@@ -324,9 +329,10 @@ def Match_Mask_Measure(hdu_path,
     
     import astropy.units as u
     from .utils import (identify_extended_source,
-                        cross_match_PS1,
                         calculate_color_term,
+                        add_supplementary_atlas,
                         add_supplementary_SE_star)
+    from .crossmatch import cross_match_PS1
     
     # Identify bright extended sources and enlarge their mask
     SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
@@ -407,8 +413,8 @@ def Match_Mask_Measure(hdu_path,
         # Crop the star catalog and matched SE catalog
         catalog_star_patch = crop_catalog(catalog_star, catalog_bounds,
                                           sortby=mag_name,
-                                          keys=("X_IMAGE"+'_PS',
-                                                "Y_IMAGE"+'_PS'))
+                                          keys=("X_CATALOG",
+                                                "Y_CATALOG"))
         
         tab_target_patch = crop_catalog(tab_target, catalog_bounds,
                                         sortby=mag_name_cat,
@@ -419,7 +425,6 @@ def Match_Mask_Measure(hdu_path,
                                          bounds,
                                          estimate_radius,
                                          mag_name=mag_name,
-                                         cat_name='PS',
                                          obj_name=obj_name,
                                          band=band,
                                          ext_cat=ext_cat,
@@ -458,7 +463,6 @@ def Run_PSF_Fitting(hdu_path,
                     bkg=None,
                     G_eff=None,
                     pad=50,
-                    factor=1,
                     r_scale=12,
                     mag_limit=15,
                     mag_threshold=[13.,11],
@@ -467,6 +471,7 @@ def Run_PSF_Fitting(hdu_path,
                     wid_strip=24,
                     n_strip=48,
                     SB_threshold=24.5,
+                    resampling_factor=1,
                     n_spline=3,
                     r_core=24,
                     r_out=None,
@@ -621,14 +626,14 @@ def Run_PSF_Fitting(hdu_path,
     from .utils import process_resampling
     
     hdu_path, bounds_list, obj_name, pixel_scale, r_scale  = \
-                     process_resampling(hdu_path, bounds_list,
-                                        obj_name, band,
-                                        pixel_scale=pixel_scale,
-                                        mag_limit=mag_limit,
-                                        r_scale=r_scale,
-                                        dir_measure=dir_measure,
-                                        work_dir=work_dir,
-                                        factor=factor)
+                                     process_resampling(hdu_path, bounds_list,
+                                                        obj_name, band,
+                                                        pixel_scale=pixel_scale,
+                                                        mag_limit=mag_limit,
+                                                        r_scale=r_scale,
+                                                        dir_measure=dir_measure,
+                                                        work_dir=work_dir,
+                                                        factor=resampling_factor)
     
     ############################################
     # Read Image and Table
@@ -939,8 +944,8 @@ class berry:
         self.ZP = Run_Detection(self.hdu_path,
                                 self.obj_name, self.band,
                                 work_dir=self.work_dir,
-                                FILTER_NAME=default_SE_conv,
-                                STARNNW_NAME=default_SE_nnw, **kwargs)
+                                FILTER_NAME=default_conv,
+                                STARNNW_NAME=default_nnw, **kwargs)
         
     def run(self, **kwargs):
         """ Run the task (Match_Mask_Measure + Run_PSF_Fitting). """

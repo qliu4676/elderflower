@@ -40,7 +40,7 @@ For another, check the image below which displays the open cluster M44 taken by 
 	:class: no-scaled-link
 	:scale: 80%
 
-The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness level.
+The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness levels.
 
 
 Getting Started

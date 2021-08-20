@@ -3,6 +3,7 @@ import re
 import sys
 import yaml
 import string
+import shutil
 import subprocess
 import numpy as np
 from datetime import datetime
@@ -14,16 +15,13 @@ except ImportError:
     import pickle
 from pickle import PicklingError
 
-
 package_dir = os.path.dirname(__file__)
 test_dir = os.path.normpath(os.path.join(package_dir, '../tests'))
+script_dir = os.path.normpath(os.path.join(package_dir, '../scripts'))
 config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
 
-# Default file path
+# Default configuration path
 default_config = os.path.join(config_dir, './config.yml')
-default_SE_config = os.path.join(config_dir, './default.sex')
-default_SE_conv = os.path.join(config_dir, './default.conv')
-default_SE_nnw = os.path.join(config_dir, './default.nnw')
 
 def check_save_path(dir_name, make_new=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
@@ -31,13 +29,18 @@ def check_save_path(dir_name, make_new=True, verbose=True):
     
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
-        
-    elif make_new:
+    
+    else:
         if len(os.listdir(dir_name)) != 0:
-            while os.path.exists(dir_name):
-                dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
-            os.makedirs(dir_name)
+            if make_new:
+                if verbose: print("'%s' already existed. Overwrite files."%dir_name)
+                shutil.rmtree(dir_name)
+            else:
+                while os.path.exists(dir_name):
+                    dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
             
+            os.makedirs(dir_name)
+        
     if verbose: print("Results will be saved in %s\n"%dir_name)
 
 

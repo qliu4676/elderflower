@@ -310,23 +310,26 @@ class PSF_Model:
 
             if self.aureole_model == "power":
                 cal_ext_light = partial(calculate_external_light_pow,
-                                       n0=self.n0, theta0=self.theta_0_pix,
-                                       pos_source=pos_source, pos_eval=pos_eval)
+                                        n0=self.n0, theta0=self.theta_0_pix,
+                                        pos_source=pos_source, pos_eval=pos_eval)
             elif self.aureole_model == "multi-power":
                 cal_ext_light = partial(calculate_external_light_mpow,
                                         n_s=self.n_s, theta_s_pix=self.theta_s_pix,
                                         pos_source=pos_source, pos_eval=pos_eval)
             # Loop the subtraction    
             r_scale = stars.r_scale
-            n_verybright = stars.n_verybright
+            verybright = stars.verybright[stars.bright]
+            
             for i in range(n_iter):
-                z_norm_verybright = z_norm_verybright0 - I_ext[:n_verybright]
+                z_norm_verybright = z_norm_verybright0 - I_ext[verybright]
+                z_norm_verybright[z_norm_verybright<0] = 0
+                
                 I0_verybright = self.I2I0(z_norm_verybright, r=r_scale)
                 I_ext = cal_ext_light(I0_source=I0_verybright)
             
         return I_ext
     
-    def I2Flux(self, I, r=12):
+    def I2Flux(self, I, r):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "moffat":
@@ -338,7 +341,7 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             return I2Flux_mpow(self.frac, self.n_s, self.theta_s_pix, r, I=I)
         
-    def Flux2I(self, Flux, r=12):
+    def Flux2I(self, Flux, r):
         """ Convert aureole I(r) at r to total flux. r in pixel """
         
         if self.aureole_model == "moffat":
@@ -350,15 +353,15 @@ class PSF_Model:
         elif self.aureole_model == "multi-power":
             return Flux2I_mpow(self.frac, self.n_s, self.theta_s_pix, r,  Flux=Flux)
         
-    def SB2Flux(self, SB, BKG, ZP, r=12):
+    def SB2Flux(self, SB, BKG, ZP, r):
         """ Convert suface brightness SB at r to total flux, given background value and ZP. """
         # Intensity = I + BKG
         I = SB2Intensity(SB, BKG, ZP, self.pixel_scale) - BKG
-        return self.I2Flux(I, r=r)
+        return self.I2Flux(I, r)
     
-    def Flux2SB(self, Flux, BKG, ZP, r=12):
+    def Flux2SB(self, Flux, BKG, ZP, r):
         """ Convert total flux to suface brightness SB at r, given background value and ZP. """
-        I = self.Flux2I(Flux, r=r)
+        I = self.Flux2I(Flux, r)
         return Intensity2SB(I+ BKG, BKG, ZP, self.pixel_scale)
     
     @property
@@ -525,7 +528,7 @@ class Stars:
                    z_threshold=[10, 300], r_scale=12, 
                    verbose=False):
         """ Star object built from intensity at r_scale instead of flux """
-        Flux = psf.I2Flux(z_norm, r_scale)
+        Flux = psf.I2Flux(z_norm, r=r_scale)
         Flux_threshold = psf.I2Flux(z_threshold, r=r_scale)
         
         return cls(star_pos, Flux, Flux_threshold,
@@ -1068,18 +1071,19 @@ def I02I_mpow(n_s, theta_s_pix, r, I0=1):
 
 
 def calculate_external_light_pow(n0, theta0, pos_source, pos_eval, I0_source):
-    # Calculate light produced by source (I0, pos_source) at pos_eval. 
+    """ Calculate light produced by source (I0, pos_source) at pos_eval. """
     r_s = distance.cdist(pos_source,  pos_eval)
     
     I0_s = np.repeat(I0_source[:, np.newaxis], r_s.shape[-1], axis=1) 
     
+    r_s += 1e-3 # shift to avoid zero division
     I_s = I0_s / (r_s/theta0)**n0
-    I_s[(r_s==0)] = 0
+    I_s[(r_s==1e-3)] = 0
     
     return I_s.sum(axis=0)
 
 def calculate_external_light_mpow(n_s, theta_s_pix, pos_source, pos_eval, I0_source):
-    # Calculate light produced by source (I0_source, pos_source) at pos_eval. 
+    """ Calculate light produced by source (I0_source, pos_source) at pos_eval. """
     r_s = distance.cdist(pos_source, pos_eval)
     r_inds = np.digitize(r_s, theta_s_pix, right=True) - 1
     
@@ -1087,13 +1091,14 @@ def calculate_external_light_mpow(n_s, theta_s_pix, pos_source, pos_eval, I0_sou
     
     I0_s = np.repeat(I0_source[:, np.newaxis], r_s.shape[-1], axis=1) 
     
-    # I(r) = I0 * (theta0/theta1)^(n0) * (theta1/theta2)^(n1) *...* (theta_{k}/r)^(nk)
+    # Eq: I(r) = I0 * (theta0/theta1)^(n0) * (theta1/theta2)^(n1) *...* (theta_{k}/r)^(nk)
+    r_s += 1e-3 # shift to avoid zero division
     I_s = I0_s * theta_s_pix[0]**n_s[0] / r_s**(n_s[r_inds])
     factors = np.array([np.prod([theta_s_pix[j+1]**(n_s[j+1]-n_s[j])
                                  for j in range(i)]) for i in r_inds_uni])
     I_s *= factors[r_inds_inv].reshape(len(I0_source),-1)
     
-    I_s[(r_s==0)] = 0
+    I_s[(r_s==1e-3)] = 0
     
     return I_s.sum(axis=0)
     
@@ -1553,8 +1558,8 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         psf_c = psf.psf_core
 
         # Update stellar flux:
-        z_norm[z_norm<=0] = z_norm[z_norm>0].min()/10 # problematic negatives
-        Flux = psf.I2Flux(z_norm, r_scale)
+        z_norm[z_norm<=0] = z_norm[z_norm>0].min() # problematic negatives
+        Flux = psf.I2Flux(z_norm, r=r_scale)
         stars.update_Flux(Flux) 
         
     # Setup the canvas
@@ -1647,26 +1652,31 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
 
 def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
-                       brightest_only=False, draw_real=True, leg2d=False):
+                       brightest_only=False, draw_real=True,
+                       subtract_external=True, leg2d=False, verbose=False):
     """ Generate the fitted bright stars, the fitted background and
         a noise images (for display only). """
     
     nY, nX = image_shape
     yy, xx = np.mgrid[:nY, :nX]
     
+    stars_ = stars.copy()
+    
     if norm=='brightness':
         draw_func = generate_image_by_znorm
     elif norm=='flux':
         draw_func = generate_image_by_flux
         
-    if stars.n_verybright==0: subtract_external = False
-    else: subtract_external = True
+    if stars_.n_verybright==0:
+        subtract_external = False
+    
+    pixel_scale = psf_fit.pixel_scale
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        image_stars = draw_func(psf_fit, stars, xx, yy,
-                               psf_range=[900, max(image_shape)],
-                               psf_scale=psf_fit.pixel_scale,
+        image_stars = draw_func(psf_fit, stars_, xx, yy,
+                               psf_range=[900, max(image_shape)*pixel_scale],
+                               psf_scale=pixel_scale,
                                brightest_only=brightest_only,
                                subtract_external=subtract_external,
                                draw_real=draw_real)
@@ -1675,7 +1685,8 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
         noise_image = image_stars_noise - image_stars
         bkg_image = psf_fit.bkg * np.ones((nY, nX))
-        print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+        if verbose:
+            print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = None
    

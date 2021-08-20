@@ -151,11 +151,27 @@ def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
     
     return bkg, std
     
+def background_annulus(cen, data, mask,
+                       r_in=240., r_out=360, draw=True,
+                       **plot_kw):
+    """ Extract local background value using annulus """
     
+    annulus_aperture = CircularAnnulus(cen, r_in=r_in, r_out=r_out)
+    annulus_masks = annulus_aperture.to_mask(method='center')
+    annulus_data = annulus_masks.multiply(np.ma.array(data, mask=mask))
+    annulus_data_1d = annulus_data[annulus_masks.data > 0]
+
+    _, median_sigclip, _ = sigma_clipped_stats(annulus_data_1d)
+    
+    if draw:
+        plt.imshow(annulus_data, **plot_kw)
+        plt.show()
+        
+    return median_sigclip
 
 def background_extraction(field, mask=None, return_rms=True,
-                  b_size=64, f_size=3, n_iter=5, **kwargs):
-    """ Extract background using SE estimator with mask """
+                          b_size=64, f_size=3, n_iter=5, **kwargs):
+    """ Extract background & rms image using SE estimator with mask """
     from photutils import Background2D, SExtractorBackground
     
     try:
@@ -350,6 +366,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         mask =  np.zeros_like(img, dtype=bool)
     if back is None:     
         back = np.ones_like(img) * sky_mean
+    bkg_val = np.median(back)
     if cen is None:
         cen = (img.shape[1]-1)/2., (img.shape[0]-1)/2.
         
@@ -360,9 +377,9 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     r_core = np.int(3 * seeing/pixel_scale) # core radius in pix
 
     # Decide the outermost radial bin r_max before going into the background
-    bkg_cumsum = np.arange(1, len(z)+1, 1) * np.median(back)
+    bkg_cumsum = np.arange(1, len(z)+1, 1) * bkg_val
     z_diff =  abs(z.cumsum() - bkg_cumsum)
-    n_pix_max = len(z) - np.argmin(abs(z_diff - 0.0001 * z_diff[-1]))
+    n_pix_max = len(z) - np.argmin(abs(z_diff - 0.00005 * z_diff[-1]))
     r_max = np.sqrt(n_pix_max/np.pi)
     r_max = np.min([img.shape[0]//2, r_max])
     
@@ -402,26 +419,30 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     # Calculate binned 1d profile
     r_rbin = np.array([])
     z_rbin = np.array([])
+    zerr_rbin = np.array([])
     zstd_rbin = np.array([])
     for k, b in enumerate(bins[:-1]):
         in_bin = (r>bins[k])&(r<bins[k+1])
         
         z_clip = clip(z[~np.isnan(z) & in_bin])
+        if np.ma.is_masked(z_clip):
+            z_clip = z_clip.compressed()
         if len(z_clip)==0:
             continue
 
         zb = np.mean(z_clip)
-        zstd_b = np.std(z_clip)
-        
+        zstd_b = np.std(z_clip) if len(z_clip) > 10 else 0
+        zerr_b = np.sqrt((zstd_b**2 + sky_std**2) / (len(z_clip)))
+       
         z_rbin = np.append(z_rbin, zb)
+        zerr_rbin = np.append(zerr_rbin, zerr_b)
         zstd_rbin = np.append(zstd_rbin, zstd_b)
         r_rbin = np.append(r_rbin, np.mean(r[in_bin]))
         
-        
-    logzerr_rbin = 0.434 * abs( zstd_rbin / (z_rbin-sky_mean))
+    logzerr_rbin = 0.434 * abs( zerr_rbin / (z_rbin-sky_mean))
     
     if yunit == "SB":
-        I_rbin = Intensity2SB(z_rbin, BKG=np.median(back),
+        I_rbin = Intensity2SB(z_rbin, BKG=bkg_val,
                               ZP=ZP, pixel_scale=pixel_scale) + I_shift
     
     if plot:
@@ -447,20 +468,21 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                          lw=lw, ms=markersize, color=color,
                          alpha=alpha, zorder=3, label=label)
             if scatter:
-                I = Intensity2SB(z, BKG=np.median(back),
+                I = Intensity2SB(z, BKG=bkg_val,
                                  ZP=ZP, pixel_scale=pixel_scale) + I_shift
                 
             if errorbar:
-                Ierr_rbin_up = I_rbin - Intensity2SB(z_rbin, BKG=np.median(back)-sky_std,
-                                 ZP=ZP, pixel_scale=pixel_scale)  - I_shift
-                Ierr_rbin_lo = Intensity2SB(z_rbin, BKG=np.median(back)+sky_std,
-                                ZP=ZP, pixel_scale=pixel_scale) - I_rbin  + I_shift
+                Ierr_rbin_up = I_rbin - Intensity2SB(z_rbin+zerr_rbin, BKG=bkg_val,
+                                 ZP=ZP, pixel_scale=pixel_scale) - I_shift
+                Ierr_rbin_lo = Intensity2SB(z_rbin-zerr_rbin, BKG=bkg_val,
+                                ZP=ZP, pixel_scale=pixel_scale) - I_rbin + I_shift
                 lolims = np.isnan(Ierr_rbin_lo)
                 uplims = np.isnan(Ierr_rbin_up)
-                Ierr_rbin_lo[lolims] = 4
-                Ierr_rbin_up[uplims] = 4
+                Ierr_rbin_lo[lolims] = 99
+                Ierr_rbin_up[uplims] = np.nan
                 plt.errorbar(r_rbin, I_rbin, yerr=[Ierr_rbin_up, Ierr_rbin_lo],
                              fmt='', ecolor=p[0].get_color(), capsize=2, alpha=0.5)
+                #breakpoint()
                 
             plt.ylabel("Surface Brightness [mag/arcsec$^2$]")        
             plt.gca().invert_yaxis()
@@ -519,14 +541,14 @@ def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
     star_psf = (1-frac) * psf_c + frac * psf_e
 
     # Galsim 2D model averaged in 1D
-    if plot: psf.plot1D()
+    if plot: psf.plot1D(xunit='arcsec')
 
     # 2D DF PSF
     PSF_DF_aureole = psf.draw_aureole2D_in_real([cen], Flux=np.array([frac]))[0]
     PSF_DF_core = psf.draw_core2D_in_real([cen], Flux=np.array([1-frac]))[0]
     D = PSF_DF_core(xx,yy) + PSF_DF_aureole(xx,yy)
     D = D/D.sum()
-    return D
+    return D, psf
 
 def make_psf_1D(n_s, theta_s, ZP,
                 frac=0.3, beta=6.7, fwhm=6.1,
@@ -538,24 +560,25 @@ def make_psf_1D(n_s, theta_s, ZP,
     Amp = 10**((mag-ZP)/-2.5)
     if plot:
         print('Scaled magnitude = ', mag)
-        print('Scaled amplitude = ', Amp)
         
     cen = ((size-1)/2., (size-1)/2.)
-    D = make_psf_2D(n_s, theta_s, frac, beta, fwhm,
-                    pixel_scale=pixel_scale, size=size, plot=plot)
+    D, psf = make_psf_2D(n_s, theta_s, frac, beta, fwhm,
+                         pixel_scale=pixel_scale, size=size, plot=False)
     
     r, I, _ = cal_profile_1d(D*Amp, cen=cen, mock=True,
                               ZP=ZP, sky_mean=0, sky_std=1e-9,
                               dr=dr, seeing=seeing,
                               pixel_scale=pixel_scale,
                               xunit="arcsec", yunit="SB",
-                              color="lightgreen", label='DF G band',
-                              lw=4, alpha=0.9, plot=plot,
+                              color="lightgreen",
+                              lw=4, alpha=0.9, plot=True,
                               scatter=False, core_undersample=True)
     if plot:
-        plt.legend()
-        plt.xlim(1,8e2)
+        plt.xlim(2, max(1e3, np.max(2*theta_s)))
         plt.ylim(31,10)
+        for pos in theta_s:
+            plt.axvline(pos, ls="--", color="k", alpha=0.3, zorder=0)
+
 
     return r, I, D
 
@@ -638,7 +661,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
         back, back_rms = background_extraction(img_thumb, b_size=b_size)
     else:
         back, back_rms = (np.median(img_thumb[~mask_thumb])*np.ones_like(img_thumb), 
-                            mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
+                          mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
     if display_bg:
         # show background subtraction
         from .plotting import display_background_sub
@@ -666,7 +689,7 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     if display:
         med_back = np.median(back)
         fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-        ax1.imshow(img_thumb, vmin=med_back-1, vmax=10000, norm=LogNorm(), cmap="viridis")
+        ax1.imshow(img_thumb, norm=LogNorm(vmin=med_back-1, vmax=10000), cmap="viridis")
         ax1.set_title("star", fontsize=16)
 
         ax2.imshow(segm_deblend, cmap=segm_deblend.make_cmap(random_state=12345))
@@ -674,8 +697,9 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
 
         img_thumb_ma = img_thumb.copy()
         img_thumb_ma[star_ma] = -1
-        ax3.imshow(img_thumb_ma, cmap="viridis", norm=LogNorm(),
-                   vmin=med_back-1, vmax=med_back+10*np.median(back_rms))
+        ax3.imshow(img_thumb_ma, cmap="viridis",
+                   norm=LogNorm(vmin=med_back-1,
+                                vmax=med_back+10*np.median(back_rms)))
         ax3.set_title("extracted star", fontsize=16)
         plt.tight_layout()
     
@@ -731,13 +755,14 @@ def compute_Rnorm(image, mask_field, cen,
     I_med, I_std = np.median(z), np.std(z)
     
     if display:
-        L = int(mask.shape[0])
+        L = min(100, int(mask.shape[0]))
         
         fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask[L//4:-L//4,L//4:-L//4], cmap="gray", alpha=0.7)
-        ax1.imshow(image[L//4:-L//4,L//4:-L//4], vmin=image.min(), vmax=I_med+50*I_std,
-                   cmap='viridis', norm=AsinhNorm(), alpha=0.7)
-        ax1.plot(cen[0]-L//4, cen[1]-L//4, 'r+', ms=10)
+        ax1.imshow(mask, cmap="gray", alpha=0.7)
+        ax1.imshow(mask_field, alpha=0.2)
+        ax1.imshow(image, cmap='viridis', alpha=0.7,
+                   norm=AsinhNorm(0.05, vmin=image.min(), vmax=I_med+50*I_std))
+        ax1.plot(cen[0], cen[1], 'r+', ms=10)
         
         ax2.hist(z,alpha=0.7)
         
@@ -752,14 +777,17 @@ def compute_Rnorm(image, mask_field, cen,
             plt.axvline(I, color='k', ls="--")
             plt.text(x_txt, 0.9, "%.1f"%I, color='orange',
                      ha='center', transform=ax2.transAxes)
-                     
+        
+        ax1.set_xlim(cen[0]-L//4, cen[0]+L//4)
+        ax1.set_ylim(cen[1]-L//4, cen[1]+L//4)
+        
         plt.show()
         
     return I_mean, I_med, I_std, 0
 
 
 def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=12, wid_ring=0.5, wid_cross=4,
+                        R=12, wid_ring=0.5, wid_cross=4, k_win=1,
                         return_full=False, display=False, verbose=True):
     """ Combining the above functions. Compute for all object in table_target.
         Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
@@ -774,11 +802,13 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
         
         # For very bright sources, use a broader window
         if mag_auto <= 11:
-            n_win = 40
-        elif 11 < mag_auto < 13:
-            n_win = 30
+            n_win = int(40 * k_win)
+        elif 11 < mag_auto < 13.5:
+            n_win = int(30 * k_win)
+        elif 13.5 < mag_auto < 15:
+            n_win = int(20 * k_win)
         else:
-            n_win = 20
+            n_win = int(10 * k_win)
             
         img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
                                          n_win=n_win, display_bg=False, display=False)
@@ -803,6 +833,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
 def measure_Rnorm_all(table, bounds,
                       wcs_data, image, seg_map=None, 
                       r_scale=12, mag_limit=15,
+                      enlarge_window=1,
                       width_ring_pix=0.5, width_cross_pix=4,
                       mag_name='rmag_PS', read=False,
                       obj_name="", save=True, dir_name='.',
@@ -820,6 +851,7 @@ def measure_Rnorm_all(table, bounds,
     
     seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
     r_scale : radius at which the flux scaling is measured (default: 12 pix)
+    enlarge_window : window enlargement for extraction (default: 1)
     width_ring_pix : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
     width_cross_pix : half-width of spike mask(default: 4 pix)
     mag_name : magnitude column name
@@ -851,14 +883,20 @@ def measure_Rnorm_all(table, bounds,
         
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            res_norm, res_thumb = compute_Rnorm_batch(tab, image, seg_map, wcs_data,
-                                                      R=r_scale, wid_ring=width_ring_pix,
+            res_norm, res_thumb = compute_Rnorm_batch(tab, image,
+                                                      seg_map, wcs_data,
+                                                      R=r_scale,
+                                                      wid_ring=width_ring_pix,
                                                       wid_cross=width_cross_pix,
-                                                      return_full=True, display=display, verbose=verbose)
+                                                      k_win=enlarge_window,
+                                                      return_full=True,
+                                                      display=display,
+                                                      verbose=verbose)
         
         
         keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', 'MU_MAX', mag_name] \
-                            + [name for name in tab.colnames if 'IMAGE' in name]
+                        + [name for name in tab.colnames
+                                if ('IMAGE' in name)|('CATALOG' in name)]
         for name in keep_columns:
             if name not in tab.colnames:
                 keep_columns.remove(name)
@@ -878,7 +916,7 @@ def measure_Rnorm_all(table, bounds,
             
     return table_norm, res_thumb
 
-### Resamling ###
+### Resampling ###
 
 def transform_rescale(val, scale=0.5):
     """ transform coordinates after resampling """
@@ -1001,7 +1039,7 @@ def process_resampling(fn, bounds, obj_name, band,
     
     if factor!=1:
         if verbose:
-            print('Resampling image by a factor of {0:.1g}...'.format(factor))
+            print('Resampling by a factor of {0:.1g}...'.format(factor))
         
         scale = 1/factor
         
@@ -1115,32 +1153,14 @@ def crop_image(data, bounds, wcs=None, draw=False, **kwargs):
     else:
         return cutout.data, cutout.wcs
 
-def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
-    """ Query catalog in Vizier database with the given catalog name,
-    search radius and column names. If coords is not given, look for fits header """
-    from astroquery.vizier import Vizier
-    from astropy import units as u
-    
-    # Prepare for quearyinig Vizier with filters up to infinitely many rows. By default, this is 50.
-    viz_filt = Vizier(columns=columns, column_filters=column_filters)
-    viz_filt.ROW_LIMIT = -1
-    
-    if coord==None:
-        RA, DEC = re.split(",", header['RADEC'])
-        coord = SkyCoord(RA+" "+DEC , unit=(u.hourangle, u.deg))
-
-    # Query!
-    result = viz_filt.query_region(coord, radius=radius, 
-                                   catalog=[catalog_name])
-    return result
-
 def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
     """ Transform the RA/DEC columns in the table into pixel coordinates given wcs"""
     coords = np.vstack([np.array(table[RA_key]), 
                         np.array(table[DE_key])]).T
     pos = wcs.wcs_world2pix(coords, origin)
-    table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name='X_IMAGE'+'_'+name)
-    table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name='Y_IMAGE'+'_'+name)
+    
+    table.add_column(Column(np.around(pos[:,0], 4)*u.pix), name="X_CATALOG")
+    table.add_column(Column(np.around(pos[:,1], 4)*u.pix), name="Y_CATALOG")
     table.add_column(Column(np.arange(len(table))+1, dtype=int), 
                      index=0, name="ID"+'_'+name)
     return table
@@ -1198,7 +1218,7 @@ def read_measurement_table(dir_name, bounds0,
     # stars fainter than magnitude limit (fixed as background), > 22 is ignored
     table_faint = table_catalog[(mag_catalog>=mag_limit) & (mag_catalog<22)]
     table_faint = crop_catalog(table_faint,
-                               keys=("X_IMAGE_PS", "Y_IMAGE_PS"),
+                               keys=("X_CATALOG", "Y_CATALOG"),
                                bounds=bounds)
     
     ## Read measurement for bright stars
@@ -1224,7 +1244,7 @@ def read_measurement_table(dir_name, bounds0,
 
 def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
                       table_norm, table_faint=None,
-                      r_scale=12, mag_threshold=[14,11],
+                      r_scale=12, mag_threshold=[13.5,12],
                       psf=None, keys='Imed', verbose=True, 
                       draw=True, save=False, save_dir='./'):
     """ Assign position and flux for faint and bright stars from tables. """
@@ -1232,23 +1252,21 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     from .modeling import Stars
 
     # Positions & Flux (estimate) of bright stars from measured norm
-    star_pos = np.vstack([table_norm['X_IMAGE_PS'],
-                         table_norm['Y_IMAGE_PS']]).T - pos_ref
+    star_pos = np.vstack([table_norm["X_CATALOG"],
+                          table_norm["Y_CATALOG"]]).T - pos_ref
                          
-#    star_pos = np.vstack([table_norm['X_IMAGE'],
-#                          table_norm['Y_IMAGE']]).T - pos_ref
-                           
     mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
     Flux = 10**((np.array(mag)-ZP)/(-2.5))
 
     # Estimate of brightness I at r_scale (I = Intensity - BKG) and flux
-    z_norm = table_norm['Imed'].data - sky_mean
-    z_norm[z_norm<=0] = z_norm[z_norm>0].min()
-
+    z_norm = table_norm['Imed'].data - table_norm['Isky'].data
+    z_norm[z_norm<=0] = min(1, z_norm[z_norm>0].min())
+    
     # Convert/printout thresholds
     Flux_threshold = 10**((np.array(mag_threshold) - ZP) / (-2.5))
+    
     if verbose:
-        print('Magnitude Thresholds:  {0}, {1} mag'.format(*mag_threshold))
+        print("Magnitude Thresholds:  {0}, {1} mag".format(*mag_threshold))
         print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
         try:
             SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
@@ -1271,8 +1289,8 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
             ma = np.isnan(table_faint['FLUX_AUTO_corr'])
 
         # Positions & Flux of faint stars from catalog
-        star_pos_faint = np.vstack([table_faint['X_IMAGE_PS'].data[~ma],
-                                    table_faint['Y_IMAGE_PS'].data[~ma]]).T - pos_ref
+        star_pos_faint = np.vstack([table_faint["X_CATALOG"].data[~ma],
+                                    table_faint["Y_CATALOG"].data[~ma]]).T - pos_ref
         Flux_faint = np.array(table_faint['FLUX_AUTO_corr'].data[~ma])
         
         # Combine two samples, make sure they do not overlap
@@ -1441,8 +1459,8 @@ def fit_n0(dir_measure, bounds,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
 
         if draw:
-            ax.text(6, 30, 'N = %d'%len(tab_fit))
-            ax.set_xlim(5.,5e2)
+#            ax.text(6, 30, 'N = %d'%len(tab_fit))
+            ax.set_xlim(5.,4e2)
             ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.axvspan(r1, r2, color='gold', alpha=0.1)
             ax.axvline(r0, ls='--',color='k', alpha=0.9, zorder=1)
@@ -1491,401 +1509,73 @@ def fit_n0(dir_measure, bounds,
     print('n0 = {:.4f}+/-{:.4f}'.format(n0, d_n0))
     
     return n0, d_n0
+    
+    
+## Add supplementary stars
 
+def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
+                            sep=3*u.arcsec, mag_saturate=13):
+    """ Add unmatched bright (saturated) stars using HLSP ATLAS catalog """
 
-def cross_match(wcs_data, SE_catalog, bounds, radius=None, 
-                pixel_scale=DF_pixel_scale, mag_limit=15, sep=3*u.arcsec,
-                clean_catalog=True, mag_name='rmag',
-                catalog={'Pan-STARRS': 'II/349/ps1'},
-                columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
-                                        'objID', 'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
-                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 23)}},
-                magnitude_name={'Pan-STARRS':['rmag','gmag']},
-                verbose=True):
-    """ 
-        Cross match SExtractor catalog with Vizier Online catalog.
+    if len(tab['MAG_AUTO_corr']<mag_saturate)<1:
+        return tab
         
-        'URAT': 'I/329/urat1'
-                magnitude_name: "rmag"
-                columns: ['RAJ2000', 'DEJ2000', 'mfa', 'gmag', 'e_gmag', 'rmag', 'e_rmag']
-                column_filters: {'mfa':'=1', 'rmag':'{0} .. {1}'.format(8, 18)}
-                
-        'USNO': 'I/252/out'
-                magnitude_name: "Rmag"
-                columns: ['RAJ2000', 'DEJ2000', 'Bmag', 'Rmag']
-                column_filters: {"Rmag":'{0} .. {1}'.format(5, 15)}
-                
-    """
-    from astropy.table import join, vstack
+    print("Add unmatched bright stars from HLSP ATLAS catalog.")
     
-    cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
-    coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
-    
-    if radius is None:
-        L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
-        radius = L * pixel_scale * u.arcsec
-        
-    print("Search", np.around(radius.to(u.deg), 3), "around:")
-    print(coord_cen)
-    
-    for j, (cat_name, table_name) in enumerate(catalog.items()):
-        # Query from Vizier
-        result = query_vizier(catalog_name=cat_name,
-                              radius=radius,
-                              columns=columns[cat_name],
-                              column_filters=column_filters[cat_name],
-                              coord=coord_cen)
+    # cross match SE catalog and ATLAS catalog
+    coords_atlas = SkyCoord(tab_atlas['RA'], tab_atlas['Dec'], unit=u.deg)
+    coords_SE = SkyCoord(SE_catalog['X_WORLD'],SE_catalog['Y_WORLD'])
 
-        Cat_full = result[table_name]
-        
-        if len(cat_name) > 4:
-            c_name = cat_name[0] + cat_name[-1]
-        else:
-            c_name = cat_name
-        
-        m_name = np.atleast_1d(mag_name)[j]
-        
-        # Transform catalog wcs coordinate into pixel postion
-        Cat_full = transform_coords2pixel(Cat_full, wcs_data, name=c_name)
-        
-        # Crop catalog and sort by the catalog magnitude
-        Cat_crop = crop_catalog(Cat_full, bounds, sortby=m_name,
-                                keys=("X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name))
-        
-        # catalog magnitude
-        mag_cat = Cat_crop[m_name]
-        
-        # Screen out bright stars (mainly for cleaning duplicate source in catalog)
-        Cat_bright = Cat_crop[(np.less(mag_cat, mag_limit,
-                                       where=~np.isnan(mag_cat))) & ~np.isnan(mag_cat)]
-        mag_cat.mask[np.isnan(mag_cat)] = True
-        
-        if clean_catalog:
-            # Clean duplicate items in the catalog
-            c_bright = SkyCoord(Cat_bright['RAJ2000'], Cat_bright['DEJ2000'], unit=u.deg)
-            c_catalog = SkyCoord(Cat_crop['RAJ2000'], Cat_crop['DEJ2000'], unit=u.deg)
-            idxc, idxcatalog, d2d, d3d = c_catalog.search_around_sky(c_bright, sep)
-            inds_c, counts = np.unique(idxc, return_counts=True)
-            
-            row_duplicate = np.array([], dtype=int)
-            
-            # Use the measurement with min error in RA/DEC
-            for i in inds_c[counts>1]:
-                obj_duplicate = Cat_crop[idxcatalog][idxc==i]
-#                 obj_duplicate.pprint(max_lines=-1, max_width=-1)
-                
-                # Remove detection without magnitude measurement
-                mag_obj = obj_duplicate[m_name]
-                obj_duplicate = obj_duplicate[~np.isnan(mag_obj)]
-                
-                # Use the detection with the best astrometry
-                e2_coord = obj_duplicate["e_RAJ2000"]**2 + obj_duplicate["e_DEJ2000"]**2
-                min_e2_coord = np.nanmin(e2_coord)
-                
-                for ID in obj_duplicate[e2_coord>min_e2_coord]['ID'+'_'+c_name]:
-                    k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
-                    row_duplicate = np.append(row_duplicate, k)
-            
-            Cat_crop.remove_rows(np.unique(row_duplicate))
-            #Cat_bright = Cat_crop[mag_cat<mag_limit]
-            
-        for m_name in magnitude_name[cat_name]:
-            mag = Cat_crop[m_name]
-            if verbose:
-                print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
+    idx, d2d, _ = coords_SE.match_to_catalog_sky(coords_atlas)
+    match = d2d < sep
 
-        # Merge Catalog
-        keep_columns = SE_COLUMNS + ["ID"+'_'+c_name] + magnitude_name[cat_name] + \
-                                    ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
-        tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,
-                                  keep_columns=keep_columns)
-        
-        tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
-                                         keep_columns=keep_columns)
-        
-        # Rename columns
-        for m_name in magnitude_name[cat_name]:
-            tab_match[m_name].name = m_name+'_'+c_name
-            tab_match_bright[m_name].name = m_name+'_'+c_name
-        
-        # Join tables
-        if j==0:
-            tab_target_all = tab_match
-            tab_target = tab_match_bright
-        else:
-            tab_target_all = join(tab_target_all, tab_match, keys=SE_COLUMNS,
-                                 join_type='left', metadata_conflicts='silent')
-            tab_target = join(tab_target, tab_match_bright, keys=SE_COLUMNS,
-                              join_type='left', metadata_conflicts='silent')
-            
-    # Sort matched catalog by SE MAG_AUTO
-    tab_target.sort('MAG_AUTO')
-    tab_target_all.sort('MAG_AUTO')
-
-    mag_all = tab_target_all[mag_name+'_'+c_name]
-    mag = tab_target[mag_name+'_'+c_name]
-    if verbose:
-        print("Matched stars with %s %s:  %.3f ~ %.3f"\
-              %(cat_name, mag_name, mag_all.min(), mag_all.max()))
-        print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
-              %(cat_name, mag_name, mag.min(), mag.max()))
+    SE_catalog_match = SE_catalog[match]
+    tab_atlas_match = tab_atlas[idx[match]]
     
-    return tab_target, tab_target_all, Cat_crop
-
-def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
-                        band='g', radius=None, clean_catalog=True,
-                        pixel_scale=DF_pixel_scale, sep=5*u.arcsec,
-                        mag_limit=15, verbose=True):
-    """
-    Use PANSTARRS DR2 API to do cross-match with the SE source catalog. 
-    Note this could be (much) slower compared to cross-match using Vizier.
+    # add ATLAS mag to the table
+    SE_catalog_match['gmag_atlas'] = tab_atlas_match['g']
+    SE_catalog_match.sort('gmag_atlas')
     
-    Parameters
-    ----------
-    wcs_data : wcs of data
+    # add supplementary stars (bright stars failed to matched)
+    cond_sup = (SE_catalog_match['MAG_AUTO']<mag_saturate) \
+                & (SE_catalog_match['CLASS_STAR']>0.7)
+    SE_catalog_sup = SE_catalog_match[cond_sup]
+    num_SE_sup = np.setdiff1d(SE_catalog_sup['NUMBER'], tab['NUMBER'])
     
-    SE_catalog : SE source catalog
+    # make a new table containing unmatched bright stars
+    use_cols = SE_COLUMNS + ['gmag_atlas']
+    tab_sup = Table(dtype=SE_catalog_sup[use_cols].dtype)
+    for num in num_SE_sup:
+        row = SE_catalog_sup[SE_catalog_sup['NUMBER']==num][0]
+        tab_sup.add_row(row[use_cols])
+        
+    # add color term to MAG_AUTO
+    CT = calculate_color_term(SE_catalog_match,
+                              mag_range=[mag_saturate,18],
+                              mag_name='gmag_atlas', draw=False)
     
-    bounds : Nx4 2d / 1d array defining the cross-match region(s) [Xmin, Ymin, Xmax, Ymax]
-
-    clean_catalog : whether to clean the matched catalog. (default True)
-            The PS-1 catalog contains duplicate items on a single source with different
-            measurements. If True, duplicate items of bright sources will be cleaned by 
-            removing those with large coordinate errors and pick the items with most 
-            detections in that band .
-            
-    mag_limit : magnitude threshould defining bright stars.
-    
-    sep : maximum separation (in astropy unit) for crossmatch with SE.
-    
-    Returns
-    -------
-    tab_target : table containing matched bright sources with SE source catalog
-    tab_target_all : table containing matched all sources with SE source catalog
-    catalog_star : PS-1 catalog of all sources in the region(s)
-        
-    """
-    from astropy.table import join, vstack
-    from astropy.nddata.bitmask import interpret_bit_flags
-    from .panstarrs import ps1cone
-    
-    band = band.lower()
-    mag_name = band + 'MeanPSFMag'
-    c_name = 'PS'
-    
-    for j, bounds in enumerate(np.atleast_2d(bounds)):
-        cen = (bounds[2]+bounds[0])/2., (bounds[3]+bounds[1])/2.
-        coord_cen = wcs_data.pixel_to_world(cen[0], cen[1])
-        ra, dec = coord_cen.ra.value, coord_cen.dec.value
-        
-        L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
-        radius = (L * pixel_scale * u.arcsec).to(u.deg)
-        
-        print("Search", np.around(radius, 3), "around:")
-        print(coord_cen)
-        
-        #### Query PANSTARRS start ####
-        constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':23}
-
-        # strip blanks and weed out blank and commented-out values
-        columns = """raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,
-                    gMeanPSFMag,gMeanPSFMagErr,gFlags,rMeanPSFMag,rMeanPSFMagErr,rFlags""".split(',')
-        columns = [x.strip() for x in columns]
-        columns = [x for x in columns if x and not x.startswith('#')]
-        results = ps1cone(ra, dec, radius.value, release='dr2', columns=columns, **constraints)
-        
-        Cat_full = ascii.read(results)
-        for filter in 'gr':
-            col = filter+'MeanPSFMag'
-            Cat_full[col].format = ".4f"
-            Cat_full[col][Cat_full[col] == -999.0] = np.nan
-        for coord in ['ra','dec']:
-            Cat_full[coord+'MeanErr'].format = ".5f"
-            
-        #### Query PANSTARRS end ####
-
-        Cat_full.sort(mag_name)
-        Cat_full['raMean'].unit = u.deg
-        Cat_full['decMean'].unit = u.deg
-        Cat_full = transform_coords2pixel(Cat_full, wcs_data, name=c_name,
-                                          RA_key="raMean", DE_key="decMean")
-        
-        # Crop catalog and sort by the catalog magnitude
-        Cat_crop = crop_catalog(Cat_full, bounds, sortby=mag_name,
-                                keys=("X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name))
-        
-        # Remove detection without magnitude
-        has_mag = ~np.isnan(Cat_crop[mag_name])
-        Cat_crop = Cat_crop[has_mag]
-        
-        # Pick out bright stars
-        mag_cat = Cat_crop[mag_name]
-        Cat_bright = Cat_crop[mag_cat<mag_limit]
-        
-        if clean_catalog:
-            # A first crossmatch with bright stars in catalog for cleaning
-            tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
-                                             RA_key="raMean", DE_key="decMean")
-            tab_match_bright.sort(mag_name)
-            
-            # Clean duplicate items in the catalog
-            c_bright = SkyCoord(tab_match_bright['X_WORLD'],
-                                tab_match_bright['Y_WORLD'], unit=u.deg)
-            c_catalog = SkyCoord(Cat_crop['raMean'],
-                                 Cat_crop['decMean'], unit=u.deg)
-            idxc, idxcatalog, d2d, d3d = \
-                        c_catalog.search_around_sky(c_bright, sep)
-            inds_c, counts = np.unique(idxc, return_counts=True)
-            
-            row_duplicate = np.array([], dtype=int)
-            
-            # Use the measurement following some criteria
-            for i in inds_c[counts>1]:
-                obj_dup = Cat_crop[idxcatalog][idxc==i]
-                obj_dup['sep'] = d2d[idxc==i]
-                #obj_dup.pprint(max_lines=-1, max_width=-1)
-                
-                # Use the detection with mag
-                mag_obj_dup = obj_dup[mag_name]
-                obj_dup = obj_dup[~np.isnan(mag_obj_dup)]
-                                
-                # Use the closest match
-                good = (obj_dup['sep'] == min(obj_dup['sep']))
-                
-### Extra Criteria             
-#                 # Coordinate error of detection
-#                 err2_coord = obj_dup["raMeanErr"]**2 + \
-#                             obj_dup["decMeanErr"]**2
-                
-#                 # Use the detection with the best astrometry
-#                 min_e2_coord = np.nanmin(err2_coord)
-#                 good = (err2_coord == min_e2_coord)
-                
-#                 # Use the detection with PSF mag err
-#                 has_err_mag = obj_dup[mag_name+'Err'] > 0   
-                
-#                 # Use the detection > 0
-#                 n_det = obj_dup['n'+band]
-#                 has_n_det = n_det > 0
-                
-#                 # Use photometry not from tycho in measurement
-#                 use_tycho_phot =  extract_bool_bitflags(obj_dup[band+'Flags'], 7)
-                
-#                 good = has_err_mag & has_n_det & (~use_tycho_phot)
-###
-                    
-                # Add rows to be removed
-                for ID in obj_dup[~good]['ID'+'_'+c_name]:
-                    k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
-                    row_duplicate = np.append(row_duplicate, k)
-                
-                obj_dup = obj_dup[good]
-                
-                if len(obj_dup)<=1:
-                    continue
-                
-                # Use brightest detection
-                mag = obj_dup[mag_name]
-                for ID in obj_dup[mag>min(mag)]['ID'+'_'+c_name]:
-                    k = np.where(Cat_crop['ID'+'_'+c_name]==ID)[0][0]
-                    row_duplicate = np.append(row_duplicate, k)
-            
-            # Remove rows
-            Cat_crop.remove_rows(np.unique(row_duplicate))
-            
-            # Subset catalog containing bright stars
-            Cat_bright = Cat_crop[Cat_crop[mag_name]<mag_limit]
-        
-        # Merge Catalog
-        SE_columns = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
-                      "MAG_AUTO", "FLUX_AUTO", "MU_MAX", "FWHM_IMAGE"]
-        keep_columns = SE_columns + ["ID"+'_'+c_name] + columns + \
-                                    ["X_IMAGE"+'_'+c_name, "Y_IMAGE"+'_'+c_name]
-        tab_match = merge_catalog(SE_catalog, Cat_crop, sep=sep,
-                                  RA_key="raMean", DE_key="decMean", keep_columns=keep_columns)
-        tab_match_bright = merge_catalog(SE_catalog, Cat_bright, sep=sep,
-                                         RA_key="raMean", DE_key="decMean", keep_columns=keep_columns)
-        
-        if j==0:
-            tab_target_all = tab_match
-            tab_target = tab_match_bright
-            catalog_star = Cat_crop
-            
-        else:
-            tab_target_all = vstack([tab_target_all, tab_match], join_type='exact')
-            tab_target = vstack([tab_target, tab_match_bright], join_type='exact')
-            catalog_star = vstack([catalog_star, Cat_crop], join_type='exact')
-            
-    # Sort matched catalog by matched magnitude
-    tab_target.sort(mag_name)
-    tab_target_all.sort(mag_name)
-    
-    if verbose:
-        print("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
-              %(mag_name, np.nanmin(tab_target_all[mag_name]),
-                np.nanmax(tab_target_all[mag_name])))
-        print("Matched bright stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
-              %(mag_name, np.nanmin(tab_target[mag_name]),
-                np.nanmax(tab_target[mag_name])))
-    
-    return tab_target, tab_target_all, catalog_star
-        
-def cross_match_PS1(band, wcs_data,
-                    SE_cat_target, bounds_list,
-                    pixel_scale=DF_pixel_scale,
-                    sep=None, mag_limit=15,
-                    use_PS1_DR2=False, verbose=True):
-                    
-    b_name = band.lower()
-    
-    if sep is None:
-        sep = pixel_scale
-    
-    if use_PS1_DR2:
-        from urllib.error import HTTPError
-        # Give 3 attempts in matching PS1 DR2 via MAST.
-        # This could fail if the FoV is too large.
-        for attempt in range(3):
-            try:
-                tab_target, tab_target_full, catalog_star = \
-                            cross_match_PS1_DR2(wcs_data,
-                                                SE_cat_target,
-                                                bounds_list,
-                                                pixel_scale=pixel_scale,
-                                                sep=sep * u.arcsec,
-                                                mag_limit=mag_limit,
-                                                band=b_name,
-                                                verbose=verbose)
-            except HTTPError:
-                print('Gateway Time-out. Try Again.')
-            else:
-                break
-        else:
-            sys.exit('504 Server Error: 4 Failed Attempts. Exit.')
-            
+    tab_sup['MAG_AUTO_corr'] = tab_sup['gmag_atlas'] + CT
+    tab_sup.add_columns([tab_sup['X_IMAGE'], tab_sup['Y_IMAGE']],
+                         names=['X_CATALOG', 'Y_CATALOG'])
+                        
+    # Join the two tables by common keys
+    keys = set(tab.colnames).intersection(tab_sup.colnames)
+    if len(tab_sup) > 0:
+        tab_join = join(tab, tab_sup, keys=keys, join_type='outer')
+        tab_join.sort('MAG_AUTO_corr')
+        return tab_join
     else:
-        mag_name = b_name+'mag'
-        tab_target, tab_target_full, catalog_star = \
-                            cross_match(wcs_data,
-                                        SE_cat_target,
-                                        bounds_list,
-                                        pixel_scale=pixel_scale,
-                                        sep=sep * u.arcsec,
-                                        mag_limit=mag_limit,
-                                        mag_name=mag_name,
-                                        verbose=verbose)
-                                        
-    return tab_target, tab_target_full, catalog_star
-
+        return tab
+    
 
 def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     """ Add unmatched bright (saturated) stars in SE_catatlogas to tab.
         Magnitude is corrected by interpolation from other matched stars """
     
-    if len(tab['MAG_AUTO_corr']<mag_saturate)<10:
+    if len(tab['MAG_AUTO_corr']<mag_saturate)<5:
         return tab
         
-    print("Mannually add unmatched bright stars to the catalog.")
+    print("Mannually add unmatched bright stars from SE catalog.")
     
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
@@ -1902,8 +1592,12 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     
     # Remove rows with large magnitude offset
     loc_rm = np.where(abs(tab['MAG_AUTO_corr']-mag_corr)>2)
-    if draw: plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
-                         marker='s', s=40, facecolors='none', edgecolors='lime'); plt.show()
+    if draw:
+        plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
+                    marker='s', s=40, facecolors='none', edgecolors='lime')
+        plt.xlim(15, tab['MAG_AUTO'].min())
+        plt.ylim(15, tab['MAG_AUTO_corr'].min())
+        plt.show()
     tab.remove_rows(loc_rm[0])
 
     # Add supplementary stars (bright stars failed to matched)
@@ -1920,18 +1614,19 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     # add corrected MAG_AUTO
     tab_sup['MAG_AUTO_corr'] = f_corr(tab_sup['MAG_AUTO'])
     tab_sup.add_columns([tab_sup['X_IMAGE'], tab_sup['Y_IMAGE']],
-                        names=['X_IMAGE_PS', 'Y_IMAGE_PS'])
+                         names=['X_CATALOG', 'Y_CATALOG'])
                         
     # Join the two tables by common keys
     keys = set(tab.colnames).intersection(tab_sup.colnames)
     if len(tab_sup) > 0:
         tab_join = join(tab, tab_sup, keys=keys, join_type='outer')
+        tab_join.sort('MAG_AUTO_corr')
         return tab_join
     else:
         return tab
     
     
-def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw=True):
+def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verbose=True, draw=True):
     """
     Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
     
@@ -1952,15 +1647,15 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
     mag_cat = tab_target[mag_name]
     d_mag = tab_target["MAG_AUTO"] - mag_cat
     
-    d_mag = d_mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
-    mag = mag[(mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))]
+    use_range = (mag>mag_range[0])&(mag<mag_range[1])&(~np.isnan(mag_cat))
+    d_mag = d_mag[use_range]
+    mag = mag[use_range]
     
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         d_mag_clip = sigma_clip(d_mag, 3, maxiters=10)
         
     CT = biweight_location(d_mag_clip)
-    print('\nAverage Color Term [SE-catalog] = %.5f'%CT)
     
     if draw:
         plt.figure()
@@ -1969,11 +1664,14 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', draw
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
         plt.xlim(mag_range[0]-0.5, mag_range[1]+0.5)
-        plt.xlabel(r"MAG\_AUTO (SE)")
-        plt.ylabel(r"MAG\_AUTO - %s"%mag_name.replace('_','\_'))
+        plt.xlabel(r"$MAG\_AUTO$")
+        plt.ylabel(r"$MAG\_AUTO - {%s}$"%mag_name)
         plt.show()
         
+    print('\nAverage Color Term [SE-%s] = %.5f'%(mag_name, CT))
+        
     return np.around(CT,5)
+
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
                            K=3, R_min=2, R_max=100,
@@ -2051,7 +1749,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
 
 def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
-                           mag_name='rmag', cat_name='PS', obj_name='', band='G',
+                           mag_name='rmag', obj_name='', band='G',
                            ext_cat=None, draw=True, save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
@@ -2063,7 +1761,6 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     estimate_radius : function of turning magnitude into log R
     
     mag_name : magnitude column name in catalog_star
-    cat_name : suffix of star catalog used
     ext_cat : (bright) extended source catalog to mask
     draw : whether to draw the output segm map
     save : whether to save the segm map as fits
@@ -2078,7 +1775,6 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     Xmin, Ymin, Xmax, Ymax = bounds
     nX = Xmax - Xmin
     nY = Ymax - Ymin
-    X_key, Y_key = 'X_IMAGE'+'_'+cat_name, 'Y_IMAGE'+'_'+cat_name
     
     try:
         catalog = catalog_star[~catalog_star[mag_name].mask]
@@ -2091,7 +1787,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     # Generate object apertures
     apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
-             for (X_c,Y_c, r) in zip(catalog[X_key], catalog[Y_key], R_est)]
+             for (X_c,Y_c, r) in zip(catalog['X_CATALOG'], catalog['Y_CATALOG'], R_est)]
     
     # Further mask for bright extended sources
     if ext_cat is not None:

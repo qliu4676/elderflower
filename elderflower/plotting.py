@@ -1,8 +1,8 @@
 import os
-import numpy as np
 import string
+import numpy as np
 
-from copy import deepcopy
+from copy import copy, deepcopy
 
 try: 
     import seaborn as sns
@@ -48,11 +48,11 @@ DF_raw_pixel_scale = 2.85
 
 ### Plotting Helpers ###
 
-def LogNorm():
-    return ImageNormalize(stretch=LogStretch())
+def LogNorm(vmin=None, vmax=None):
+    return ImageNormalize(stretch=LogStretch(), vmin=vmin, vmax=vmax)
 
-def AsinhNorm(a=0.1):
-    return ImageNormalize(stretch=AsinhStretch(a=a))
+def AsinhNorm(a=0.1, vmin=None, vmax=None):
+    return ImageNormalize(stretch=AsinhStretch(a=a), vmin=vmin, vmax=vmax)
 
 def HistEqNorm(data):
     return ImageNormalize(stretch=HistEqStretch(data))
@@ -86,7 +86,8 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right",
     cb.ax.set_xticklabels(cb.ax.get_xticklabels(),rotation=rot)
     cb.ax.tick_params(labelsize=ticks_size)
     
-    cmap = cb.mappable.get_cmap()
+    #cmap = cb.mappable.get_cmap()
+    cmap = copy(plt.cm.get_cmap())
     cmap.set_bad(color=color_nan, alpha=0.3)
     
     return cb
@@ -120,18 +121,19 @@ def display(image, mask=None,
     sky_mean, sky_std = np.mean(sky), mad_std(sky)
     
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
-    ax.imshow(image, cmap="gray_r", norm=AsinhNorm(a),
-              vmin=sky_mean-sky_std, vmax=sky_mean+k_std*sky_std)
+    ax.imshow(image, cmap="gray_r",
+              norm=AsinhNorm(a, vmin=sky_mean-sky_std,
+                                vmax=sky_mean+k_std*sky_std))
 
 def display_background_sub(field, back):
     """ Display fitted background """
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
     ax1.imshow(field, aspect="auto", cmap="gray",
-                vmin=vmin_3mad(field), vmax=vmax_2sig(field), norm=LogNorm())
+               norm=LogNorm(vmin=vmin_3mad(field), vmax=vmax_2sig(field)))
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
     colorbar(im2)
     ax3.imshow(field - back, aspect="auto", cmap='gray',
-                vmin=0., vmax=vmax_2sig(field - back), norm=LogNorm())
+               norm=LogNorm(vmin=0., vmax=vmax_2sig(field - back)))
     plt.tight_layout()
 
 
@@ -198,7 +200,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6), dpi=100)
     
-    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(), vmin=vmin, vmax=1e4)
+    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(vmin=vmin, vmax=1e4))
     ax1.set_title("Image")
     
     n_label = seg_map.max()
@@ -207,7 +209,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
 
     image2 = image.copy()
     image2[mask_deep] = 0
-    im3 = ax3.imshow(image2, norm=LogNorm(), vmin=vmin, vmax=vmax) 
+    im3 = ax3.imshow(image2, norm=LogNorm(vmin=vmin, vmax=vmax))
     ax3.set_title("Sky")
     colorbar(im3, pad=0.1, size="2%")
     
@@ -280,7 +282,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
 
     image3 = image.copy()
     image3[mask_comb] = 0
-    im3 = ax3.imshow(image3, norm=LogNorm(), vmin=vmin, vmax=vmax)
+    im3 = ax3.imshow(image3, norm=LogNorm(vmin=vmin, vmax=vmax))
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_title("Sky")
     colorbar(im3, pad=0.1, size="2%")
@@ -589,8 +591,8 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
         vmax = vmin + 11
         
     fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
-    im = ax1.imshow(image_fit_noise, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
-    im = ax2.imshow(image, vmin=vmin, vmax=vmax, norm=LogNorm()); colorbar(im)
+    im = ax1.imshow(image_fit_noise, norm=LogNorm(vmin=vmin, vmax=vmax)); colorbar(im)
+    im = ax2.imshow(image, norm=LogNorm(vmin=vmin, vmax=vmax)); colorbar(im)
     Diff = (image_fit_noise-image)/image
     im = ax3.imshow(Diff, vmin=-0.1, vmax=0.1, cmap='seismic'); colorbar(im)
     ax1.set_title("Fit: I$_f$")
@@ -607,7 +609,7 @@ def draw_comparison_2D(data, mask, image_fit,
                        image_stars, bkg_image,
                        noise_image=0, r_core=None,
                        vmin=None, vmax=None, Gain=None,
-                       cmap='gnuplot2', norm=AsinhNorm(0.05),
+                       cmap='gnuplot2', norm_stretch=0.05,
                        manual_locations=None,
                        save=False, save_dir=".", suffix=""):
                        
@@ -619,19 +621,20 @@ def draw_comparison_2D(data, mask, image_fit,
     if vmin is None:
         vmin = np.mean(bkg_image) - std
     if vmax is None:
-        vmax = vmin + min([10*std, 100])
+        vmax = vmin + 20*std
         
-    norm2 = deepcopy(norm)
+    norm = AsinhNorm(norm_stretch, vmin=vmin, vmax=vmax)
+    norm2 = AsinhNorm(norm_stretch, vmin=0, vmax=vmax-vmin)
     
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(19,11))
     
-    im = ax1.imshow(data, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax1.imshow(data, norm=norm, cmap=cmap)
     ax1.set_title("Data [I$_0$]", fontsize=15); colorbar(im)
     
-    im = ax2.imshow(image_fit+noise_image, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax2.imshow(image_fit+noise_image, norm=norm, cmap=cmap)
     ax2.set_title("Fit [I$_f$] + noise", fontsize=15); colorbar(im)
     
-    im = ax3.imshow(image_stars, vmin=0, vmax=vmax-vmin, norm=norm2, cmap=cmap)
+    im = ax3.imshow(image_stars, norm=norm2, cmap=cmap)
     contour = ax3.contour(image_stars, levels=[0,1,2,5,10,25],
                           norm=norm2, colors='w', alpha=0.7)
     ax3.clabel(contour, fmt='%1g', inline=1, fontsize=12, manual=manual_locations)
