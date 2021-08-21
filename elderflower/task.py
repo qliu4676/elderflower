@@ -104,8 +104,8 @@ def Run_Detection(hdu_path,
     if config_path is None: config_path = default_SE_config
     if executable is None: executable = get_SExtractor_path()
     
-    SE_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
-                 'FWHM_IMAGE','MU_MAX','CLASS_STAR','ELLIPTICITY']
+    SE_extra_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
+                        'MU_MAX','CLASS_STAR','ELLIPTICITY']
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
@@ -125,7 +125,7 @@ def Run_Detection(hdu_path,
                     
             # Run sextractor with free zero-point
             SE_catalog = run_sextractor(hdu_path,
-                                        extra_params=SE_params,
+                                        extra_params=SE_extra_params,
                                         config_path=config_path,
                                         catalog_path=catname,
                                         executable=executable,

@@ -1,7 +1,12 @@
 import os
-import numpy as np
 from subprocess import call
+
+import numpy as np
+
+import logging
+from astropy.logger import AstropyLogger
 from astropy.io import ascii, fits
+
 from .io import config_dir
 
 # default SExtractor paths and files
@@ -13,6 +18,8 @@ default_run_config = os.path.join(input_file_path, 'default.config')
 default_nnw = os.path.join(input_file_path, 'default.nnw')
 default_conv = os.path.join(kernel_path, 'default.conv')
 
+logging.setLoggerClass(AstropyLogger)
+logger = logging.getLogger('DFReduceLogger')
 
 # get list of all config options
 with open(os.path.join(input_file_path, 'config_options.txt'), 'r') as file:
@@ -20,7 +27,7 @@ with open(os.path.join(input_file_path, 'config_options.txt'), 'r') as file:
 
 # get list of all SExtractor measurement parameters
 default_params = ['X_IMAGE', 'Y_IMAGE', 'FLUX_AUTO', 'FLUX_RADIUS',
-                  'A_IMAGE', 'B_IMAGE', 'THETA_IMAGE', 'FLAGS']
+                  'A_IMAGE', 'B_IMAGE', 'THETA_IMAGE', 'FWHM_IMAGE', 'FLAGS']
 with open(os.path.join(input_file_path, 'all_params.txt'), 'r') as file:
     all_param_names = [line.rstrip() for line in file]
 
@@ -57,6 +64,11 @@ def temp_fits_file(path_or_pixels, tmp_path='/tmp', run_label=None,
         fits.writeto(path, path_or_pixels, header=header, overwrite=True)
         created_tmp = True
     return path, created_tmp
+
+def is_list_like(check):
+    t = type(check)
+    c = t == list or t == np.ndarray or t == pd.Series or t == pd.Int64Index
+    return c
 
 def list_of_strings(str_or_list):
     """
@@ -135,11 +147,11 @@ def run(path_or_pixels, catalog_path=None, config_path=default_run_config,
     extra_params = ['FLUX_RADIUS', 'ELLIPTICITY']
     # (it is case-insensitive)
     """
-    image_path, created_tmp = utils.temp_fits_file(path_or_pixels,
-                                                   tmp_path=tmp_path,
-                                                   run_label=run_label,
-                                                   prefix='se_tmp',
-                                                   header=header)
+    image_path, created_tmp = temp_fits_file(path_or_pixels,
+                                             tmp_path=tmp_path,
+                                             run_label=run_label,
+                                             prefix='se_tmp',
+                                             header=header)
 
     logger.debug('Running SExtractor on ' + image_path)
 
