@@ -228,7 +228,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         print(coord_cen)
         
         #### Query PANSTARRS start ####
-        constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':23}
+        constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':22}
 
         # strip blanks and weed out blank and commented-out values
         columns = """raMean,decMean,raMeanErr,decMeanErr,nDetections,ng,nr,

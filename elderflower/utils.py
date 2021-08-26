@@ -910,7 +910,7 @@ def measure_Rnorm_all(table, bounds,
             table_norm[colname] = col
         
         if save:
-            check_save_path(dir_name, make_new=False, verbose=False)
+            check_save_path(dir_name, overwrite=True, verbose=False)
             save_pickle(res_thumb, res_thumb_name)   # save star thumbnails
             table_norm.write(table_norm_name, overwrite=True, format='ascii')
             
@@ -1502,7 +1502,7 @@ def fit_n0(dir_measure, bounds,
         ax_ins.scatter(r_n, I_n, marker='*',color='r', s=200, zorder=4)
         ax_ins.tick_params(direction='in',labelsize=14)
         ax_ins.set_ylabel('')
-#        plt.show()
+        plt.show()
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
@@ -1748,9 +1748,12 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     return estimate_radius
 
 
-def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
-                           mag_name='rmag', obj_name='', band='G',
-                           ext_cat=None, draw=True, save=False, dir_name='./Measure'):
+def make_segm_from_catalog(catalog_star,
+                           bounds, estimate_radius,
+                           mag_name='rmag', mag_limit=22,
+                           obj_name='', band='G',
+                           ext_cat=None, draw=True,
+                           save=False, dir_name='./Measure'):
     """
     Make segmentation map from star catalog. Aperture size used is based on SE semg map.
     
@@ -1761,6 +1764,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     estimate_radius : function of turning magnitude into log R
     
     mag_name : magnitude column name in catalog_star
+    mag_limit : magnitude limit to add segmentation
     ext_cat : (bright) extended source catalog to mask
     draw : whether to draw the output segm map
     save : whether to save the segm map as fits
@@ -1780,6 +1784,8 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
         catalog = catalog_star[~catalog_star[mag_name].mask]
     except AttributeError:
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
+        
+    catalog = catalog[catalog[mag_name]<mag_limit]
     print("\nMake segmentation map based on catalog %s: %d stars"%(mag_name, len(catalog)))
     
     # Estimate mask radius
@@ -1819,7 +1825,7 @@ def make_segm_from_catalog(catalog_star, bounds, estimate_radius,
     
     # Save segmentation map built from catalog
     if save:
-        check_save_path(dir_name, make_new=False, verbose=False)
+        check_save_path(dir_name, overwrite=True, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map.astype(int))
         
         file_name = os.path.join(dir_name, "%s-segm_%s_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, band.lower(), Xmin, Xmax, Ymin, Ymax))

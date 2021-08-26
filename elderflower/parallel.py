@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Submodule for paralle computation
-from https://github.com/pycroscopy/pyUSID
+from https://github.com/pycroscopy/sidpy
 @author: Suhas Somnath, Chris Smith
 """
 
@@ -29,58 +29,6 @@ def get_MPI():
         MPI = None
 
     return MPI
-
-
-def group_ranks_by_socket(verbose=False):
-    """
-    Groups MPI ranks in COMM_WORLD by socket. Another way to think about this is that it assigns a master rank for each
-    rank such that there is a single master rank per socket (CPU). The results from this function can be used to split
-    MPI communicators based on the socket for intra-node communication.
-    This is necessary when wanting to carve up the memory for all ranks within a socket.
-    This is also relevant when trying to bring down the number of ranks that are writing to the HDF5 file.
-    This is all based on the premise that data analysis involves a fair amount of file writing and writing with
-    3 ranks is a lot better than writing with 100 ranks. An assumption is made that the communication between the
-    ranks within each socket would be faster than communicating across nodes / scokets. No assumption is made about the
-    names of each socket
-    Parameters
-    ----------
-    verbose : bool, optional
-        Whether or not to print debugging statements
-    Returns
-    -------
-    master_ranks : 1D unsigned integer :class:`numpy.ndarray`
-        Array with values that signify which rank a given rank should consider its master.
-    """
-    MPI = get_MPI()
-
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size()
-    rank = comm.Get_rank()
-
-    # Step 1: Gather all the socket names:
-    sendbuf = MPI.Get_processor_name()
-    if verbose:
-        print('Rank: ', rank, ', sendbuf: ', sendbuf)
-    recvbuf = comm.allgather(sendbuf)
-    if verbose and rank == 0:
-        print('Rank: ', rank, ', recvbuf received: ', recvbuf)
-
-    # Step 2: Find all unique socket names:
-    recvbuf = np.array(recvbuf)
-    unique_sockets = np.unique(recvbuf)
-    if verbose and rank == 0:
-        print('Unique sockets: {}'.format(unique_sockets))
-
-    master_ranks = np.zeros(size, dtype=np.uint16)
-
-    for item in unique_sockets:
-        temp = np.where(recvbuf == item)[0]
-        master_ranks[temp] = temp[0]
-
-    if verbose and rank == 0:
-        print('Parent rank for all ranks: {}'.format(master_ranks))
-
-    return master_ranks
 
 
 def parallel_compute(data, func, cores=None, lengthy_computation=False, func_args=None, func_kwargs=None, verbose=False):
@@ -147,7 +95,7 @@ def parallel_compute(data, func, cores=None, lengthy_computation=False, func_arg
 
     if cores > 1:
         values = [joblib.delayed(func)(x, *func_args, **func_kwargs) for x in data]
-        results = joblib.Parallel(n_jobs=cores)(values)
+        results = joblib.Parallel(n_jobs=cores, backend='multiprocessing')(values)
 
         # Finished reading the entire data set
         if verbose:

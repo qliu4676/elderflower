@@ -23,23 +23,24 @@ config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
 # Default configuration path
 default_config = os.path.join(config_dir, './config.yml')
 
-def check_save_path(dir_name, make_new=True, verbose=True):
+def check_save_path(dir_name, overwrite=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
-        If yes, clear the content if make_new=True. """
+        If yes, clear the content if overwrite=True. """
     
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
     
     else:
         if len(os.listdir(dir_name)) != 0:
-            if make_new:
-                if verbose: print("'%s' already existed. Overwrite files."%dir_name)
-                shutil.rmtree(dir_name)
+            if overwrite:
+                if verbose: print("'%s' exists. Will overwrite files."%dir_name)
+                #shutil.rmtree(dir_name)
             else:
                 while os.path.exists(dir_name):
-                    dir_name = input("'%s' already existed. Enter a directory name for saving:"%dir_name)
+                    dir_name = input("'%s' exists. Enter a new dir name for saving:"%dir_name)
+                    if input("exit"): sys.exit()
             
-            os.makedirs(dir_name)
+                os.makedirs(dir_name)
         
     if verbose: print("Results will be saved in %s\n"%dir_name)
 
@@ -68,7 +69,20 @@ def get_SExtractor_path():
     except StopIteration:
         print('Warning: SExtractor path is not found automatically.')
         return ''
-    
+
+def update_SE_keywords(kwargs, threshold=5):
+    """ Update SExtractor keywords in **kwargs """
+    SE_key = kwargs.keys()
+    for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
+        if THRE not in SE_key: kwargs[THRE] = threshold
+    if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_conv
+    if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_nnw
+    for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
+        if key in SE_key:
+            kwargs.pop(key, None)
+            print(f'WARNING: {NAME} are reserved.')
+    return kwargs
+
 
 def find_keyword_header(header, keyword,
                         default=None, input_val=False, raise_error=False):

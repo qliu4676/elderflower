@@ -24,7 +24,7 @@ def Run_Detection(hdu_path,
                   ZP_keyname='REFZP',
                   ZP=None,
                   ref_cat='APASSref.cat',
-                  apass_dir='~/Data/apass/',
+                  apass_dir=None,
                   **kwargs):
                   
     """
@@ -67,7 +67,7 @@ def Run_Detection(hdu_path,
     ref_cat : str, optional, default 'APASSref.cat'
         Full path file name of the APASS reference catalog.
         If not found, it will generate a reference catalog.
-    apass_dir : str, optional, default '~/Data/apass/'
+    apass_dir : str, optional, default None
         Full path of the diectory of the APASS catalogs.
         
     Returns
@@ -88,11 +88,11 @@ def Run_Detection(hdu_path,
     
     """
                 
-    from dfreduce.detection import sextractor
     from .detection import run as run_sextractor
+    from .io import update_SE_keywords
     
     print(f"Run SExtractor on {hdu_path}...")
-    check_save_path(work_dir, make_new=False, verbose=False)
+    check_save_path(work_dir, overwrite=True, verbose=False)
     
     band = band.lower()
     
@@ -109,6 +109,7 @@ def Run_Detection(hdu_path,
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
+        print(f"{ZP_keyname} is not found in the header")
     
         # If not in the header, check kwargs
         if type(ZP) is not float:
@@ -162,16 +163,10 @@ def Run_Detection(hdu_path,
         ZP = np.float(header[ZP_keyname])
         print("Read zero-point from header : ZP = {:.3f}".format(ZP))
     
-    SE_key = kwargs.keys()
-    for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
-        if THRE not in SE_key: kwargs[THRE] = threshold
-    if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_conv
-    if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_nnw
-    for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
-        if key in SE_key: SE_key.pop(key, None); print(f'WARNING: {NAME} are reserved.')
-   
+    kwargs = update_SE_keywords(kwargs, threshold)
+    
     SE_catalog = run_sextractor(hdu_path,
-                                extra_params=SE_params,
+                                extra_params=SE_extra_params,
                                 config_path=config_path,
                                 catalog_path=catname,
                                 executable=executable,
@@ -374,7 +369,7 @@ def Match_Mask_Measure(hdu_path,
     # Save matched table and catalog
     ##################################################
     if save:
-        check_save_path(dir_name, make_new=False, verbose=False)
+        check_save_path(dir_name, overwrite=True, verbose=False)
         
         tab_target_name = os.path.join(dir_name,
        '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_limit))
@@ -615,7 +610,7 @@ def Run_PSF_Fitting(hdu_path,
     
     # Set up directory names
     plot_dir = os.path.join(work_dir, 'plot')
-    check_save_path(plot_dir, make_new=False, verbose=False)
+    check_save_path(plot_dir, overwrite=True, verbose=False)
     
     if use_PS1_DR2:
         dir_measure = os.path.join(work_dir, 'Measure-PS2/')
@@ -650,7 +645,7 @@ def Run_PSF_Fitting(hdu_path,
         N_frames = find_keyword_header(header, "NFRAMES", default=1e5)
         G_eff = DF_Gain * N_frames
         if N_frames==1e5:
-            print('Ineffective Gain. Will ignore short noise.')
+            print('No effective Gain is given. Will ignore shot noise.')
         else:
             print('Effective Gain = %.3f'%G_eff)
             
@@ -923,6 +918,7 @@ class berry:
         self.band = band
         
         self.work_dir = work_dir
+        self.config = config_file
         
         from .io import config_kwargs, default_config
         if config_file is None: config_file = default_config

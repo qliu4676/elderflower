@@ -223,7 +223,7 @@ class Image(ImageButler):
         import shutil
         
         if use_PS1_DR2: dir_tmp+='_PS2'
-        check_save_path(dir_tmp, make_new=False, verbose=False)
+        check_save_path(dir_tmp, overwrite=True, verbose=False)
         
         band = self.band
         obj_name = self.obj_name
