@@ -7,6 +7,8 @@
 
 Doucmentation: https://elderflower.readthedocs.io/en/latest/
 
+[![DOI](https://zenodo.org/badge/197442211.svg)](https://zenodo.org/badge/latestdoi/197442211)
+
 Installation
 ------------
 
