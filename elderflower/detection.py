@@ -2,11 +2,9 @@ import os
 from subprocess import call
 
 import numpy as np
-
-import logging
-from astropy.logger import AstropyLogger
 from astropy.io import ascii, fits
 
+from .io import logger
 from .io import config_dir
 
 # default SExtractor paths and files
@@ -17,9 +15,6 @@ default_param_file = os.path.join(input_file_path, 'default.param')
 default_run_config = os.path.join(input_file_path, 'default.config')
 default_nnw = os.path.join(input_file_path, 'default.nnw')
 default_conv = os.path.join(kernel_path, 'default.conv')
-
-logging.setLoggerClass(AstropyLogger)
-logger = logging.getLogger('DFReduceLogger')
 
 # get list of all config options
 with open(os.path.join(input_file_path, 'config_options.txt'), 'r') as file:

@@ -1,4 +1,14 @@
 import os
+
+# Path
+package_dir = os.path.dirname(__file__)
+test_dir = os.path.normpath(os.path.join(package_dir, '../tests'))
+script_dir = os.path.normpath(os.path.join(package_dir, '../scripts'))
+config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
+
+# Default configuration path
+default_config = os.path.join(config_dir, './config.yml')
+
 import re
 import sys
 import yaml
@@ -15,13 +25,65 @@ except ImportError:
     import pickle
 from pickle import PicklingError
 
-package_dir = os.path.dirname(__file__)
-test_dir = os.path.normpath(os.path.join(package_dir, '../tests'))
-script_dir = os.path.normpath(os.path.join(package_dir, '../scripts'))
-config_dir = os.path.normpath(os.path.join(package_dir, '../configs'))
+### LOGGING ###
+import logging
+from astropy.logger import AstropyLogger
 
-# Default configuration path
-default_config = os.path.join(config_dir, './config.yml')
+class elderflowerLogger(AstropyLogger):
+    def reset(self, level='INFO', to_file=None, overwrite=True):
+        """ Reset logger. If to_file is given as a string, the output
+        will be stored into a log file. """
+
+        for handler in self.handlers[:]:
+            self.removeHandler(handler)
+            
+        self.setLevel(level)
+        
+        if isinstance(to_file, str) is False:
+            # Set up the stdout handlers
+            handler = StreamHandler()
+            self.addHandler(handler)
+            
+        else:
+            if os.path.isfile(to_file) & overwrite:
+                os.remove(to_file)
+                
+            # Define file handler and set formatter
+            file_handler = logging.FileHandler(to_file)
+            msg = '[%(asctime)s] %(levelname)s: %(message)s'
+            formatter = logging.Formatter(msg, datefmt='%Y-%m-%d|%H:%M:%S')
+            file_handler.setFormatter(formatter)
+            self.addHandler(file_handler)
+            
+        self.propagate = False
+    
+class StreamHandler(logging.StreamHandler):
+    """ A StreamHandler that logs messages in different colors. """
+    def emit(self, record):
+        stream_print(record.msg, record.levelno)
+
+def stream_print(msg, levelno=logging.INFO):
+    """ Enable colored msg using ANSI escape codes based input levelno. """
+    levelname = logging.getLevelName(levelno)
+    stream = sys.stdout
+    
+    if levelno < logging.INFO:
+        level_msg = '\x1b[1;30m'+levelname+': '+'\x1b[0m'
+    elif levelno < logging.WARNING:
+        level_msg = '\x1b[1;32m'+levelname+': '+'\x1b[0m'
+    elif levelno < logging.ERROR:
+        level_msg = '\x1b[1;31m'+levelname+': '+'\x1b[0m'
+    else:
+        level_msg = levelname+': '
+        stream = sys.stderr
+        
+    print(f'{level_msg}{msg}', file=stream)
+
+logging.setLoggerClass(elderflowerLogger)
+logger = logging.getLogger('elderflowerLogger')
+logger.reset()
+
+######
 
 def check_save_path(dir_name, overwrite=True, verbose=True):
     """ Check if the input dir_name exists. If not, create a new one.
@@ -72,6 +134,7 @@ def get_SExtractor_path():
 
 def update_SE_keywords(kwargs, threshold=5):
     """ Update SExtractor keywords in **kwargs """
+    from .detection import default_conv, default_nnw
     SE_key = kwargs.keys()
     for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
         if THRE not in SE_key: kwargs[THRE] = threshold
@@ -144,6 +207,11 @@ def load_pickle(filename, printout=True):
     else:
         raise FileNotFoundError(f'{filename} not found!')
 
+def clean_pickling_object(keyword):
+    """ Delete pickled objects defined in __main__ to avoid pickling error """
+    for variable in dir():
+        if keyword in variable:
+            del locals()[variable]
 
 def load_config(filename):
     """ Read a yaml configuration. """
