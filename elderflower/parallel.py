@@ -1,35 +1,10 @@
-# -*- coding: utf-8 -*-
 """
-Submodule for paralle computation
-from https://github.com/pycroscopy/sidpy
-@author: Suhas Somnath, Chris Smith
+Submodule for parallel computing
+Adapted from https://github.com/pycroscopy/sidpy (S.Somnath, C.Smith)
 """
 
 import numpy as np
-
 import joblib
-from multiprocessing import cpu_count
-from psutil import virtual_memory as vm
-
-
-def get_MPI():
-    """
-    Returns the mpi4py.MPI object if mpi4py is available and size > 1. Returns None otherwise
-    Returns
-    -------
-    MPI : :class:`mpi4py.MPI` object or None
-    """
-    try:
-        from mpi4py import MPI
-        if MPI.COMM_WORLD.Get_size() == 1:
-            # mpi4py available but NOT called via mpirun or mpiexec => single node
-            MPI = None
-    except ImportError:
-        # mpi4py not even present! Single node by default:
-        MPI = None
-
-    return MPI
-
 
 def parallel_compute(data, func, cores=None, lengthy_computation=False, func_args=None, func_kwargs=None, verbose=False):
     """
@@ -42,8 +17,7 @@ def parallel_compute(data, func, cores=None, lengthy_computation=False, func_arg
         Function to map to data
     cores : uint, optional
         Number of logical cores to use to compute
-        Default - All cores - 1 (total cores <= 4) or - 2 (cores > 4) depending on number of cores. 
-        Ignored in the MPI context - each rank will execute serially
+        Default - All cores - 1 (total cores <= 4) or - 2 (cores > 4) depending on number of cores.
     lengthy_computation : bool, optional
         Whether or not each computation is expected to take substantial time.
         Sometimes the time for adding more cores can outweigh the time per core
@@ -78,17 +52,11 @@ def parallel_compute(data, func, cores=None, lengthy_computation=False, func_arg
             raise TypeError('Keyword arguments to the mapped function should be specified via a dictionary')
 
     req_cores = cores
-    MPI = get_MPI()
-    if MPI is not None:
-        rank = MPI.COMM_WORLD.Get_rank()
-        # Was unable to get the MPI + joblib framework to work. Did not compute anything at all. Just froze
-        cores = 1
-    else:
-        rank = 0
-        cores = recommend_cpu_cores(data.shape[0],
-                                    requested_cores=cores,
-                                    lengthy_computation=lengthy_computation,
-                                    verbose=verbose)
+    rank = 0
+    cores = recommend_cpu_cores(data.shape[0],
+                                requested_cores=cores,
+                                lengthy_computation=lengthy_computation,
+                                verbose=verbose)
 
     if verbose:
         print('Rank {} starting computing on {} cores (requested {} cores)'.format(rank, cores, req_cores))
@@ -109,26 +77,6 @@ def parallel_compute(data, func, cores=None, lengthy_computation=False, func_arg
         results = [func(vector, *func_args, **func_kwargs) for vector in data]
 
     return results
-
-
-def get_available_memory():
-    """
-    Returns the available memory
-    Chris Smith -- csmith55@utk.edu
-    Parameters
-    ----------
-    Returns
-    -------
-    mem : unsigned int
-        Memory in bytes
-    """
-    import sys
-    mem = vm().available
-
-    if sys.maxsize <= 2 ** 32:
-        mem = min([mem, sys.maxsize])
-
-    return mem
 
 
 def recommend_cpu_cores(num_jobs, requested_cores=None, lengthy_computation=False, min_free_cores=None, verbose=False):
@@ -154,7 +102,7 @@ def recommend_cpu_cores(num_jobs, requested_cores=None, lengthy_computation=Fals
     requested_cores : unsigned int
         Number of logical cores to use for computation
     """
-
+    from multiprocessing import cpu_count
     logical_cores = cpu_count()
 
     if min_free_cores is not None:
