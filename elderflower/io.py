@@ -95,22 +95,24 @@ def check_save_path(dir_name, overwrite=True, verbose=True):
     else:
         if len(os.listdir(dir_name)) != 0:
             if overwrite:
-                if verbose: print("'%s' exists. Will overwrite files."%dir_name)
+                if verbose: logger.info(f"'{dir_name}' exists. Will overwrite files.")
                 #shutil.rmtree(dir_name)
             else:
                 while os.path.exists(dir_name):
-                    dir_name = input("'%s' exists. Enter a new dir name for saving:"%dir_name)
+                    dir_name = input(f"'{dir_name}' exists. Enter a new dir name for saving:")
                     if input("exit"): sys.exit()
             
                 os.makedirs(dir_name)
         
-    if verbose: print("Results will be saved in %s\n"%dir_name)
+    if verbose: logger.info(f"Results will be saved in {dir_name}\n")
 
 
 def get_executable_path(executable):
     """ Get the execuable path """
     
-    check_exe_path = subprocess.Popen(f'which {executable}', stdout=subprocess.PIPE, shell=True)
+    command = f'which {executable}'
+    check_exe_path = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+    
     exe_path = check_exe_path.stdout.read().decode("utf-8").rstrip('\n')
     
     return exe_path
@@ -129,7 +131,7 @@ def get_SExtractor_path():
         SE_executable = next(path for path in SE_paths if len(path)>0)
         return SE_executable
     except StopIteration:
-        print('Warning: SExtractor path is not found automatically.')
+        logger.error('SExtractor path is not found automatically.')
         return ''
 
 def update_SE_keywords(kwargs, threshold=5):
@@ -143,32 +145,36 @@ def update_SE_keywords(kwargs, threshold=5):
     for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
         if key in SE_key:
             kwargs.pop(key, None)
-            print(f'WARNING: {NAME} are reserved.')
+            logger.warning(f'{key} is a reserved keyword. Not updated.')
     return kwargs
 
 
 def find_keyword_header(header, keyword,
                         default=None, input_val=False, raise_error=False):
     """ Search keyword value in header (converted to float).
-        Input a value by user if keyword is not found. """
+        Accept a value by input if keyword is not found. """
         
     try:
         val = np.float(header[keyword])
      
     except KeyError:
-        print("%s missing in header --->"%keyword)
+        logger.info(f"Keyname {keyword} missing in the header .")
         
         if input_val:
             try:
-                val = np.float(input("Input a value of %s :"%keyword))
+                val = np.float(input(f"Input a value of {keyword} :"))
             except ValueError:
-                raise ValueError("Invalid %s values!"%keyword)
+                msg = f"Invalid {keyword} values!"
+                logger.error(msg)
+                raise ValueError(msg)
         elif default is not None:
-            print(f'Set {keyword} to default value = ', default)
+            logger.info(f"Set {keyword} to default value = ", default)
             val = default
         else:
             if raise_error:
-                raise KeyError("%s needs to be specified in the keywords."%keyword)
+                msg = f"{keyword} must be specified in the header."
+                logger.error(msg)
+                raise KeyError(msg)
             else:
                 return None
             
@@ -183,29 +189,31 @@ def AsciiUpper(N):
     """ ascii uppercase letters """
     return string.ascii_uppercase[:N]
     
-def save_pickle(data, filename, printout=True):
+def save_pickle(data, filename):
     """ Save data as pickle file. """
     try:
-        if printout: print("Saved to %s"%filename)
+        logger.info(f"Saved to {filename}")
         with open(filename, 'wb') as f:
             pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
     except PicklingError:
-        if printout: print("Saving %s failed"%filename)
+        logger.error(f"Saving {filename} failed")
 
-def load_pickle(filename, printout=True):
+def load_pickle(filename):
     """ Load data as pickle file. """
-    if printout: print("Read from %s"%filename)
+    logger.info(f"Read from {filename}")
     if os.path.exists(filename):
         with open(filename, 'rb') as f:
             try:
                 out = pickle.load(f)
             except ValueError as err:
-                print(err)
+                logger.error(err)
                 import pickle5
                 out = pickle5.load(f)
             return out
     else:
-        raise FileNotFoundError(f'{filename} not found!')
+        msg = f'{filename} not found!'
+        logger.error(msg)
+        raise FileNotFoundError(msg)
 
 def clean_pickling_object(keyword):
     """ Delete pickled objects defined in __main__ to avoid pickling error """
@@ -217,20 +225,22 @@ def load_config(filename):
     """ Read a yaml configuration. """
     
     if not filename.endswith('.yml'):
-        sys.exit(f"Table {filename} is not a yaml file. Exit.")
+        msg = f"Table {filename} is not a yaml file. Exit."
+        logger.error(msg)
+        sys.exit()
     
     with open(filename, 'r') as f:
         try:
             return yaml.load(f, Loader=yaml.FullLoader)
         except yaml.YAMLError as err:
-            print(err)
+            logger.error(err)
 
 def config_kwargs(func, config_file):
     """Wrap keyword arguments from a yaml configuration file."""
 
     # Load yaml file
     config = load_config(config_file)
-    print(f"Loaded configuration file {config_file}")
+    logger.info(f"Loaded configuration file {config_file}")
     
     # Wrap the function
     @wraps(func)
