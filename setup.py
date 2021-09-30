@@ -19,7 +19,7 @@ setup(
 
     name='elderflower', 
 
-    version='0.1.0',  
+    version='0.2',  
 
     description='Wide-angle PSF modeling for low surface brightness imaging', 
 

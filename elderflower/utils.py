@@ -275,23 +275,23 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     
     if draw:
         s = ax.scatter(x_data, y_data, c=color,
-                        s=5, cmap='viridis', alpha=0.4)
-        ax.scatter(x_data[clip], y_data[clip], lw=2, s=20,
+                        s=10, cmap='viridis', alpha=0.4)
+        ax.scatter(x_data[clip], y_data[clip], lw=2, s=25,
                     facecolors='none', edgecolors='orange', alpha=0.7)
         ax.plot(x_test, func(x_test, *popt), color='r')
         
-        if color is not None: fig.colorbar(s, label=c_lab.replace('_','\_'))
+        if color is not None: fig.colorbar(s, label=c_lab)
         
         ax.set_xlim(x_min, x_max)
         invert = lambda lab: ('MAG' in lab) | ('MU' in lab)
         if invert(x_lab): ax.invert_xaxis()
         if invert(y_lab): ax.invert_yaxis()
-        ax.set_xlabel(x_lab.replace('_','\_'))
-        ax.set_ylabel(y_lab.replace('_','\_'))
+        ax.set_xlabel(x_lab.replace('_','$\_$'))
+        ax.set_ylabel(y_lab.replace('_','$\_$'))
         
     return popt, pcov, clip_func
     
-def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=True):
+def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=True):
     """ Empirically pick out (bright) extended sources in the SE_catalog.
         The catalog need contain following columns:
         'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
@@ -309,7 +309,7 @@ def identify_extended_source(SE_catalog, mag_limit=16, mag_saturate=13, draw=Tru
     # Fit a flattened linear
     popt, _, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
                                         p0=(1, MAG_saturate, MU_saturate),
-                                        x_max=mag_limit, x_min=7,
+                                        x_max=mag_limit, x_min=max(7,np.min(x_data)),
                                         draw=draw, c_lab='CLASS_STAR',
                                         color=SE_bright['CLASS_STAR'],
                                         x_lab='MAG_AUTO',y_lab='MU_MAX')
@@ -538,7 +538,7 @@ def make_psf_2D(n_s, theta_s, frac=0.3, beta=6.7, fwhm=6.1,
     # Generate core and aureole PSF
     psf_c = psf.generate_core()
     psf_e, psf_size = psf.generate_aureole(contrast=1e7, psf_range=size)
-    star_psf = (1-frac) * psf_c + frac * psf_e
+    #star_psf = (1-frac) * psf_c + frac * psf_e
 
     # Galsim 2D model averaged in 1D
     if plot: psf.plot1D(xunit='arcsec')
@@ -571,7 +571,7 @@ def make_psf_1D(n_s, theta_s, ZP,
                               pixel_scale=pixel_scale,
                               xunit="arcsec", yunit="SB",
                               color="lightgreen",
-                              lw=4, alpha=0.9, plot=True,
+                              lw=4, alpha=0.9, plot=plot,
                               scatter=False, core_undersample=True)
     if plot:
         plt.xlim(2, max(1e3, np.max(2*theta_s)))
@@ -649,19 +649,23 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
                  display_bg=False, display=True, verbose=False):
     
     """ Return the image thubnail, mask map, backgroud estimates, and center of star.
-        Do a finer detection&deblending to remove faint undetected source."""
+        Do a finer detection & deblending to remove faint undetected source."""
     
     thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
                                           n_win=n_win, seeing=seeing, verbose=verbose)
     img_thumb, seg_thumb, mask_thumb = thumb_list
     
+#    if (cen_star[0]>img_thumb.shape[0]) | (cen_star[1]>img_thumb.shape[1]):
+#        return None, None, np.median(img_thumb[~mask_thumb]), cen_star
+
     # measure background, use a scalar value if the thumbnail is small 
     b_size = round(img_thumb.shape[0]//5/25)*25
-    if img_thumb.shape[0] >= 50:
+    if img_thumb.shape[0] >= b_size:
         back, back_rms = background_extraction(img_thumb, b_size=b_size)
     else:
-        back, back_rms = (np.median(img_thumb[~mask_thumb])*np.ones_like(img_thumb), 
-                          mad_std(img_thumb[~mask_thumb])*np.ones_like(img_thumb))
+        im_ = np.ones_like(img_thumb)
+        back, back_rms = (np.median(img_thumb[~mask_thumb])*im_,
+                          mad_std(img_thumb[~mask_thumb])*im_)
     if display_bg:
         # show background subtraction
         from .plotting import display_background_sub
@@ -682,9 +686,9 @@ def extract_star(id, star_cat, wcs, data, seg_map=None,
     else:
         segm_deblend = SegmentationImage(seg_thumb)
         
-    # the target star is at the center of the thumbnail
+    # mask other sources in the thumbnail
     star_lab = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
-    star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0)) # mask other source
+    star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0))
     
     if display:
         med_back = np.median(back)
@@ -729,6 +733,10 @@ def compute_Rnorm(image, mask_field, cen,
     I_flag : 0 good / 1 bad (available pixles < 5)
     
     """
+    
+    if image is None:
+        return [np.nan] * 3 + [1]
+    
     cen = (cen[0], cen[1])
     anl = CircularAnnulus([cen], R-wid_ring, R+wid_ring)
     anl_ma = anl.to_mask()[0].to_image(image.shape)
@@ -1028,9 +1036,9 @@ def downsample_segmentation(fn, fn_out, scale=0.5):
         pass
     
 def process_resampling(fn, bounds, obj_name, band,
-                        pixel_scale=DF_pixel_scale, r_scale=12,
-                        mag_limit=15, dir_measure='./', work_dir='./',
-                        factor=1, verbose=True):
+                       pixel_scale=DF_pixel_scale, r_scale=12,
+                       mag_limit=15, dir_measure='./', work_dir='./',
+                       factor=1, verbose=True):
                         
     from .image import ImageList
     
@@ -1096,17 +1104,16 @@ def process_resampling(fn, bounds, obj_name, band,
             downsample_segmentation(fn_seg, fn_seg_out, scale)
         
     else:
-        fn_rp, bounds_rp, obj_name_rp = fn, bounds, obj_name
+        fn_rp, bounds_rp = fn, bounds
         
-    return fn_rp, bounds_rp, obj_name_rp, pixel_scale, r_scale
-
+    return fn_rp, bounds_rp
+    
 
 ### Catalog / Data Manipulation Helper ###
 def id_generator(size=6, chars=None):
     if chars is None:
         chars = string.ascii_uppercase + string.digits
     return ''.join(random.choice(chars) for _ in range(size))
-    
     
 def crop_catalog(cat, bounds, keys=("X_IMAGE", "Y_IMAGE"), sortby=None):
     Xmin, Ymin, Xmax, Ymax = bounds
@@ -1324,7 +1331,7 @@ def fit_n0(dir_measure, bounds,
            obj_name, band, BKG, ZP,
            pixel_scale=DF_pixel_scale,
            fit_range=[20,40], dr=0.1,
-           N_max=15, mag_max=13, mag_limit=15,
+           N_fit=15, mag_max=13, mag_limit=15,
            I_norm=24, norm='intp',
            r_scale=12, sky_std=3,
            plot_brightest=True, draw=True):
@@ -1351,8 +1358,8 @@ def fit_n0(dir_measure, bounds,
         range for fitting in arcsec
     dr : float, optional, default 0.2
         profile step paramter
-    N_max : int, optional, default 20
-        max number of stars used to fit n0
+    N_fit : int, optional, default 15
+        number of stars used to fit n0
     mag_max : float, optional, default 13
         max magnitude of stars used to fit n0
     I_norm : float, optional, default 24
@@ -1406,7 +1413,7 @@ def fit_n0(dir_measure, bounds,
         r_rbin_all, I_rbin_all = np.array([]), np.array([])
         I_r0_all, In_rbin_all = np.array([]), np.array([])
 
-        tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_max]
+        tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_fit]
         if len(tab_fit)==0:
             print('No enought bright stars in this region. Use default.')
             return None, None
@@ -1664,8 +1671,8 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
         plt.xlim(mag_range[0]-0.5, mag_range[1]+0.5)
-        plt.xlabel(r"$MAG\_AUTO$")
-        plt.ylabel(r"$MAG\_AUTO - {%s}$"%mag_name)
+        plt.xlabel("MAG_AUTO")
+        plt.ylabel("MAG_AUTO - %s"%mag_name)
         plt.show()
         
     print('\nAverage Color Term [SE-%s] = %.5f'%(mag_name, CT))
@@ -1674,7 +1681,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
 
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           K=3, R_min=2, R_max=100,
+                           K=2, R_min=2, R_max=100,
                            mag_range=[11, 22], degree=2, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
@@ -1686,7 +1693,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     
     mag_name : column name of magnitude in tab_target 
     mag_range : range of magnitude for stars to be used
-    K : enlargement factor on the original segm map
+    K : enlargement factor on the original segm map (default 2)
     R_min : minimum aperture size in pixel (default 2)
     R_max : maximum aperture size in pixel (default 100)
     degree : degree of polynomial (default 2)
@@ -1737,7 +1744,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
 
         plt.scatter(mag, logr, s=3, alpha=0.2, color='gold')
 
-        plt.xlabel("%s (catalog)"%mag_name.replace('_','\_'))
+        plt.xlabel("magnitude (catalog)")
         plt.ylabel(r"$\log_{10}\,R$")
         plt.xlim(7,23)
         plt.ylim(0.15,2.2)
@@ -1805,7 +1812,7 @@ def make_segm_from_catalog(catalog_star,
                                               ext_cat['THETA_IMAGE'],):
                 pos = (X_c-Xmin, Y_c-Ymin)
                 theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*8, b*8, theta_)
+                aper = EllipticalAperture(pos, a*5, b*5, theta_)
                 apers.append(aper)
             
     # Draw segment map generated from the catalog
@@ -1950,7 +1957,7 @@ def make_psf_from_fit(sampler, psf=None,
 
 def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
     chi2_reduced = np.sum(((fit-data)/uncertainty)**2)/(len(data)-dof)
-    print("Reduced Chi^2: %.5f"%chi2_reduced)
+    print("Reduced Chi^2 = %.5f"%chi2_reduced)
 
 
 class MyError(Exception): 

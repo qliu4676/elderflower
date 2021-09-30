@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import warnings
 import numpy as np
 
 from functools import partial
@@ -9,7 +10,8 @@ from functools import partial
 from astropy.io import fits
 from astropy.table import Table
 
-from .io import find_keyword_header, check_save_path, get_SExtractor_path
+from .io import (find_keyword_header, check_save_path,
+                get_SExtractor_path, clean_pickling_object)
 from .detection import default_SE_config, default_conv, default_nnw
 from .image import DF_pixel_scale
 
@@ -115,7 +117,11 @@ def Run_Detection(hdu_path,
         if type(ZP) is not float:
             
             # If not available in kwargs, compute by crossmatch with refcat
-            from dfreduce.utils.catalogues import (match_catalogues, load_apass_in_region)
+            try:
+                from dfreduce.utils.catalogues import (match_catalogues, load_apass_in_region)
+            except ImportError:
+                sys.exit("Crossmatch is not available because dfreduce is not installed. ZP_keyname is required in the header.")
+                
             print("Compute zero-point from crossmatch with APASS catalog...")
             
             # alias for CDELT and CD
@@ -395,7 +401,7 @@ def Match_Mask_Measure(hdu_path,
     # Empirical enlarged aperture size from magnitude based on matched SE detection
     estimate_radius = fit_empirical_aperture(tab_target_full, seg_map,
                                              mag_name=mag_name_cat,
-                                             mag_range=[10,22], K=2.5,
+                                             mag_range=[10,22], K=2,
                                              R_max=int(200/pixel_scale),
                                              degree=2, draw=draw)
     
@@ -460,7 +466,7 @@ def Run_PSF_Fitting(hdu_path,
                     pad=50,
                     r_scale=12,
                     mag_limit=15,
-                    mag_threshold=[13.,11],
+                    mag_threshold=[13.5,11.],
                     mask_type='aper',
                     mask_obj=None,
                     wid_strip=24,
@@ -473,6 +479,7 @@ def Run_PSF_Fitting(hdu_path,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
+                    core_parameters={"frac":0.3, "beta":6.72, "fwhm":6.07},
                     n0=None,
                     fit_n0=True,
                     fit_sigma=True,
@@ -555,6 +562,11 @@ def Run_PSF_Fitting(hdu_path,
     theta_cutoff : float, optional, default 1200
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
+    core_parameters: dict, optional
+        Parameters of the PSF core  (retrieved from stacked PSF)
+            "frac": fraction of aureole
+            "beta": moffat beta, in arcsec
+            "fwhm": moffat fwhm, in arcsec
     n0 : float, optional, default None
         Power index of the first component, only used if fit_n0=False.
         If not None, n0 will be fixed at that value in the prior.
@@ -620,15 +632,18 @@ def Run_PSF_Fitting(hdu_path,
     # option for running on resampled image
     from .utils import process_resampling
     
-    hdu_path, bounds_list, obj_name, pixel_scale, r_scale  = \
-                                     process_resampling(hdu_path, bounds_list,
-                                                        obj_name, band,
-                                                        pixel_scale=pixel_scale,
-                                                        mag_limit=mag_limit,
-                                                        r_scale=r_scale,
-                                                        dir_measure=dir_measure,
-                                                        work_dir=work_dir,
-                                                        factor=resampling_factor)
+    hdu_path, bounds_list  = process_resampling(hdu_path, bounds_list,
+                                                obj_name, band,
+                                                pixel_scale=pixel_scale,
+                                                mag_limit=mag_limit,
+                                                r_scale=r_scale,
+                                                dir_measure=dir_measure,
+                                                work_dir=work_dir,
+                                                factor=resampling_factor)
+    if resampling_factor!=1:
+        obj_name += '_rp'
+        pixel_scale *= resampling_factor
+        r_scale /= resampling_factor
     
     ############################################
     # Read Image and Table
@@ -678,18 +693,13 @@ def Run_PSF_Fitting(hdu_path,
     # Setup PSF
     ############################################
     from .modeling import PSF_Model
-    
-    # PSF Parameters (some from fitting stacked PSF)
-    frac = 0.3              # fraction of aureole
-    beta = 6.72             # moffat beta, in arcsec
-    fwhm = 6.07             # moffat fwhm, in arcsec
 
-    theta_0 = 5.                
+    theta_0 = 5.
     # radius in which power law is flattened, in arcsec (arbitrary)
 
-    n_s = np.array([3.4, 2.2, n_cutoff])         # initial guess
+    n_s = np.array([3.4, 2.2, n_cutoff])     # initial guess of power index
     theta_s = np.array([theta_0, 10**2., theta_cutoff])
-        # initial transition radius in arcsec
+        # initial of transition radius in arcsec
 
     # Multi-power-law PSF
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
@@ -726,7 +736,6 @@ def Run_PSF_Fitting(hdu_path,
         count = None
         
     # Mask faint and centers of bright stars
-#    r_max = int(theta_cutoff/pixel_scale)
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
@@ -853,9 +862,7 @@ def Run_PSF_Fitting(hdu_path,
         samplers += [s]
         
     # Delete Stars to avoid pickling error in rerun
-    for variable in dir():
-        if 'stars' in variable:
-            del locals()[variable]
+    clean_pickling_object('stars')
         
     return samplers
     
@@ -917,6 +924,11 @@ class berry:
         self.obj_name = obj_name
         self.band = band
         
+        with fits.open(hdu_path) as hdul:
+            self.data = hdul[0].data
+            self.header = hdul[0].header
+            hdul.close()
+        
         self.work_dir = work_dir
         self.config = config_file
         
@@ -957,3 +969,4 @@ class berry:
                         
         _run(Match_Mask_Measure, **kwargs)
         self.samplers = _run(Run_PSF_Fitting, **kwargs)
+

@@ -44,7 +44,8 @@ class ImageButler:
     
     """
     
-    def __init__(self, hdu_path, obj_name='', band='G',
+    def __init__(self, hdu_path,
+                 obj_name='', band='G',
                  pixel_scale=DF_pixel_scale, pad=0,
                  ZP=None, bkg=None, G_eff=None, verbose=True):
         from .utils import crop_image
@@ -203,9 +204,11 @@ class Image(ImageButler):
                            mag_threshold=[13.5,12],
                            mag_saturate=13,
                            mag_limit=15,
-                           make_segm=False, K=2.5,
+                           make_segm=False, K=2,
                            catalog_sup='SE',
-                           use_PS1_DR2=False, draw=False,
+                           use_PS1_DR2=False,
+                           subtract_external=True,
+                           draw=False,
                            keep_tmp=False, dir_tmp='./tmp'):
         """ Generate image of stars from a PSF Model"""
         
@@ -276,7 +279,7 @@ class Image(ImageButler):
                                                 obj_name=obj_name, mag_name=mag_name_cat,
                                                 save=True, verbose=False, dir_name=dir_tmp)
         
-        self.read_measurement_table(dir_tmp,  r_scale=r_scale, mag_limit=mag_limit)
+        self.read_measurement_table(dir_tmp, r_scale=r_scale, mag_limit=mag_limit)
         
         # Make Star Models
         self.assign_star_props(r_scale=r_scale, mag_threshold=mag_threshold,
@@ -302,7 +305,8 @@ class Image(ImageButler):
             self.seg_map = seg_map_cat
         
         # Generate model star
-        image_stars, _, _ = generate_image_fit(psf.copy(), stars.copy(), self.image_shape)
+        image_stars, _, _ = generate_image_fit(psf.copy(), stars.copy(),
+        self.image_shape, subtract_external=subtract_external)
         print("Image of stars has been generated based on the PSF Model!")
         
         # Delete tmp dir
@@ -424,7 +428,7 @@ class ImageList(ImageButler):
                   by='aper',  r_core=24, r_out=None,
                   sn_thre=2.5, count=None, mask_obj=None,
                   n_strip=48, wid_strip=30, dist_strip=None,
-                  wid_cross=30, dist_cross=180, clean=True,
+                  wid_cross=20, dist_cross=180, clean=True,
                   draw=True, save=False, save_dir='../output/pic'):
         
         """Make Strip + Cross Mask"""
@@ -504,7 +508,7 @@ class ImageList(ImageButler):
             print(repr(Image))
             print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
     
-    def fit_n0(self, dir_measure, **kwargs):
+    def fit_n0(self, dir_measure, N_min_fit=10, **kwargs):
         """ Fit power index of first component with bright star profiles """
         self.n0, self.d_n0 = [], []
         for i in range(self.N_Image):
@@ -512,7 +516,9 @@ class ImageList(ImageButler):
                 kwargs['sky_std'] = self.std_est[i]
             else:
                 print('Sky stddev has not been estimated yet.')
-            n0, d_n0 = self.Images[i].fit_n0(dir_measure, **kwargs)
+                
+            N_fit = max(N_min_fit, self.stars[i].n_verybright)
+            n0, d_n0 = self.Images[i].fit_n0(dir_measure, N_fit=N_fit, **kwargs)
             self.n0 += [n0]
             self.d_n0 += [d_n0]
             

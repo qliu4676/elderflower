@@ -144,10 +144,6 @@ class Sampler:
         
         return cls(res['container'], run=False, results=res['fit_res'])
     
-    # Old alias. Deprecated in the future
-    read_results = load_results
-    
-    
     def cornerplot(self, truths=None, figsize=(16,15),
                    save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
@@ -189,15 +185,16 @@ class Sampler:
         
         ct = self.container
         image_shape = ct.image_shape
-        psf_fit, params = make_psf_from_fit(self, psf, psf_range=max(image_shape))
+        psf_fit, params = make_psf_from_fit(self, psf.copy(), psf_range=max(image_shape))
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std
         
-        stars.z_norm = stars.z_norm + stars.BKG - self.bkg_fit
+        stars_ = stars.copy()
+        stars_.z_norm = stars.z_norm + stars.BKG - self.bkg_fit
         
         image_stars, noise_image, bkg_image \
-                   = generate_image_fit(psf_fit, stars, image_shape,
+                   = generate_image_fit(psf_fit, stars_, image_shape,
                                         norm=norm, leg2d=ct.leg2d,
                                         brightest_only=ct.brightest_only,
                                         draw_real=ct.draw_real)
@@ -216,7 +213,7 @@ class Sampler:
         self.psf_fit = psf_fit
         
         # Stars
-        self.stars = stars
+        self.stars = stars_
         
     
     def calculate_reduced_chi2(self, Gain, dof):

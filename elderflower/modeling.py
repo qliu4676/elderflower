@@ -29,7 +29,7 @@ try:
     
 except ImportError:
     import warnings
-    warnings.warn("One of Joblib, psutil, multiprocessing, mpi4py is not installed. Parallelization is not enabled.")
+    warnings.warn("Joblib / multiprocessing is not installed. Parallelization is not enabled.")
     parallel_enabled = False
 
 try:
@@ -1302,19 +1302,21 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=T
                 print(e.message)
             continue
 
-    image_gs0 = full_image0.array
+    image_base0 = full_image0.array
     
     end = time.time()
     if verbose: print("Total Time: %.3f s\n"%(end-start))
     
-    return image_gs0[pad:nY0-pad, pad:nX0-pad]
+    image_base = image_base0[pad:nY0-pad, pad:nX0-pad]
+    
+    return image_base
 
 
 def make_truth_image(psf, stars, image_shape, contrast=1e6,
                      parallel=False, verbose=False, saturation=4.5e4):
     
     """
-    Draw truth image according to the given position & flux. 
+    Draw a truth image according to the given psf, position & flux.
     In two manners: 1) convolution in FFT w/ Galsim;
                 and 2) plot in real space w/ astropy model. 
 
@@ -1323,6 +1325,7 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
         print("Generate the truth image.")
         start = time.time()
     
+    # attributes
     frac = psf.frac
     gamma_pix = psf.gamma_pix
     beta = psf.beta
@@ -1345,25 +1348,12 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
     func_core_2d_s = psf.draw_core2D_in_real(star_pos_A, (1-frac) * Flux_A)
     func_aureole_2d_s = psf.draw_aureole2D_in_real(star_pos_A, frac * Flux_A)
 
-    # option for drawing in parallel
-    if (not parallel) | (parallel_enabled==False) :
-        if verbose: 
-            print("Rendering bright stars in serial...")
-        image_real = np.sum([f2d(xx,yy) + p2d(xx,yy) 
-                             for (f2d, p2d) in zip(func_core_2d_s,
-                                                   func_aureole_2d_s)], axis=0)
-    else:
-        if verbose: 
-            print("Rendering bright stars in parallel...")
-        func2d_s = np.concatenate([func_core_2d_s, func_aureole_2d_s])
-        p_map2d = partial(map2d, xx=xx, yy=yy)
-        
-        image_stars = parallel_compute(func2d_s, p_map2d,
-                                       lengthy_computation=False, verbose=verbose)
-        image_real = np.sum(image_stars, axis=0)
-    
+    image = np.sum([f2d(xx,yy) + p2d(xx,yy)
+                     for (f2d, p2d) in zip(func_core_2d_s,
+                                           func_aureole_2d_s)], axis=0)
+                                               
     # combine the two image
-    image = image_gs + image_real
+    image += image_gs
     
     # saturation limit
     image[image>saturation] = saturation
@@ -1610,7 +1600,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         image_gs = full_image.array
         
         if brightest_only:
-            # Only plot the aureole. A Deeper mask is required.
+            # Only plot the aureole. A heavy mask is required.
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            I0=I0_verybright)
         else:
@@ -1618,7 +1608,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            Flux=frac * stars.Flux_verybright)
             if draw_core:
-                func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright,
+                func_core_2d_s = psf.draw_core2D_in_real(stars.star_pos_verybright-1,
                                                          Flux=(1-frac) * stars.Flux_verybright)
                 image_gs += np.sum([f2d(xx,yy) for f2d in func_core_2d_s], axis=0)
         
@@ -1653,7 +1643,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
 def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                        brightest_only=False, draw_real=True,
-                       subtract_external=True, leg2d=False, verbose=False):
+                       subtract_external=False, leg2d=False, verbose=False):
     """ Generate the fitted bright stars, the fitted background and
         a noise images (for display only). """
     
@@ -1679,7 +1669,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                                psf_scale=pixel_scale,
                                brightest_only=brightest_only,
                                subtract_external=subtract_external,
-                               draw_real=draw_real)
+                               draw_real=draw_real, draw_core=True)
                                
     if hasattr(psf_fit, 'bkg_std') & hasattr(psf_fit, 'bkg'):
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
@@ -1688,7 +1678,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         if verbose:
             print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
-        noise_image = bkg_image = None
+        noise_image = bkg_image = np.zeros_like(image_stars)
    
     if leg2d:
         Xgrid = np.linspace(-(1-1/nX)/2., (1-1/nX)/2., nX)
@@ -1750,7 +1740,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
     if fit_frac: K += 1
     if fit_sigma: K += 1
     
-    Prior_logsigma = stats.truncnorm(a=-3, b=0,
+    Prior_logsigma = stats.truncnorm(a=-3, b=1,
                                      loc=np.log10(std_est), scale=0.3)
                                      
     Prior_logfrac = stats.uniform(loc=-2.5, scale=2.2)

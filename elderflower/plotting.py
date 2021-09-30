@@ -17,7 +17,9 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 plt.rcParams['image.origin'] = 'lower'
 plt.rcParams['image.cmap'] = 'gnuplot2'
-plt.rcParams["font.serif"] = "Times New Roman"
+plt.rcParams['text.usetex'] = False
+plt.rcParams['font.serif'] = "Times New Roman"
+rcParams.update({'font.size': 16})
 rcParams.update({'xtick.major.pad': '5.0'})
 rcParams.update({'xtick.major.size': '4'})
 rcParams.update({'xtick.major.width': '1.'})
@@ -31,7 +33,6 @@ rcParams.update({'ytick.minor.pad': '5.0'})
 rcParams.update({'ytick.minor.size': '4'})
 rcParams.update({'ytick.minor.width': '0.8'})
 rcParams.update({'axes.labelsize': 16})
-rcParams.update({'font.size': 16})
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -167,8 +168,8 @@ def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
 
 def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
                    scale=5*u.arcmin, pixel_scale=2.5,
-                   lw=6, fontsize=15, color='w', format='.1f',
-                   border_color='k', border_lw=0.5, alpha=1):
+                   lw=6, fontsize=15, color='w', format='.0f',
+                   border_color='k', border_lw=1, alpha=1):
     """ Draw a scale bar """
     import matplotlib.patheffects as PathEffects
     L_bar = scale.to(u.arcsec).value/pixel_scale
@@ -176,7 +177,7 @@ def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
     ax.plot([X_bar-L_bar/2, X_bar+L_bar/2], [Y_bar,Y_bar],
             color=color, alpha=alpha, lw=lw,
             path_effects=[PathEffects.SimpleLineShadow(), PathEffects.Normal()])
-    
+
     ax.text(X_bar, y_text, '{0:{1}} {2}'.format(scale.value, format, scale.unit),
             color=color, alpha=alpha, fontsize=fontsize,
             ha='center', va='center', fontweight='bold',
@@ -281,9 +282,12 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     ax2.set_title("Mask Comb.")
 
     image3 = image.copy()
+    shape = image.shape
     image3[mask_comb] = 0
     im3 = ax3.imshow(image3, norm=LogNorm(vmin=vmin, vmax=vmax))
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
+    ax3.set_xlim(0, shape[1])
+    ax3.set_ylim(0, shape[0])
     ax3.set_title("Sky")
     colorbar(im3, pad=0.1, size="2%")
     
@@ -563,8 +567,8 @@ def draw2D_fit_vs_truth_PSF_mpow(results,  psf, stars, labels, image,
     
     pmed, pmean, pcov = get_params_fit(results)
     fits = pmed if avg_func=='median' else pmean
-    print("Fitting (mean) : ", np.around(pmean,3))
-    print("Fitting (median) : ", np.around(pmed,3))
+    print("Fitted (mean) : ", np.around(pmean,3))
+    print("Fitted (median) : ", np.around(pmed,3))
     
     n_s_fit = fits[:N_n]
     if N_theta > 0:
@@ -619,7 +623,7 @@ def draw_comparison_2D(data, mask, image_fit,
     
     std = np.std(image_fit[~mask_fit])
     if vmin is None:
-        vmin = np.mean(bkg_image) - std
+        vmin = np.mean(bkg_image) - 2*std
     if vmax is None:
         vmax = vmin + 20*std
         
@@ -642,7 +646,7 @@ def draw_comparison_2D(data, mask, image_fit,
     
     if Gain is None:
         frac_diff = (image_fit-data)/data
-        im = ax4.imshow(frac_diff, vmin=-0.1, vmax=0.1, cmap="bwr")
+        im = ax4.imshow(frac_diff, vmin=-0.05, vmax=0.05, cmap="bwr")
         ax4.set_title("Frac. Diff. [(I$_f$ - I$_0$)/I$_0$]", fontsize=15); colorbar(im)
     else:
         uncertainty = np.sqrt(np.std(noise_image)**2+(image_fit-bkg_image)/Gain)
@@ -652,11 +656,11 @@ def draw_comparison_2D(data, mask, image_fit,
         ax4.set_title("$\chi$ [(I$_f$ - I$_0$)/$\sigma$]", fontsize=15); colorbar(im)
         
     residual = (data-image_stars)
-    im = ax5.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax5.imshow(residual, norm=norm, cmap=cmap)
     ax5.set_title("Bright Subtracted [I$_0$ - I$_{f,B}$]", fontsize=15); colorbar(im)
     
     residual[mask_fit] = 0
-    im = ax6.imshow(residual, vmin=vmin, vmax=vmax, norm=norm, cmap=cmap)
+    im = ax6.imshow(residual, norm=norm, cmap=cmap)
     ax6.set_title("Bright Subtracted (masked)", fontsize=15); colorbar(im)
     
     if r_core is not None:

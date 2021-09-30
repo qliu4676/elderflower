@@ -205,7 +205,7 @@ class Mask:
             
     def make_mask_advanced(self, n_strip=48,
                            wid_strip=30, dist_strip=1800,
-                           wid_cross=30, dist_cross=180,
+                           wid_cross=20, dist_cross=180,
                            clean=True, draw=True, 
                            save=False, save_dir='.'):
         
@@ -220,7 +220,7 @@ class Mask:
         n_strip : number of each strip mask
         wid_strip : width of each strip mask (in arcsec) (default: 0.5 arcmin)
         dist_strip : furthest range of each strip mask (in arcsec) (default: 0.5 deg)
-        wid_cross : half-width of spike mask (in arcsec) (default: 0.5 arcmin)
+        wid_cross : half-width of spike mask (in arcsec) (default: 20 arcsec)
         dist_cross: furthest range of each spike mask (in arcsec) (default: 3 arcmin)
         clean : whether to remove medium bright stars far from any available
                 pixels for fitting. A new Stars object will be stored in
@@ -369,12 +369,12 @@ def make_mask_aperture(fname, RA, Dec, A_ang, B_ang, PA_ang, wcs, shape,
     return mask
 
 
-def make_mask_map_core(image, star_pos, r_core=12):
+def make_mask_map_core(image_shape, star_pos, r_core=12):
     """ Make stars out to r_core """
 
     # mask core
-    yy, xx = np.indices(image.shape)
-    mask_core = np.zeros_like(image, dtype=bool)
+    yy, xx = np.indices(image_shape)
+    mask_core = np.zeros(image_shape, dtype=bool)
     
     if np.ndim(r_core) == 0:
         r_core = np.ones(len(star_pos)) * r_core
