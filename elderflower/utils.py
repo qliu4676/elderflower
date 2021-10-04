@@ -27,6 +27,7 @@ from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
 from photutils.segmentation import SegmentationImage
     
+from .io import logger
 from .io import save_pickle, load_pickle, check_save_path
 from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .plotting import LogNorm, AsinhNorm, colorbar
@@ -35,7 +36,7 @@ try:
     from reproject import reproject_interp
     reproject_install = True
 except ImportError:
-    warnings.warn("reproject is not installed. no rescaling.")
+    warnings.warn("Package reproject is not installed. No rescaling available.")
     reproject_install = False
 
 # default SE columns for cross_match
@@ -72,7 +73,11 @@ def Intensity2SB(Intensity, BKG, ZP, pixel_scale=DF_pixel_scale):
     return I_SB
 
 def SB2Intensity(SB, BKG, ZP, pixel_scale=DF_pixel_scale):
-    """ Convert surface brightness (mag/arcsec^2)to intensity given the background value, zero point and pixel scale """ 
+    """
+    Convert surface brightness (mag/arcsec^2)to intensity given the
+    background value, zero point and pixel scale.
+    
+    """
     SB = np.atleast_1d(SB)
     I = 10** ((SB - ZP - 2.5 * math.log10(pixel_scale**2))/ (-2.5)) + BKG
     return I
@@ -89,7 +94,7 @@ def pol2cart(rho, phi):
 
 def counter(i, number):
     if np.mod((i+1), number//4) == 0:
-        print("completed: %d/%d"%(i+1, number))
+        logger.info("    - completed: %d/%d"%(i+1, number))
 
 
 def round_good_fft(x):
@@ -143,7 +148,7 @@ def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
     
     # Short estimate summary
     mean, med, std = sigma_clipped_stats(data, mask, **kwargs)
-    print("Background stats: mean = %.2f  med = %.2f  std = %.2f"%(mean, med, std))
+    logger.info("Background stats: mean = %.2f  med = %.2f  std = %.2f"%(mean, med, std))
     
     # check header key
     bkg = find_keyword_header(header, bkg_keyname)
@@ -352,14 +357,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, figsize=None,
                    label=None, plot_line=False, mock=False,
-                   plot=True, scatter=False, fill=False,
-                   errorbar=False, verbose=False):
+                   plot=True, errorbar=False,
+                   scatter=False, fill=False):
                    
     """
-    Calculate 1d radial profile of a given star postage
-    
-    cen: 0-based center position in pixel coordinate
-    
+    Calculate 1d radial profile of a given star postage.
     """
     
     if mask is None:
@@ -382,9 +384,6 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     n_pix_max = len(z) - np.argmin(abs(z_diff - 0.00005 * z_diff[-1]))
     r_max = np.sqrt(n_pix_max/np.pi)
     r_max = np.min([img.shape[0]//2, r_max])
-    
-    if verbose:
-        print("Maximum R: %d (pix)"%np.int(r_max))    
     
     if xunit == "arcsec":
         r = r * pixel_scale   # radius in arcsec
@@ -559,7 +558,7 @@ def make_psf_1D(n_s, theta_s, ZP,
     
     Amp = 10**((mag-ZP)/-2.5)
     if plot:
-        print('Scaled magnitude = ', mag)
+        print('Scaled 1D PSF to magnitude = ', mag)
         
     cen = ((size-1)/2., (size-1)/2.)
     D, psf = make_psf_2D(n_s, theta_s, frac, beta, fwhm,
@@ -829,7 +828,7 @@ def compute_Rnorm_batch(table_target, data, seg_map, wcs,
                                                     wid_cross=wid_cross,
                                                     display=display)
         
-        if (Iflag==1) & verbose: print ("Errorenous measurement: #", num)
+        if (Iflag==1) & verbose: logger.debug("Errorenous measurement: #", num)
         
         # Use the median value of background as the local background
         sky_mean = np.median(bkg)
@@ -960,7 +959,9 @@ def downsample_wcs(wcs_input, scale=0.5):
         elif cdname == 'CD':
             cd = 'CD{0:d}_{0:d}'.format(axis)
         else:
-            raise KeyError('Fits header has no CDELT or CD keywords!')
+            msg = 'Fits header has no CDELT or CD keywords!'
+            logger.error(msg)
+            raise KeyError(msg)
             
         cp = 'CRPIX{0:d}'.format(axis)
         na = 'NAXIS{0:d}'.format(axis)
@@ -1019,7 +1020,7 @@ def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
     
     # write new fits
     fits.writeto(fn_out, data_rp, header=header_out, overwrite=True)
-    print('Resampled image saved to: ', fn_out)
+    logger.info('Resampled image saved to: ', fn_out)
 
     return True
 
@@ -1047,7 +1048,7 @@ def process_resampling(fn, bounds, obj_name, band,
     
     if factor!=1:
         if verbose:
-            print('Resampling by a factor of {0:.1g}...'.format(factor))
+            logger.info('Resampling by a factor of {0:.1g}...'.format(factor))
         
         scale = 1/factor
         
@@ -1075,7 +1076,7 @@ def process_resampling(fn, bounds, obj_name, band,
         obj_name_rp = obj_name + '_rp'
         
         if verbose:
-            print('Transforming coordinates for measurement tables...')
+            logger.info('Transforming coordinates for measurement tables...')
             
         for Img, bound, bound_rp in zip(DF_Images, bounds, bounds_rp):
         
@@ -1094,7 +1095,8 @@ def process_resampling(fn, bounds, obj_name, band,
             transform_table_coordinates(table_norm, fn_norm, scale)
             
             # reproject segmentation
-            print('Resampling segmentation...')
+            if verbose:
+                logger.info('Resampling segmentation for bounds:', bound)
             fn_seg = os.path.join(dir_measure,
                         "%s-segm_%s_catalog_%s.fits"\
                         %(obj_name, band.lower(), old_range))
@@ -1195,8 +1197,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
 def read_measurement_table(dir_name, bounds0,
                            obj_name='', band='G',
                            pad=50, r_scale=12,
-                           mag_limit=15,
-                           verbose=False):
+                           mag_limit=15):
     """ Read measurement tables from the directory """
     
     use_PS1_DR2 = True if 'PS2' in dir_name else False
@@ -1217,8 +1218,8 @@ def read_measurement_table(dir_name, bounds0,
 
     # Check if the file exist before read
     assert os.path.isfile(fname_catalog), f"Table {fname_catalog} does not exist!"
-    if verbose:
-        print(f"Read {fname_catalog}.")
+    
+    logger.debug(f"Reading catalog {fname_catalog}.")
     table_catalog = Table.read(fname_catalog, format="ascii")
     mag_catalog = table_catalog[mag_name]
 
@@ -1235,8 +1236,8 @@ def read_measurement_table(dir_name, bounds0,
                                    patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
     # Check if the file exist before read
     assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
-    if verbose:
-        print(f"Read {fname_norm}.")
+    
+    logger.debug(f"Reading catalog {fname_norm}.")
     table_norm = Table.read(fname_norm, format="ascii")
 
     # Crop the catalog
@@ -1269,23 +1270,33 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     z_norm = table_norm['Imed'].data - table_norm['Isky'].data
     z_norm[z_norm<=0] = min(1, z_norm[z_norm>0].min())
     
-    # Convert/printout thresholds
+    # Convert and printout thresholds
     Flux_threshold = 10**((np.array(mag_threshold) - ZP) / (-2.5))
     
     if verbose:
-        print("Magnitude Thresholds:  {0}, {1} mag".format(*mag_threshold))
-        print("(<=> Flux Thresholds: {0}, {1} ADU)".format(*np.around(Flux_threshold,2)))
+        msg = "Magnitude Thresholds:  {0}, {1} mag"
+        msg = msg.format(*mag_threshold)
+        logger.info(msg)
+        
+        msg = "Flux Thresholds: {0}, {1} ADU"
+        msg = msg.format(*np.around(Flux_threshold,2))
+        logger.info(msg)
+        
         try:
             SB_threshold = psf.Flux2SB(Flux_threshold, BKG=sky_mean, ZP=ZP, r=r_scale)
-            print("(<=> Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 at {2} pix)\n"\
-                  .format(*np.around(SB_threshold,1),r_scale))
+            msg = "Surface Brightness Thresholds: {0}, {1} mag/arcsec^2 "
+            msg = msg.format(*np.around(SB_threshold,1))
+            msg += "at {0} pix for sky = {1:.3f}".format(r_scale, sky_mean)
+            logger.info(msg3)
+            
         except:
             pass
             
     # Bright stars in model
     stars_bright = Stars(star_pos, Flux, Flux_threshold=Flux_threshold,
-                         z_norm=z_norm, r_scale=r_scale, BKG=sky_mean, verbose=False)
-    stars_bright = stars_bright.remove_outsider(image_shape, gap=[3*r_scale, r_scale], verbose=verbose)
+                         z_norm=z_norm, r_scale=r_scale, BKG=sky_mean)
+    stars_bright = stars_bright.remove_outsider(image_shape, gap=[3*r_scale, r_scale])
+    stars_bright._info()
     
     if (table_faint is not None) & ('MAG_AUTO_corr' in table_faint.colnames):
         table_faint['FLUX_AUTO_corr'] = 10**((table_faint['MAG_AUTO_corr']-ZP)/(-2.5))
@@ -1304,7 +1315,7 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
         star_pos = np.vstack([star_pos, star_pos_faint])
         Flux = np.concatenate([Flux, Flux_faint])
         
-    stars_all = Stars(star_pos, Flux, Flux_threshold, BKG=sky_mean, verbose=False)
+    stars_all = Stars(star_pos, Flux, Flux_threshold, BKG=sky_mean)
 
     if draw:
         stars_all.plot_flux_dist(label='All', color='plum')
@@ -1415,10 +1426,10 @@ def fit_n0(dir_measure, bounds,
 
         tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_fit]
         if len(tab_fit)==0:
-            print('No enought bright stars in this region. Use default.')
+            logger.warning('No enought bright stars in this region. n0 will be included in the fitting.')
             return None, None
             
-        print('Fit n0 with profiles of %d bright stars...'%(len(tab_fit)))
+        logger.info('Fit n0 with profiles of %d bright stars...'%(len(tab_fit)))
         for num in tab_fit['NUMBER']:
             res = res_thumb[num]
             img, ma, cen = res['image'], res['mask'], res['center']
@@ -1479,7 +1490,7 @@ def fit_n0(dir_measure, bounds,
                                 bbox_transform=ax.transAxes)
             
     else:
-        print('Warning: r0 is out of fit_range! Use default.')
+        logger.warning('r0 is out of fit_range! n0 will be included in the fitting.')
         return None, None
 
     if norm=="intp":
@@ -1513,7 +1524,7 @@ def fit_n0(dir_measure, bounds,
 
     # I ~ klogr; m = -2.5logF => n = k/2.5
     n0, d_n0 = popt[0]/2.5, np.sqrt(pcov[0,0])/2.5
-    print('n0 = {:.4f}+/-{:.4f}'.format(n0, d_n0))
+    logger.info('n0 = {:.4f}+/-{:.4f}'.format(n0, d_n0))
     
     return n0, d_n0
     
@@ -1522,12 +1533,12 @@ def fit_n0(dir_measure, bounds,
 
 def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
                             sep=3*u.arcsec, mag_saturate=13):
-    """ Add unmatched bright (saturated) stars using HLSP ATLAS catalog """
+    """ Add unmatched bright (saturated) stars using HLSP ATLAS catalog. """
 
     if len(tab['MAG_AUTO_corr']<mag_saturate)<1:
         return tab
         
-    print("Add unmatched bright stars from HLSP ATLAS catalog.")
+    logger.info("Adding unmatched bright stars from HLSP ATLAS catalog.")
     
     # cross match SE catalog and ATLAS catalog
     coords_atlas = SkyCoord(tab_atlas['RA'], tab_atlas['Dec'], unit=u.deg)
@@ -1576,13 +1587,16 @@ def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
     
 
 def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
-    """ Add unmatched bright (saturated) stars in SE_catatlogas to tab.
-        Magnitude is corrected by interpolation from other matched stars """
+    """
+    Add unmatched bright (saturated) stars in SE_catatlogas to tab.
+    Magnitude is corrected by interpolation from other matched stars.
+    
+    """
     
     if len(tab['MAG_AUTO_corr']<mag_saturate)<5:
         return tab
         
-    print("Mannually add unmatched bright stars from SE catalog.")
+    logger.info("Adding unmatched bright stars based on SE measurements...")
     
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
@@ -1643,7 +1657,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
     
     mag_range : range of magnitude for stars to be used
     mag_name : column name of magnitude in tab_target 
-    draw : whethert to draw a plot showing MAG_AUTO vs diff.
+    draw : whethert to draw a diagnostic plot of MAG_AUTO vs diff.
     
     Returns
     ----------
@@ -1675,7 +1689,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
         plt.ylabel("MAG_AUTO - %s"%mag_name)
         plt.show()
         
-    print('\nAverage Color Term [SE-%s] = %.5f'%(mag_name, CT))
+    logger.info('Average Color Term [SE-%s] = %.5f'%(mag_name, CT))
         
     return np.around(CT,5)
 
@@ -1697,7 +1711,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     R_min : minimum aperture size in pixel (default 2)
     R_max : maximum aperture size in pixel (default 100)
     degree : degree of polynomial (default 2)
-    draw : whether to draw log R vs mag
+    draw : whether to draw a diagnostic plot of log R vs mag
     
     Returns
     ----------
@@ -1705,8 +1719,9 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     
     """
     
-    
-    print("\nFit %d-order empirical relation of aperture radii for catalog stars based on SE (X%.1f)"%(degree, K))
+    msg = "Fitting {0}-order empirical relation for ".format(degree)
+    msg += "apertures of catalog stars based on SExtarctor (X{0:.1f})".format(K)
+    logger.info(msg)
 
     # Read from SE segm map
     segm_deb = SegmentationImage(seg_map)
@@ -1773,7 +1788,7 @@ def make_segm_from_catalog(catalog_star,
     mag_name : magnitude column name in catalog_star
     mag_limit : magnitude limit to add segmentation
     ext_cat : (bright) extended source catalog to mask
-    draw : whether to draw the output segm map
+    draw : whether to draw the segm map
     save : whether to save the segm map as fits
     dir_name : path of saving
     
@@ -1793,7 +1808,7 @@ def make_segm_from_catalog(catalog_star,
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
         
     catalog = catalog[catalog[mag_name]<mag_limit]
-    print("\nMake segmentation map based on catalog %s: %d stars"%(mag_name, len(catalog)))
+    logger.info("Make segmentation map based on catalog %s: %d stars"%(mag_name, len(catalog)))
     
     # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
@@ -1837,7 +1852,7 @@ def make_segm_from_catalog(catalog_star,
         
         file_name = os.path.join(dir_name, "%s-segm_%s_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, band.lower(), Xmin, Xmax, Ymin, Ymax))
         hdu_seg.writeto(file_name, overwrite=True)
-        print("Save segmentation map made from catalog as %s\n"%file_name)
+        logger.info("Saved segmentation map made from catalog as %s"%file_name)
         
     return seg_map
 
@@ -1957,7 +1972,7 @@ def make_psf_from_fit(sampler, psf=None,
 
 def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
     chi2_reduced = np.sum(((fit-data)/uncertainty)**2)/(len(data)-dof)
-    print("Reduced Chi^2 = %.5f"%chi2_reduced)
+    logger.info("Reduced Chi^2 = %.5f"%chi2_reduced)
 
 
 class MyError(Exception): 

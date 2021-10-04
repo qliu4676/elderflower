@@ -14,6 +14,7 @@ from astropy.io import fits, ascii
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, Column, join, vstack
 
+from .io import logger
 from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .utils import transform_coords2pixel
 from .utils import crop_catalog, merge_catalog, SE_COLUMNS
@@ -68,9 +69,10 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     if radius is None:
         L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
         radius = L * pixel_scale * u.arcsec
-        
-    print("Search", np.around(radius.to(u.deg), 3), "around:")
-    print(coord_cen)
+    if verbose:
+        msg = "Search {0} ".format(np.around(radius.to(u.deg), 3))
+        msg += f"around: ({coord_cen.to_string()})"
+        logger.info(msg)
     
     for j, (cat_name, table_name) in enumerate(catalog.items()):
         # Query from Vizier
@@ -136,7 +138,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
         for m_name in magnitude_name[cat_name]:
             mag = Cat_crop[m_name]
             if verbose:
-                print("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
+                logger.debug("%s %s:  %.3f ~ %.3f"%(cat_name, m_name, mag.min(), mag.max()))
 
         # Merge Catalog
         keep_columns = SE_COLUMNS + ["ID"+'_'+c_name] + magnitude_name[cat_name] + \
@@ -169,9 +171,9 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     mag_all = tab_target_all[mag_name+'_'+c_name]
     mag = tab_target[mag_name+'_'+c_name]
     if verbose:
-        print("Matched stars with %s %s:  %.3f ~ %.3f"\
+        logger.info("Matched stars with %s %s:  %.3f ~ %.3f"\
               %(cat_name, mag_name, mag_all.min(), mag_all.max()))
-        print("Matched bright stars with %s %s:  %.3f ~ %.3f"\
+        logger.info("Matched bright stars with %s %s:  %.3f ~ %.3f"\
               %(cat_name, mag_name, mag.min(), mag.max()))
     
     return tab_target, tab_target_all, Cat_crop
@@ -224,8 +226,10 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         L = math.sqrt((cen[0]-bounds[0])**2 + (cen[1]-bounds[1])**2)
         radius = (L * pixel_scale * u.arcsec).to(u.deg)
         
-        print("Search", np.around(radius, 3), "around:")
-        print(coord_cen)
+        if verbose:
+            msg = "Search {0} ".format(np.around(radius.to(u.deg), 3))
+            msg += f"around: ({coord_cen.to_string()})"
+            logger.info(msg)
         
         #### Query PANSTARRS start ####
         constraints = {'nDetections.gt':1, band+'MeanPSFMag.lt':22}
@@ -362,10 +366,10 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
     tab_target_all.sort(mag_name)
     
     if verbose:
-        print("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
+        logger.info("Matched stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
               %(mag_name, np.nanmin(tab_target_all[mag_name]),
                 np.nanmax(tab_target_all[mag_name])))
-        print("Matched bright stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
+        logger.info("Matched bright stars with PANSTARRS DR2 %s:  %.3f ~ %.3f"\
               %(mag_name, np.nanmin(tab_target[mag_name]),
                 np.nanmax(tab_target[mag_name])))
     
@@ -398,11 +402,13 @@ def cross_match_PS1(band, wcs_data,
                                                 band=b_name,
                                                 verbose=verbose)
             except HTTPError:
-                print('Gateway Time-out. Try Again.')
+                logger.warning('Gateway Time-out. Try again.')
             else:
                 break
         else:
-            sys.exit('504 Server Error: 4 Failed Attempts. Exit.')
+            msg = f'504 Server Error: {n_attempt} failed attempts. Exit.'
+            logger.error(msg)
+            sys.exit()
             
     else:
         mag_name = b_name+'mag'

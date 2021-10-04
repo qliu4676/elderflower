@@ -41,6 +41,7 @@ except ImportError:
             return func 
         return dummy_decorator
     
+from .io import logger
 from .utils import fwhm_to_gamma, gamma_to_fwhm
 from .utils import Intensity2SB, SB2Intensity
 from .utils import round_good_fft, calculate_psf_size
@@ -463,20 +464,24 @@ class Stars:
     
     """
     def __init__(self, star_pos, Flux, 
-                 Flux_threshold=[7e4, 2.7e6],
-                 z_norm=None, r_scale=12, 
-                 BKG=0, verbose=False):
+                 Flux_threshold=[2.7e5, 2.7e6],
+                 z_norm=None, r_scale=12, BKG=0):
         """
         Parameters
         ----------
-        star_pos: positions of stars (in the region)
-        Flux: flux of stars (in ADU)
-        
-        Flux_threshold : thereshold of flux
-                (default: corresponding to [15, 11] mag for DF)
-        z_norm : flux scaling measured at r_scale
-        r_scale : radius at which to measure the flux scaling
-        BKG : sky background value
+        star_pos: 2d array
+            pixel positions of stars in the region
+        Flux: 1d array
+            flux of stars (in ADU)
+        Flux_threshold : [float, float]
+            thereshold of flux [MB, VB]
+            (default: corresponding to [13.5, 11] mag for DF)
+        z_norm : 1d array
+            flux scaling measured at r_scale
+        r_scale : int
+            radius at which to measure the flux scaling
+        BKG : float
+            sky background value
                 
         """
         self.star_pos = np.atleast_2d(star_pos)
@@ -497,25 +502,6 @@ class Stars:
             
         self.r_scale = r_scale
         self.BKG = BKG
-
-        self.verbose = verbose
-        
-        if verbose:
-            if len(Flux[self.medbright])>0:
-                print("# of medium bright stars: %d (flux range:%.2g~%.2g) "\
-                      %(self.n_medbright, Flux[self.medbright].min(), Flux[self.medbright].max()))
-            
-            if len(Flux[self.verybright])>0:
-                print("# of very bright stars : %d (flux range:%.2g~%.2g)"\
-                      %(self.n_verybright, Flux[self.verybright].min(), Flux[self.verybright].max()))
-            
-            # Rendering stars in parallel if number of bright stars exceeds 50
-            if self.n_medbright < 50:
-                print("Not many bright stars, will draw in serial.\n")
-                self.parallel = False 
-            else: 
-                print("Crowded fields w/ bright stars > 50, will draw in parallel.\n")
-                self.parallel = True
     
     def __str__(self):
         return "A Star Class"
@@ -525,19 +511,39 @@ class Stars:
 
     @classmethod            
     def from_znorm(cls, psf, star_pos, z_norm,
-                   z_threshold=[10, 300], r_scale=12, 
-                   verbose=False):
-        """ Star object built from intensity at r_scale instead of flux """
+                   z_threshold=[10, 300], r_scale=12):
+        """ Star object built from intensity at r_scale instead of flux. """
         Flux = psf.I2Flux(z_norm, r=r_scale)
         Flux_threshold = psf.I2Flux(z_threshold, r=r_scale)
         
         return cls(star_pos, Flux, Flux_threshold,
-                   z_norm=z_norm, r_scale=r_scale, verbose=verbose)
+                   z_norm=z_norm, r_scale=r_scale)
     
     def update_Flux(self, Flux):
         self.Flux = Flux
+    
+    def _info(self):
+        Flux = self.Flux
+        if len(Flux[self.medbright])>0:
+            msg = "# of medium bright stars : {0} ".format(self.n_medbright)
+            msg += "(flux range:{0:.2g}~{1:.2g})".format(Flux[self.medbright].min(), Flux[self.medbright].max())
+            logger.info(msg)
         
-
+        if len(Flux[self.verybright])>0:
+            msg = "# of very bright stars : {0} ".format(self.n_verybright)
+            msg += "(flux range:{0:.2g}~{1:.2g})".format(Flux[self.verybright].min(), Flux[self.verybright].max())
+            logger.info(msg)
+            
+        # Rendering stars in parallel if number of bright stars exceeds 50
+        if self.n_medbright < 50:
+            msg = "Not many bright stars. Recommend to draw in serial."
+            logger.debug(msg)
+            self.parallel = False
+        else:
+            msg = "Crowded fields w/ bright stars > 50.  Recommend to allow parallel."
+            logger.debug(msg)
+            self.parallel = True
+            
     @lazyproperty
     def n_faint(self):
         return np.sum(~self.bright)
@@ -603,8 +609,7 @@ class Stars:
     
     def use_verybright(self):
         """ Crop the object into a new object only contains its very bright stars """
-        if self.verbose:
-            print("\nOnly model brightest stars in the field.\n")
+        logger.info("Only model brightest stars in the field.")
             
         stars_vb = Stars(self.star_pos_verybright,
                          self.Flux_verybright,
@@ -614,7 +619,7 @@ class Stars:
         
         return stars_vb
     
-    def remove_outsider(self, image_shape, gap=[36,12], verbose=False):
+    def remove_outsider(self, image_shape, gap=[36,12]):
         """ Remove out-of-field stars far from the edge. """
         
         star_pos = self.star_pos
@@ -633,7 +638,7 @@ class Stars:
         remove = remove_A | remove_B
         stars_new = Stars(star_pos[~remove], Flux[~remove],
                           self.Flux_threshold, self.z_norm[~remove],
-                          r_scale=self.r_scale, BKG=self.BKG, verbose=verbose)
+                          r_scale=self.r_scale, BKG=self.BKG)
         return stars_new
      
     def save(self, name='stars', save_dir='./'):
@@ -1261,10 +1266,9 @@ def get_stamp_bounds(k, star_pos, Flux,
 # Functions for making mock images
 ############################################
 
-def add_image_noise(image, noise_std, random_seed=42, verbose=True):
+def add_image_noise(image, noise_std, random_seed=42):
     """ Add Gaussian noise image """
-    if verbose:
-        print("Generate noise background w/ stddev = %.3g"%noise_std)
+    logger.debug("Generate noise background w/ stddev = %.3g"%noise_std)
     
     Image = galsim.ImageF(image)
     rng = galsim.BaseDeviate(random_seed)
@@ -1275,10 +1279,10 @@ def add_image_noise(image, noise_std, random_seed=42, verbose=True):
     return Image.array
 
 
-def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=True):
+def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=False):
     """ Background images composed of dim stars with fixed PSF psf_base"""
     if verbose:
-        print("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
+        logger.info("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
     
     start = time.time()
     nX0 = image_shape[1] + 2 * pad
@@ -1297,6 +1301,7 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=T
             draw_star(k, star_pos=star_pos, Flux=Flux,
                       psf_star=psf_base, psf_size=psf_size, full_image=full_image0)
         except GalSimBoundsError as e:
+            logger.debug("GalSim reported a GalSimBoundsError")
             if verbose:
                 print(e.__doc__)
                 print(e.message)
@@ -1305,7 +1310,7 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=T
     image_base0 = full_image0.array
     
     end = time.time()
-    if verbose: print("Total Time: %.3f s\n"%(end-start))
+    if verbose: logger.info("Total Time: %.3f s\n"%(end-start))
     
     image_base = image_base0[pad:nY0-pad, pad:nX0-pad]
     
@@ -1322,7 +1327,7 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
 
     """
     if verbose:
-        print("Generate the truth image.")
+        logger.info("Generate the truth image.")
         start = time.time()
     
     # attributes
@@ -1360,7 +1365,7 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
         
     if verbose: 
         end = time.time()
-        print("Total Time: %.3f s\n"%(end-start))
+        logger.info("Total Time: %.3f s\n"%(end-start))
     
     return image
         
@@ -1643,7 +1648,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
 
 def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                        brightest_only=False, draw_real=True,
-                       subtract_external=False, leg2d=False, verbose=False):
+                       subtract_external=False, leg2d=False):
     """ Generate the fitted bright stars, the fitted background and
         a noise images (for display only). """
     
@@ -1672,11 +1677,10 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
                                draw_real=draw_real, draw_core=True)
                                
     if hasattr(psf_fit, 'bkg_std') & hasattr(psf_fit, 'bkg'):
-        image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std, verbose=False)
+        image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std)
         noise_image = image_stars_noise - image_stars
         bkg_image = psf_fit.bkg * np.ones((nY, nX))
-        if verbose:
-            print("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+        logger.info("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = np.zeros_like(image_stars)
    

@@ -10,6 +10,7 @@ from functools import partial
 from astropy.io import fits
 from astropy.table import Table
 
+from .io import logger
 from .io import (find_keyword_header, check_save_path,
                 get_SExtractor_path, clean_pickling_object)
 from .detection import default_SE_config, default_conv, default_nnw
@@ -93,7 +94,7 @@ def Run_Detection(hdu_path,
     from .detection import run as run_sextractor
     from .io import update_SE_keywords
     
-    print(f"Run SExtractor on {hdu_path}...")
+    logger.info(f"Run SExtractor on {hdu_path}...")
     check_save_path(work_dir, overwrite=True, verbose=False)
     
     band = band.lower()
@@ -111,7 +112,7 @@ def Run_Detection(hdu_path,
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
-        print(f"{ZP_keyname} is not found in the header")
+        logger.warning(f"{ZP_keyname} is not found in the header")
     
         # If not in the header, check kwargs
         if type(ZP) is not float:
@@ -120,9 +121,11 @@ def Run_Detection(hdu_path,
             try:
                 from dfreduce.utils.catalogues import (match_catalogues, load_apass_in_region)
             except ImportError:
-                sys.exit("Crossmatch is not available because dfreduce is not installed. ZP_keyname is required in the header.")
+                msg = "Crossmatch is currently not available because dfreduce is not installed. A ZP_keyname is required in the header."
+                logger.error(msg)
+                sys.exit()
                 
-            print("Compute zero-point from crossmatch with APASS catalog...")
+            logger.info("Compute zero-point from crossmatch with APASS catalog...")
             
             # alias for CDELT and CD
             for axis in [1, 2]:
@@ -145,7 +148,7 @@ def Run_Detection(hdu_path,
             if os.path.exists(ref_cat):
                 refcat = Table.read(ref_cat, format='ascii')
             else:
-                print("Generate APASS reference catalog... It will take some time.")
+                logger.info("Generate APASS reference catalog... It will take some time.")
                 ra_range = header['CRPIX1'] * header['CD1_1']
                 dec_range = header['CRPIX2'] * header['CD2_2']
 
@@ -163,11 +166,11 @@ def Run_Detection(hdu_path,
             
             # Get the median ZP from the crossmatched catalog
             ZP = np.median(refcat_match[band] - imagecat_match[band])
-            print("Matched median zero-point = {:.3f}".format(ZP))
+            logger.info("Matched median zero-point = {:.3f}".format(ZP))
             
     else:
         ZP = np.float(header[ZP_keyname])
-        print("Read zero-point from header : ZP = {:.3f}".format(ZP))
+        logger.info("Read zero-point from header : ZP = {:.3f}".format(ZP))
     
     kwargs = update_SE_keywords(kwargs, threshold)
     
@@ -183,8 +186,8 @@ def Run_Detection(hdu_path,
     if not (os.path.isfile(catname)) & (os.path.isfile(segname)):
         raise FileNotFoundError('SE catalog/segmentation not saved properly.')
         
-    print(f"CATALOG saved as {catname}")
-    print(f"SEGMENTATION saved as {segname}")
+    logger.info(f"CATALOG saved as {catname}")
+    logger.info(f"SEGMENTATION saved as {segname}")
     
     return ZP
 
@@ -268,9 +271,9 @@ def Match_Mask_Measure(hdu_path,
         None
         
     """
-    
-    print("""Measure the intensity at R = %d for stars < %.1f
-            as normalization of fitting\n"""%(r_scale, mag_limit))
+    msg = "Measure the intensity at R = {0} ".format(r_scale)
+    msg += "for stars < {0:.1f} as normalization of fitting".format(mag_limit)
+    logger.info(msg)
     
     b_name = band.lower()
     bounds_list = np.atleast_2d(bounds_list).astype(int)
@@ -283,10 +286,12 @@ def Match_Mask_Measure(hdu_path,
     
     # Read hdu
     if not os.path.isfile(hdu_path):
-        raise FileNotFoundError("Image does not exist. Check path.")
+        msg = "Image does not exist. Check path."
+        logger.error(msg)
+        raise FileNotFoundError()
         
     with fits.open(hdu_path) as hdul:
-        print("Read Image :", hdu_path)
+        logger.info(f"Read Image: {hdu_path}")
         data = hdul[0].data
         header = hdul[0].header
         wcs_data = wcs.WCS(header)
@@ -311,10 +316,10 @@ def Match_Mask_Measure(hdu_path,
                     data.shape[1]-field_pad,
                     data.shape[0]-field_pad]
     
-    if not use_PS1_DR2: print("Match field %r with catalog\n"%field_bounds)
+    if not use_PS1_DR2: logger.info("Match field %r with catalog"%field_bounds)
     
-    print("Measure Sky Patch (X min, Y min, X max, Y max) :")
-    [print("%r"%b) for b in bounds_list.tolist()]
+    logger.info("Measure Sky Patch [X min, Y min, X max, Y max] :")
+    [logger.info("  - Bounds: %r"%b) for b in bounds_list.tolist()]
     
     # Display field_bounds and sub-regions to be matched
     patch = crop_image(data, field_bounds,
@@ -387,7 +392,7 @@ def Match_Mask_Measure(hdu_path,
         catalog_star.write(catalog_star_name, 
                            overwrite=True, format='ascii')
         
-        print(f'Save PANSTARRS catalog & matched sources in {dir_name}')
+        logger.info(f"Saved PANSTARRS catalog & matched sources in {dir_name}")
     
     
     ##################################################
@@ -433,10 +438,11 @@ def Match_Mask_Measure(hdu_path,
                                          save=save,
                                          dir_name=dir_name)
 
-        # Measure average intensity (source+background) at e_scale
-        print("""Measure intensity at R = %d
-                for catalog stars %s < %.1f in %r:"""\
-              %(r_scale, mag_name, mag_limit, bounds))
+        # Measure average intensity (source+background) at r_scale
+        msg = "Measure intensity at R = {0} ".format(r_scale)
+        msg += "for catalog stars {0:s} < {1:.1f} in ".format(mag_name, mag_limit)
+        msg += "{0}.".format(bounds)
+        logger.info(msg)
         
         tab_norm, res_thumb = \
                     measure_Rnorm_all(tab_target_patch, bounds,
@@ -660,9 +666,9 @@ def Run_PSF_Fitting(hdu_path,
         N_frames = find_keyword_header(header, "NFRAMES", default=1e5)
         G_eff = DF_Gain * N_frames
         if N_frames==1e5:
-            print('No effective Gain is given. Will ignore shot noise.')
+            logger.info("No effective Gain is given. Use sky noise.")
         else:
-            print('Effective Gain = %.3f'%G_eff)
+            logger.info("Effective Gain = %.3f"%G_eff)
             
     # Get background from header or simple stats
     seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{band.lower()}_seg.fits'))
@@ -702,6 +708,7 @@ def Run_PSF_Fitting(hdu_path,
         # initial of transition radius in arcsec
 
     # Multi-power-law PSF
+    frac, fwhm, beta = [core_parameters[prop] for prop in ["frac", "fwhm", "beta"]]
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
                    "n_s":n_s, "theta_s":theta_s, "cutoff":cutoff,
                    "n_c":n_cutoff, "theta_c":theta_cutoff}
@@ -773,11 +780,10 @@ def Run_PSF_Fitting(hdu_path,
                             fit_frac=fit_frac,
                             brightest_only=brightest_only)
     
-    ## (a stop for developer)
+    ## (a stop for inspection/developer)
     if stop:
         print('Pause for check... Does everything look good? [c/exit]')
         return DF_Images, psf, stars
-        breakpoint()
     
     ############################################
     # Run Sampling

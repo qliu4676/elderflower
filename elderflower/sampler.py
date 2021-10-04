@@ -9,6 +9,7 @@ import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
 
+from .io import logger
 from .io import save_pickle, load_pickle
 from .plotting import colorbar
 
@@ -68,7 +69,10 @@ class Sampler:
         
         if not self.run: return None
         
-        print("Run Nested Fitting for the image... Dim of params: %d"%self.ndim)
+        msg = "Run Nested sampling for the fitting... "
+        msg += "# of params: {0}".format(self.ndim)
+        logger.info(msg)
+        
         start = time.time()
    
         dlogz = 1e-3 * (nlive_init - 1) + 0.01
@@ -84,18 +88,18 @@ class Sampler:
         end = time.time()
         self.run_time = (end-start)
         
-        print("\nFinish Fitting! Total time elapsed: %.3g s"%self.run_time)
+        logger.info("Finish Fitting! Total time elapsed: %.3g s"%self.run_time)
         
         if (self.pool is not None) & close_pool:
             self.close_pool()
         
     def open_pool(self, n_cpu):
-        print("\nOpening new pool: # of CPU used: %d"%(n_cpu))
+        logger.info("Opening new pool: # of CPU used: %d"%(n_cpu))
         self.pool = mp.Pool(processes=n_cpu)
         self.pool.size = n_cpu
     
     def close_pool(self):
-        print("\nPool Closed.")
+        logger.info("Pool Closed.")
         self.pool.close()
         self.pool.join()
 
@@ -137,10 +141,10 @@ class Sampler:
         
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            res = load_pickle(filename, printout=False)
+            res = load_pickle(filename)
         
         if hasattr(res, 'fit_info'):
-            print(f"Read fitting results {filename}\n", res['fit_info'])
+            logger.info(f"Read fitting results {filename}\n", res['fit_info'])
         
         return cls(res['container'], run=False, results=res['fit_res'])
     
@@ -266,7 +270,7 @@ def Run_Dynamic_Nested_Fitting(loglikelihood, prior_transform, ndim,
         n_cpu = min(mp.cpu_count()-1, 10)
         
     with mp.Pool(processes=n_cpu) as pool:
-        print("Opening pool: # of CPU used: %d"%(n_cpu))
+        logger.info("Opening pool: # of CPU used: %d"%(n_cpu))
         pool.size = n_cpu
 
         dlogz = 1e-3 * (nlive_init - 1) + 0.01

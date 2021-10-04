@@ -8,6 +8,7 @@ from astropy.io import fits
 import astropy.units as u
 from astropy.utils import lazyproperty
 
+from .io import logger
 from .plotting import display, AsinhNorm, colorbar
 
 # Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
@@ -61,7 +62,7 @@ class ImageButler:
             
         with fits.open(hdu_path) as hdul:
             self.hdu_path = hdu_path
-            if verbose: print("Read Image :", hdu_path)
+            if verbose: logger.info(f"Read Image: {hdu_path}")
             self.full_image = hdul[0].data
             self.header = header = hdul[0].header
             self.full_wcs = wcs.WCS(header)
@@ -265,7 +266,6 @@ class Image(ImageButler):
                                                  mag_saturate=mag_saturate)
             
         elif catalog_sup == "SE":
-            print('Add supplementary star based on SE measurements.')
             tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
                                                    mag_saturate=mag_saturate, draw=draw)
         self.tab_target = tab_target
@@ -307,7 +307,7 @@ class Image(ImageButler):
         # Generate model star
         image_stars, _, _ = generate_image_fit(psf.copy(), stars.copy(),
         self.image_shape, subtract_external=subtract_external)
-        print("Image of stars has been generated based on the PSF Model!")
+        logger.info("Image of stars has been generated based on the PSF Model!")
         
         # Delete tmp dir
         if not keep_tmp:
@@ -442,14 +442,16 @@ class ImageList(ImageButler):
                                 stars_list):
             mask = Mask(Image, stars)
             
-            # Mask the main object by given shape parameters or read a map
-            mask.make_mask_object(mask_obj)
+            # Read a map of object masks (e.g. large galaxies) or
+            # create a new one with given shape parameters.
+            # Note the object mask has full shape as SExtractor outputs
+            mask.make_mask_object(mask_obj, wcs=self.full_wcs)
             
-            # crop the full mask map into smaller one
             if hasattr(mask, 'mask_obj_field'):
+                # Crop the full object mask map into a smaller one
                 mask.mask_obj0 = crop_image(mask.mask_obj_field, Image.bounds0)
             else:
-                mask.mask_obj0 = np.zeros(mask.shape, dtype=bool)
+                mask.mask_obj0 = np.zeros(mask.image_shape0, dtype=bool)
 
             # Primary SN threshold mask
             mask.make_mask_map_deep(dir_measure, by,
@@ -490,7 +492,7 @@ class ImageList(ImageButler):
         
         
     def estimate_bkg(self):
-        """ Estimate background level and std """
+        """ Estimate background level and std. """
         
         from astropy.stats import sigma_clip
         
@@ -505,17 +507,18 @@ class ImageList(ImageButler):
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
             
-            print(repr(Image))
-            print("Estimate of Background: (%.3f +/- %.3f)"%(mu_patch, std_patch))
+            msg = "Estimate of Background: ({0:.3f} +/- {1:.3f}) for "
+            msg = msg.format(mu_patch, std_patch) + repr(Image)
+            logger.info(msg)
     
     def fit_n0(self, dir_measure, N_min_fit=10, **kwargs):
-        """ Fit power index of first component with bright star profiles """
+        """ Fit power index of 1st component with bright stars. """
         self.n0, self.d_n0 = [], []
         for i in range(self.N_Image):
             if hasattr(self, 'std_est'):
                 kwargs['sky_std'] = self.std_est[i]
             else:
-                print('Sky stddev has not been estimated yet.')
+                logger.warning('Sky stddev is not estimated.')
                 
             N_fit = max(N_min_fit, self.stars[i].n_verybright)
             n0, d_n0 = self.Images[i].fit_n0(dir_measure, N_fit=N_fit, **kwargs)
