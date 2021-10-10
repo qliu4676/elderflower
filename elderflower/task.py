@@ -708,10 +708,10 @@ def Run_PSF_Fitting(hdu_path,
 
     # Multi-power-law PSF
     if "fwhm" in core_param.keys():
-        fwhm = core_parameters[prop]
+        fwhm = core_param[prop]
     else:
         fwhm = DF_Images.fwhm
-    frac, beta = [core_parameters[prop] for prop in ["frac", "beta"]]
+    frac, beta = [core_param[prop] for prop in ["frac", "beta"]]
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
                    "n_s":n_s, "theta_s":theta_s, "cutoff":cutoff,
                    "n_c":n_cutoff, "theta_c":theta_cutoff}
