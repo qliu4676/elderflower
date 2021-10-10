@@ -160,16 +160,16 @@ def background_annulus(cen, data, mask,
                        r_in=240., r_out=360, draw=True,
                        **plot_kw):
     """ Extract local background value using annulus """
-    
+    data_ = data.copy()
     annulus_aperture = CircularAnnulus(cen, r_in=r_in, r_out=r_out)
     annulus_masks = annulus_aperture.to_mask(method='center')
-    annulus_data = annulus_masks.multiply(np.ma.array(data, mask=mask))
-    annulus_data_1d = annulus_data[annulus_masks.data > 0]
-
-    _, median_sigclip, _ = sigma_clipped_stats(annulus_data_1d)
-    
+    annulus_data = annulus_masks.multiply(data_)
+    mask_ring = annulus_masks.data
+    annulus_data_1d = annulus_data[mask_ring!=0]
+    mask_1d = annulus_masks.multiply(mask)[mask_ring!=0]
+    _, median_sigclip, _ = sigma_clipped_stats(annulus_data_1d, mask=mask_1d)
     if draw:
-        plt.imshow(annulus_data, **plot_kw)
+        plt.imshow(np.ma.array(annulus_data, mask=mask_ring==0), **plot_kw)
         plt.show()
         
     return median_sigclip
@@ -298,7 +298,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     
 def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=True):
     """ Empirically pick out (bright) extended sources in the SE_catalog.
-        The catalog need contain following columns:
+        The catalog need to contain following columns:
         'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
     
     bright = SE_catalog['MAG_AUTO'] < mag_limit
@@ -1695,7 +1695,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
 
 
 def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
-                           K=2, R_min=2, R_max=100,
+                           K=2, R_min=1, R_max=100,
                            mag_range=[11, 22], degree=2, draw=True):
     """
     Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
@@ -1708,7 +1708,7 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
     mag_name : column name of magnitude in tab_target 
     mag_range : range of magnitude for stars to be used
     K : enlargement factor on the original segm map (default 2)
-    R_min : minimum aperture size in pixel (default 2)
+    R_min : minimum aperture size in pixel (default 1)
     R_max : maximum aperture size in pixel (default 100)
     degree : degree of polynomial (default 2)
     draw : whether to draw a diagnostic plot of log R vs mag
@@ -1855,18 +1855,6 @@ def make_segm_from_catalog(catalog_star,
         logger.info("Saved segmentation map made from catalog as %s"%file_name)
         
     return seg_map
-
-
-### Prior Helper ###    
-def build_independent_priors(priors):
-    """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
-    def prior_transform(u):
-        v = u.copy()
-        for i in range(len(u)):
-            v[i] = priors[i].ppf(u[i])
-        return v
-    return prior_transform
-    
     
 def make_psf_from_fit(sampler, psf=None,
                       pixel_scale=DF_pixel_scale,

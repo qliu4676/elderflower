@@ -108,7 +108,7 @@ def Run_Detection(hdu_path,
     if executable is None: executable = get_SExtractor_path()
     
     SE_extra_params = ['NUMBER','X_WORLD','Y_WORLD','FLUXERR_AUTO','MAG_AUTO',
-                        'MU_MAX','CLASS_STAR','ELLIPTICITY']
+                       'MU_MAX','CLASS_STAR','ELLIPTICITY']
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
@@ -419,8 +419,7 @@ def Match_Mask_Measure(hdu_path,
         # Crop the star catalog and matched SE catalog
         catalog_star_patch = crop_catalog(catalog_star, catalog_bounds,
                                           sortby=mag_name,
-                                          keys=("X_CATALOG",
-                                                "Y_CATALOG"))
+                                          keys=("X_CATALOG", "Y_CATALOG"))
         
         tab_target_patch = crop_catalog(tab_target, catalog_bounds,
                                         sortby=mag_name_cat,
@@ -485,7 +484,7 @@ def Run_PSF_Fitting(hdu_path,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
-                    core_parameters={"frac":0.3, "beta":6.72, "fwhm":6.07},
+                    core_param={"frac":0.3, "beta":6.7},
                     n0=None,
                     fit_n0=True,
                     fit_sigma=True,
@@ -568,11 +567,11 @@ def Run_PSF_Fitting(hdu_path,
     theta_cutoff : float, optional, default 1200
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
-    core_parameters: dict, optional
+    core_param: dict, optional
         Parameters of the PSF core  (retrieved from stacked PSF)
             "frac": fraction of aureole
-            "beta": moffat beta, in arcsec
-            "fwhm": moffat fwhm, in arcsec
+            "beta": moffat beta
+            "fwhm": moffat fwhm, in arcsec (optional)
     n0 : float, optional, default None
         Power index of the first component, only used if fit_n0=False.
         If not None, n0 will be fixed at that value in the prior.
@@ -684,7 +683,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.read_measurement_tables(dir_measure,
                                       r_scale=r_scale,
                                       mag_limit=mag_limit)
-                                     
+    
     ############################################
     # Setup Stars
     ############################################
@@ -708,7 +707,11 @@ def Run_PSF_Fitting(hdu_path,
         # initial of transition radius in arcsec
 
     # Multi-power-law PSF
-    frac, fwhm, beta = [core_parameters[prop] for prop in ["frac", "fwhm", "beta"]]
+    if "fwhm" in core_param.keys():
+        fwhm = core_parameters[prop]
+    else:
+        fwhm = DF_Images.fwhm
+    frac, beta = [core_parameters[prop] for prop in ["frac", "beta"]]
     params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
                    "n_s":n_s, "theta_s":theta_s, "cutoff":cutoff,
                    "n_c":n_cutoff, "theta_c":theta_cutoff}

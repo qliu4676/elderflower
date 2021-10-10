@@ -175,7 +175,20 @@ class Image(ImageButler):
                                            obj_name=self.obj_name,
                                            band=self.band,
                                            pad=self.pad, **kwargs)
-                                           
+    @property
+    def fwhm(self):
+        """ FWHM in arcsec """
+        return self.get_median("FWHM_IMAGE") * self.pixel_scale
+
+    def get_median(self,
+                   colname,
+                   mag_range=[14, 16],
+                   mag_name="MAG_AUTO_corr"):
+        """ Return median value of SE measurements in the image """
+        tab = self.table_norm
+        cond = (tab[mag_name]>mag_range[0]) & (tab[mag_name]<mag_range[1])
+        return np.median(tab[cond][colname])
+        
     def assign_star_props(self, **kwargs):
         """ Assign position and flux for faint and bright stars from tables. """
     
@@ -205,6 +218,7 @@ class Image(ImageButler):
                            mag_threshold=[13.5,12],
                            mag_saturate=13,
                            mag_limit=15,
+                           mag_limit_segm=22,
                            make_segm=False, K=2,
                            catalog_sup='SE',
                            use_PS1_DR2=False,
@@ -298,6 +312,7 @@ class Image(ImageButler):
                                                 mag_name=mag_name,
                                                 obj_name=obj_name,
                                                 band=band,
+                                                mag_limit=mag_limit_segm,
                                                 ext_cat=ext_cat,
                                                 draw=draw,
                                                 save=False,
@@ -399,7 +414,8 @@ class ImageList(ImageButler):
             Img.read_measurement_table(dir_measure, **kwargs)
             self.tables_faint += [Img.table_faint]
             self.tables_norm += [Img.table_norm]
-                                    
+            
+        self.fwhm = np.mean([Img.fwhm for Img in self.Images])
     
     def assign_star_props(self, *args, **kwargs):
         """ Assign position and flux for faint and bright stars from tables. """
