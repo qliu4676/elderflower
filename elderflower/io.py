@@ -134,18 +134,25 @@ def get_SExtractor_path():
         logger.error('SExtractor path is not found automatically.')
         return ''
 
-def update_SE_keywords(kwargs, threshold=5):
-    """ Update SExtractor keywords in **kwargs """
+def update_SE_kwargs(kwargs={},
+                     kwargs_update={'DETECT_THRESH':3,
+                                    'ANALYSIS_THRESH':3}):
+    """ Update SExtractor keywords in kwargs """
+    
     from .detection import default_conv, default_nnw
     SE_key = kwargs.keys()
-    for THRE in ['DETECT_THRESH', 'ANALYSIS_THRESH']:
-        if THRE not in SE_key: kwargs[THRE] = threshold
+    
+    for key in kwargs_update.keys():
+        if key not in SE_key: kwargs[key] = kwargs_update[key]
+        
     if 'FILTER_NAME' not in SE_key : kwargs['FILTER_NAME'] = default_conv
     if 'STARNNW_NAME' not in SE_key : kwargs['STARNNW_NAME'] = default_nnw
-    for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE', 'MAG_ZEROPOINT']:
+    
+    for key in ['CHECKIMAGE_TYPE', 'CHECKIMAGE_TYPE']:
         if key in SE_key:
             kwargs.pop(key, None)
             logger.warning(f'{key} is a reserved keyword. Not updated.')
+            
     return kwargs
 
 

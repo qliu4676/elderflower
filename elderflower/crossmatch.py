@@ -45,7 +45,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                 catalog={'Pan-STARRS': 'II/349/ps1'},
                 columns={'Pan-STARRS': ['RAJ2000', 'DEJ2000', 'e_RAJ2000', 'e_DEJ2000',
                                         'objID', 'Qual', 'gmag', 'e_gmag', 'rmag', 'e_rmag']},
-                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 23)}},
+                column_filters={'Pan-STARRS': {'rmag':'{0} .. {1}'.format(5, 22)}},
                 magnitude_name={'Pan-STARRS':['rmag','gmag']},
                 verbose=True):
     """

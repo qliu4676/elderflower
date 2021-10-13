@@ -563,8 +563,8 @@ def make_psf_1D(n_s, theta_s, ZP,
     cen = ((size-1)/2., (size-1)/2.)
     D, psf = make_psf_2D(n_s, theta_s, frac, beta, fwhm,
                          pixel_scale=pixel_scale, size=size, plot=False)
-    
-    r, I, _ = cal_profile_1d(D*Amp, cen=cen, mock=True,
+    D *= Amp
+    r, I, _ = cal_profile_1d(D, cen=cen, mock=True,
                               ZP=ZP, sky_mean=0, sky_std=1e-9,
                               dr=dr, seeing=seeing,
                               pixel_scale=pixel_scale,
@@ -594,132 +594,189 @@ def calculate_fit_SB(psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
                             0, ZP, psf.pixel_scale) for I in I_s]
     return I_tot_s
 
-### Funcs for measuring scaling ###
+### Class & Funcs for measuring scaling ###
 
-def get_star_pos(id, star_cat):
-    """ Get the position of an object from the SExtractor catalog"""
-    
-    X_c, Y_c = star_cat[id]["X_IMAGE"], star_cat[id]["Y_IMAGE"]
-    return (X_c, Y_c)
+class Thumb_Image:
 
-def get_star_thumb(id, star_cat, wcs, data, seg_map, 
-                   n_win=20, seeing=2.5, origin=1, verbose=True):
-    """ Crop the data and segment map into thumbnails.
-        Return thumbnail of image/segment/mask, and center of the star. """
+    """ A class for operation and info storing of a thumbnail image """
     
-    (X_c, Y_c) = get_star_pos(id, star_cat)    
-    
-    # define thumbnail size
-    fwhm =  max(star_cat[id]["FWHM_IMAGE"], seeing)
-    win_size = int(n_win * min(max(fwhm,2), 8))
-    
-    # calculate boundary
-    X_min, X_max = max(1, X_c - win_size), min(data.shape[1], X_c + win_size)
-    Y_min, Y_max = max(1, Y_c - win_size), min(data.shape[0], Y_c + win_size)
-    x_min, y_min = coord_Im2Array(X_min, Y_min, origin)
-    x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
-        # Note: origin=1 for SE pixel coordinates
-    
-    if verbose:
-        num = star_cat[id]["NUMBER"]
-        print("NUMBER: ", num)
-        print("X_c, Y_c: ", (X_c, Y_c))
-        print("RA, DEC: ", (star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"]))
-        print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
-        print("X_min, X_max, Y_min, Y_max: ", X_min, X_max, Y_min, Y_max)
-    
-    # crop image and segment map
-    img_thumb = data[x_min:x_max, y_min:y_max].copy()
-    if seg_map is None:
-        seg_thumb = None
-        mask_thumb = np.zeros_like(data, dtype=bool)
-    else:
-        seg_thumb = seg_map[x_min:x_max, y_min:y_max]
-        mask_thumb = (seg_thumb!=0) # mask sources by 1
-    
-    # the center position is converted from world with wcs
-    X_cen, Y_cen = wcs.wcs_world2pix(star_cat[id]["X_WORLD"], star_cat[id]["Y_WORLD"], origin)
-    cen_star = [X_cen - X_min, Y_cen - Y_min]
-    
-    return (img_thumb, seg_thumb, mask_thumb), cen_star
-    
-def extract_star(id, star_cat, wcs, data, seg_map=None, 
-                 seeing=2.5, sn_thre=2.5, n_win=20,
-                 display_bg=False, display=True, verbose=False):
-    
-    """ Return the image thubnail, mask map, backgroud estimates, and center of star.
-        Do a finer detection & deblending to remove faint undetected source."""
-    
-    thumb_list, cen_star = get_star_thumb(id, star_cat, wcs, data, seg_map,
-                                          n_win=n_win, seeing=seeing, verbose=verbose)
-    img_thumb, seg_thumb, mask_thumb = thumb_list
-    
-#    if (cen_star[0]>img_thumb.shape[0]) | (cen_star[1]>img_thumb.shape[1]):
-#        return None, None, np.median(img_thumb[~mask_thumb]), cen_star
+    def __init__(self, row, wcs, pixel_scale=DF_pixel_scale):
+        self.wcs = wcs
+        self.row = row
+        self.pixel_scale = pixel_scale
+        
+    def get(self, key):
+        """ Get the value of keyword from the SExtractor table row. """
+        return self.row[key]
+        
+    def make_star_thumb(self,
+                        image, seg_map=None,
+                        n_win=20, seeing=5., max_size=160,
+                        origin=1, verbose=False):
+        """
+        Crop the image and segmentation map into thumbnails.
 
-    # measure background, use a scalar value if the thumbnail is small 
-    b_size = round(img_thumb.shape[0]//5/25)*25
-    if img_thumb.shape[0] >= b_size:
-        back, back_rms = background_extraction(img_thumb, b_size=b_size)
-    else:
-        im_ = np.ones_like(img_thumb)
-        back, back_rms = (np.median(img_thumb[~mask_thumb])*im_,
-                          mad_std(img_thumb[~mask_thumb])*im_)
-    if display_bg:
-        # show background subtraction
-        from .plotting import display_background_sub
-        display_background_sub(img_thumb, back)  
+        Parameters
+        ----------
+        image : full image (2d array)
+        seg_map : full segmentation map (2d array)
+        n_win : int, optional, default 20
+            enlarge factor (of fwhm) for the thumb size
+        seeing : float, optional, default 5
+            estimate of FWHM in arcsec
+        max_size : int, optional, default 160
+            max thumb size in pixel
+        origin : 1 or 0, optional, default 1
+            position of the first pixel. origin=1 for SE convention.
             
-    if seg_thumb is None:
-        # the same thumbnail size
-        fwhm = max([star_cat[id]["FWHM_IMAGE"], seeing])
-        
-        # do segmentation (a second time) to remove faint undetected stars using photutils
-        sigma = seeing * gaussian_fwhm_to_sigma
-        threshold = back + (sn_thre * back_rms)
-        segm = detect_sources(img_thumb, threshold, npixels=5)
+        """
 
-        # do deblending using photutils
-        segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
-                                       nlevels=64, contrast=0.005)
-    else:
-        segm_deblend = SegmentationImage(seg_thumb)
-        
-    # mask other sources in the thumbnail
-    star_lab = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
-    star_ma = ~((segm_deblend.data==star_lab) | (segm_deblend.data==0))
+        # Centroid from the SE measurement
+        # Note SE convention is 1-based (differ from photutils)
+        X_c, Y_c = self.get("X_IMAGE"), self.get("Y_IMAGE")
+
+        # Define thumbnail size
+        fwhm =  max(self.get("FWHM_IMAGE"), seeing/self.pixel_scale)
+        win_size = min(int(n_win * max(fwhm, 2)), max_size)
+
+        # Calculate boundary
+        X_min, X_max = max(1, X_c - win_size), min(image.shape[1], X_c + win_size)
+        Y_min, Y_max = max(1, Y_c - win_size), min(image.shape[0], Y_c + win_size)
+        x_min, y_min = coord_Im2Array(X_min, Y_min, origin) # py convention
+        x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
+
+        X_WORLD, Y_WORLD = self.get("X_WORLD"), self.get("Y_WORLD")
+
+        if verbose:
+            print("NUMBER: ", self.get("NUMBER"))
+            print("X_c, Y_c: ", (X_c, Y_c))
+            print("RA, DEC: ", (X_WORLD, Y_WORLD))
+            print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
+            print("X_min, X_max, Y_min, Y_max: ", X_min, X_max, Y_min, Y_max)
+
+        # Crop
+        self.img_thumb = image[x_min:x_max, y_min:y_max].copy()
+        if seg_map is None:
+            self.seg_thumb = None
+            self.mask_thumb = np.zeros_like(image, dtype=bool)
+        else:
+            self.seg_thumb = seg_map[x_min:x_max, y_min:y_max]
+            self.mask_thumb = (self.seg_thumb!=0) # mask sources
+
+        # The center position is converted from world with wcs
+        X_cen, Y_cen = self.wcs.wcs_world2pix(X_WORLD, Y_WORLD, origin)
+        self.cen_star = np.array([X_cen - X_min, Y_cen - Y_min])
     
-    if display:
-        med_back = np.median(back)
-        fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-        ax1.imshow(img_thumb, norm=LogNorm(vmin=med_back-1, vmax=10000), cmap="viridis")
-        ax1.set_title("star", fontsize=16)
+    def extract_star(self, image,
+                     seg_map=None,
+                     sn_thre=2.5,
+                     display_bkg=False,
+                     display=False, **kwargs):
+        
+        """
+        Local background and segmentation.
+        If no segmentation map provided, do a local detection & deblend
+        to remove faint undetected source.
+        
+        Parameters
+        ----------
+        image : full image (2d array)
+        seg_map : full segmentation map (2d array)
+        sn_thre : float, optional, default 2.5
+            SNR threshold used for detection if seg_map is None
+        display_bkg : bool, optional, default False
+            whether to display background measurment
+        display : bool, optional, default False
+            whether to display detection & deblend around the star
+        
+        """
+        
+        # Make thumbnail image
+        self.make_star_thumb(image, seg_map, **kwargs)
+        
+        img_thumb = self.img_thumb
+        seg_thumb = self.seg_thumb
+        mask_thumb = self.mask_thumb
+        cen_star = self.cen_star
+        
+        # Measure local background, use constant if the thumbnail is small
+        shape = img_thumb.shape
+        b_size = round(min(shape)//5/25)*25
+        
+        if shape[0] >= b_size:
+            back, back_rms = background_extraction(img_thumb, b_size=b_size)
+        else:
+            im_ = np.ones_like(img_thumb)
+            img_thumb_ma = img_thumb[~mask_thumb]
+            back, back_rms = (np.median(img_thumb_ma)*im_,
+                              mad_std(img_thumb_ma)*im_)
+        self.bkg = back
+        self.bkg_rms = back_rms
+        
+        if display_bkg:
+            # show background subtraction
+            from .plotting import display_background
+            display_background(img_thumb, back)
+                
+        if seg_thumb is None:
+            # do local source detection to remove faint stars using photutils
+            threshold = back + (sn_thre * back_rms)
+            segm = detect_sources(img_thumb, threshold, npixels=5)
 
-        ax2.imshow(segm_deblend, cmap=segm_deblend.make_cmap(random_state=12345))
-        ax2.set_title("segment", fontsize=16)
-
-        img_thumb_ma = img_thumb.copy()
-        img_thumb_ma[star_ma] = -1
-        ax3.imshow(img_thumb_ma, cmap="viridis",
-                   norm=LogNorm(vmin=med_back-1,
-                                vmax=med_back+10*np.median(back_rms)))
-        ax3.set_title("extracted star", fontsize=16)
-        plt.tight_layout()
-    
-    return img_thumb, star_ma, back, cen_star
+            # deblending using photutils
+            segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
+                                           nlevels=64, contrast=0.005)
+        else:
+            segm_deblend = SegmentationImage(seg_thumb)
+            
+        # mask other sources in the thumbnail
+        star_label = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
+        star_ma = ~((segm_deblend.data==star_label) | (segm_deblend.data==0))
+        self.star_ma = star_ma
+        
+        if display:
+            from .plotting import display_source
+            display_source(img_thumb, segm_deblend, star_ma)
+            
+            
+    def compute_Rnorm(self, R=12, **kwargs):
+        """
+        Compute the scaling factor at R using an annulus.
+        Note the output values include the background level.
+        
+        Paramters
+        ----------
+        R : int, optional, default 12
+            radius in pix at which the scaling factor is meausured
+        kwargs : dict
+            kwargs passed to compute_Rnorm
+        
+        """
+        
+        I_mean, I_med, I_std, I_flag = compute_Rnorm(self.img_thumb,
+                                                     self.star_ma,
+                                                     self.cen_star, **kwargs)
+        self.I_mean = I_mean
+        self.I_med = I_med
+        self.I_std = I_std
+        self.I_flag = I_flag
+        
+        # Use the median of background as the local background
+        self.I_sky = np.median(self.bkg)
 
 
 def compute_Rnorm(image, mask_field, cen,
                   R=12, wid_ring=1, wid_cross=4,
                   mask_cross=True, display=False):
-    """ Compute (3 sigma-clipped) normalization using an annulus.
-    Note the output values of normalization contain background.
+    """
+    Compute the scaling factor using an annulus.
+    Note the output values include the background level.
     
     Paramters
     ----------
     image : input image for measurement
-    mask_field : mask map with nearby sources masked as 1.
-    cen : center of target
+    mask_field : mask map with masked pixels = 1.
+    cen : center of the target in image coordiante
     R : radius of annulus in pix
     wid_ring : half-width of annulus in pix
     wid_cross : half-width of spike mask in pix
@@ -753,8 +810,6 @@ def compute_Rnorm(image, mask_field, cen,
     if len(image[mask]) < 5:
         return [np.nan] * 3 + [1]
     
-    
-#    z = 10**sigma_clip(np.log10(image[mask]), sigma=3, maxiters=3)
     z_ = sigma_clip(image[mask], sigma=3, maxiters=5)
     z = z_.compressed()
         
@@ -793,48 +848,76 @@ def compute_Rnorm(image, mask_field, cen,
     return I_mean, I_med, I_std, 0
 
 
-def compute_Rnorm_batch(table_target, data, seg_map, wcs,
-                        R=12, wid_ring=0.5, wid_cross=4, k_win=1,
-                        return_full=False, display=False, verbose=True):
-    """ Combining the above functions. Compute for all object in table_target.
-        Return an arry with measurement on the intensity and a dictionary containing maps and centers."""
+def compute_Rnorm_batch(table_target,
+                        image, seg_map, wcs,
+                        r_scale=12, k_win=1,
+                        wid_ring=0.5, wid_cross=4,
+                        display=False, verbose=True):
+                        
+    """
+    Compute scaling factors for objects in the table.
+    Return an array with measurement and a dictionary
+    containing maps and centers.
     
+    Paramters
+    ----------
+    table_target :
+    image :
+    seg_map :
+    wcs :
+    r_scale : radius of annulus in pix
+    wid_ring : half-width of annulus in pix
+    wid_cross : half-width of spike mask in pix
+        
+    Returns
+    -------
+    res_norm :
+    res_thumb :
+        
+    """
+
     # Initialize
-    res_thumb = {}    
+    res_thumb = {}
     res_norm = np.empty((len(table_target), 5))
     
-    for i, (num, mag_auto) in enumerate(zip(table_target['NUMBER'], table_target['MAG_AUTO'])):
+    # Iterate rows over the target table
+    for i, row in enumerate(table_target):
         if verbose: counter(i, len(table_target))
-        ind = np.where(table_target['NUMBER']==num)[0][0]
+        num, mag_auto = row['NUMBER'], row['MAG_AUTO']
         
-        # For very bright sources, use a broader window
-        if mag_auto <= 11:
+        # For brighter sources, use a broader window
+        if mag_auto <= 10.5:
             n_win = int(40 * k_win)
-        elif 11 < mag_auto < 13.5:
+        elif 10.5 < mag_auto < 13.5:
             n_win = int(30 * k_win)
         elif 13.5 < mag_auto < 15:
             n_win = int(20 * k_win)
         else:
             n_win = int(10 * k_win)
-            
-        img, ma, bkg, cen = extract_star(ind, table_target, wcs, data, seg_map,
-                                         n_win=n_win, display_bg=False, display=False)
         
-        res_thumb[num] = {"image":img, "mask":ma, "bkg":bkg, "center":cen}
+        # Make thumbnail of the star and mask sources
+        thumb = Thumb_Image(row, wcs, pixel_scale=DF_pixel_scale)
+        thumb.extract_star(image, seg_map, n_win=n_win)
         
-        # Measure the mean, med and std of intensity at R
-        I_mean, I_med, I_std, Iflag = compute_Rnorm(img, ma, cen, R=R,
-                                                    wid_ring=wid_ring,
-                                                    wid_cross=wid_cross,
-                                                    display=display)
+        # Measure the mean, med and std of intensity at r_scale
+        thumb.compute_Rnorm(R=r_scale,
+                            wid_ring=wid_ring,
+                            wid_cross=wid_cross,
+                            display=display)
+                            
+        I_flag = thumb.I_flag
+        if (I_flag==1) & verbose: logger.debug("Errorenous measurement: #", num)
         
-        if (Iflag==1) & verbose: logger.debug("Errorenous measurement: #", num)
-        
-        # Use the median value of background as the local background
-        sky_mean = np.median(bkg)
-        
-        res_norm[i] = np.array([I_mean, I_med, I_std, sky_mean, Iflag])
-    
+        # Store results as dict (might be bulky)
+        res_thumb[num] = {"image":thumb.img_thumb,
+                          "mask":thumb.star_ma,
+                          "bkg":thumb.bkg,
+                          "center":thumb.cen_star}
+                          
+        # Store measurements to array
+        I_stats = ['I_mean', 'I_med', 'I_std', 'I_sky']
+        res_norm[i] = np.array([getattr(thumb, attr) for attr in I_stats] + [I_flag])
+
     return res_norm, res_thumb
 
 def measure_Rnorm_all(table, bounds,
@@ -847,7 +930,6 @@ def measure_Rnorm_all(table, bounds,
                       display=False, verbose=True):
     """
     Measure normalization at r_scale for bright stars in table.
-    If seg_map is not given, source detection will be run.
 
     Parameters
     ----------
@@ -856,7 +938,8 @@ def measure_Rnorm_all(table, bounds,
     wcs_data : wcs
     image : image data
     
-    seg_map : segm map used to mask nearby sources during the measurement. If not given a source detection will be done.
+    seg_map : segm map used to mask nearby sources during the measurement.
+            If not given, it will be done locally by photutils.
     r_scale : radius at which the flux scaling is measured (default: 12 pix)
     enlarge_window : window enlargement for extraction (default: 1)
     width_ring_pix : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
@@ -892,14 +975,12 @@ def measure_Rnorm_all(table, bounds,
             warnings.simplefilter('ignore')
             res_norm, res_thumb = compute_Rnorm_batch(tab, image,
                                                       seg_map, wcs_data,
-                                                      R=r_scale,
+                                                      r_scale=r_scale,
                                                       wid_ring=width_ring_pix,
                                                       wid_cross=width_cross_pix,
                                                       k_win=enlarge_window,
-                                                      return_full=True,
                                                       display=display,
                                                       verbose=verbose)
-        
         
         keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', 'MU_MAX', mag_name] \
                         + [name for name in tab.colnames
@@ -909,7 +990,7 @@ def measure_Rnorm_all(table, bounds,
                 keep_columns.remove(name)
         table_norm = tab[keep_columns].copy()
     
-        for j, colname in enumerate(['Imean','Imed','Istd','Isky', 'Iflag']):
+        for j, colname in enumerate(['Imean','Imed','Istd','Isky','Iflag']):
             if colname=='Iflag':
                 col = res_norm[:,j].astype(int)
             else:
@@ -923,7 +1004,8 @@ def measure_Rnorm_all(table, bounds,
             
     return table_norm, res_thumb
 
-### Resampling ###
+
+### Resampling functions ###
 
 def transform_rescale(val, scale=0.5):
     """ transform coordinates after resampling """
@@ -1408,9 +1490,9 @@ def fit_n0(dir_measure, bounds,
     if  r1<r0<r2:
         # read result thumbnail and norm table
         b = band.lower()
-        bound_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
-        fn_res_thumb = os.path.join(dir_measure, f'{obj_name}-thumbnail_{b}mag{mag_limit}_{bound_str}.pkl')
-        fn_tab_norm = os.path.join(dir_measure, f'{obj_name}-norm_{r_scale}pix_{b}mag{mag_limit}_{bound_str}.txt')
+        bounds_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
+        fn_res_thumb = os.path.join(dir_measure, f'{obj_name}-thumbnail_{b}mag{mag_limit}_{bounds_str}.pkl')
+        fn_tab_norm = os.path.join(dir_measure, f'{obj_name}-norm_{r_scale}pix_{b}mag{mag_limit}_{bounds_str}.txt')
         res_thumb = load_pickle(fn_res_thumb)
         tab_norm = Table.read(fn_tab_norm, format='ascii')
 

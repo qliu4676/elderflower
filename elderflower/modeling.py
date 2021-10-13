@@ -1680,7 +1680,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std)
         noise_image = image_stars_noise - image_stars
         bkg_image = psf_fit.bkg * np.ones((nY, nX))
-        logger.info("Fitted Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+        logger.info("Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = np.zeros_like(image_stars)
    
@@ -1894,6 +1894,14 @@ def prior_tf_sp(u, Priors, n_spline=3,
 
     return v
 
+def build_independent_priors(priors):
+    """ Build priors for Bayesian fitting. Priors should has a (scipy-like) ppf class method."""
+    def prior_transform(u):
+        v = u.copy()
+        for i in range(len(u)):
+            v[i] = priors[i].ppf(u[i])
+        return v
+    return prior_transform
         
 def draw_proposal(draw_func,
                   proposal,
@@ -2120,11 +2128,6 @@ def set_likelihood(image, mask_fit, psf, stars,
             def loglike_3p(v):
 
                 n_s = v[:3]
-                
-#                ### Below is new!
-#                if fix_n0:
-#                    n_s[0] = n0
-#                ###
                 
                 theta_s = [theta_0, 10**v[3], 10**v[4]]
                 

@@ -28,7 +28,7 @@ def Run_Detection(hdu_path,
                   ZP=None,
                   ref_cat='APASSref.cat',
                   apass_dir=None,
-                  **kwargs):
+                  **SE_kwargs):
                   
     """
     
@@ -92,7 +92,7 @@ def Run_Detection(hdu_path,
     """
                 
     from .detection import run as run_sextractor
-    from .io import update_SE_keywords
+    from .io import update_SE_kwargs
     
     logger.info(f"Run SExtractor on {hdu_path}...")
     check_save_path(work_dir, overwrite=True, verbose=False)
@@ -132,7 +132,7 @@ def Run_Detection(hdu_path,
                 cd = 'CD{0}_{1}'.format(axis, axis)
                 if cd not in header.keys():
                     header[cd] = header['CDELT{0}'.format(axis)]
-                    
+            
             # Run sextractor with free zero-point
             SE_catalog = run_sextractor(hdu_path,
                                         extra_params=SE_extra_params,
@@ -172,16 +172,20 @@ def Run_Detection(hdu_path,
         ZP = np.float(header[ZP_keyname])
         logger.info("Read zero-point from header : ZP = {:.3f}".format(ZP))
     
-    kwargs = update_SE_keywords(kwargs, threshold)
+    logger.info("Detection threshold = {:.1f}".format(threshold))
+    
+    SE_kwargs_update = {'DETECT_THRESH':threshold,
+                        'ANALYSIS_THRESH':threshold,
+                        'MAG_ZEROPOINT':ZP}
+    SE_kwargs = update_SE_kwargs(SE_kwargs, SE_kwargs_update)
     
     SE_catalog = run_sextractor(hdu_path,
                                 extra_params=SE_extra_params,
                                 config_path=config_path,
                                 catalog_path=catname,
                                 executable=executable,
-                                MAG_ZEROPOINT=ZP,
                                 CHECKIMAGE_TYPE='SEGMENTATION',
-                                CHECKIMAGE_NAME=segname, **kwargs)
+                                CHECKIMAGE_NAME=segname, **SE_kwargs)
     
     if not (os.path.isfile(catname)) & (os.path.isfile(segname)):
         raise FileNotFoundError('SE catalog/segmentation not saved properly.')
@@ -695,6 +699,44 @@ def Run_PSF_Fitting(hdu_path,
                                                      save=save, save_dir=plot_dir)
     
     ############################################
+    # Masking
+    ############################################
+    from .mask import Mask
+    
+    if mask_type=='brightness':
+        from .utils import SB2Intensity
+        count = SB2Intensity(SB_threshold, DF_Images.bkg,
+                             DF_Images.ZP, DF_Image.pixel_scale)[0]
+    elif mask_type=='aper':
+        count = None
+        
+    # Mask faint and centers of bright stars
+    DF_Images.make_mask(stars_b, dir_measure,
+                        by=mask_type, r_core=r_core, r_out=None,
+                        wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
+                        dist_cross=180, wid_cross=30,
+                        sn_thre=2.5, draw=draw, mask_obj=mask_obj,
+                        save=save, save_dir=plot_dir)
+
+    # Collect stars for fit. Choose if only use brightest stars
+    if brightest_only:
+        stars = [s.use_verybright() for s in DF_Images.stars]
+    else:
+        stars = DF_Images.stars # for fit
+    
+    ############################################
+    # Estimate Background & Fit n0
+    ############################################
+    DF_Images.estimate_bkg()
+    
+    if fit_n0:
+        DF_Images.fit_n0(dir_measure, pixel_scale=pixel_scale,
+                         r_scale=r_scale, mag_limit=mag_limit,
+                         mag_max=12, draw=draw)
+    else:
+        DF_Images._n0 = n0  # fixed n0 if not None
+        
+    ############################################
     # Setup PSF
     ############################################
     from .modeling import PSF_Model
@@ -728,47 +770,10 @@ def Run_PSF_Fitting(hdu_path,
                                            psf_scale=DF_pixel_scale)
                 
     ############################################
-    # Setup Basement Image
+    # Set Basement Image
     ############################################
     # Make fixed background of dim stars
     DF_Images.make_base_image(psf.psf_star, stars_all, draw=False)
-    
-    ############################################
-    # Masking
-    ############################################
-    from .mask import Mask
-    
-    if mask_type=='brightness':
-        from .utils import SB2Intensity
-        count = SB2Intensity(SB_threshold, DF_Images.bkg,
-                             DF_Images.ZP, DF_Image.pixel_scale)[0]
-    elif mask_type=='aper':
-        count = None
-        
-    # Mask faint and centers of bright stars
-    DF_Images.make_mask(stars_b, dir_measure,
-                        by=mask_type, r_core=r_core, r_out=None,
-                        wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
-                        dist_cross=180, wid_cross=30,
-                        sn_thre=2.5, draw=draw, mask_obj=mask_obj,
-                        save=save, save_dir=plot_dir)
-
-    # Collect stars for fit. Choose if only use brightest stars
-    if brightest_only:
-        stars = [s.use_verybright() for s in DF_Images.stars]
-    else:
-        stars = DF_Images.stars # for fit
-    
-    ############################################
-    # Estimate Background & Fit n0
-    ############################################
-    DF_Images.estimate_bkg()
-    if fit_n0:
-        DF_Images.fit_n0(dir_measure, pixel_scale=pixel_scale,
-                         r_scale=r_scale, mag_limit=mag_limit,
-                         mag_max=12, draw=draw)
-    else:
-        DF_Images._n0 = n0  # fixed n0 if not None
         
     ############################################
     # Setup Priors and Likelihood Models for Fitting
@@ -829,11 +834,12 @@ def Run_PSF_Fitting(hdu_path,
             if use_PS1_DR2: suffix += '_ps2'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
+            bounds_str = 'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
             
-            fname = f'{obj_name}-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band}-fit{suffix}.res'
+            fname = f'{obj_name}-{reg}-{bounds_str}-{band}-fit{suffix}.res'
     
             s.save_results(fname, save_dir=work_dir)
-            stars[i].save(f'stars-{reg}-X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]-{band.upper()}', save_dir=work_dir)
+            stars[i].save(f'stars-{reg}-{bounds_str}-{band.upper()}', save_dir=work_dir)
         
         ############################################
         # Plot Results

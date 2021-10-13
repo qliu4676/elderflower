@@ -58,13 +58,13 @@ def AsinhNorm(a=0.1, vmin=None, vmax=None):
 def HistEqNorm(data):
     return ImageNormalize(stretch=HistEqStretch(data))
 
-def vmin_3mad(img):
-    """ lower limit of visual imshow defined by 3 mad above median """ 
-    return np.median(img)-3*mad_std(img)
+def vmin_Nmad(img, N=3):
+    """ lower limit of visual imshow defined by N mad_std above median """
+    return np.median(img) - N * mad_std(img)
 
-def vmax_2sig(img):
-    """ upper limit of visual imshow defined by 2 sigma above median """ 
-    return np.median(img)+2*np.std(img)
+def vmax_Nsig(img, N=2):
+    """ upper limit of visual imshow defined by N sigma above median """
+    return np.median(img) + N * np.std(img)
 
 def colorbar(mappable, pad=0.2, size="5%", loc="right",
              ticks_rot=None, ticks_size=12, color_nan='gray', **args):
@@ -126,16 +126,37 @@ def display(image, mask=None,
               norm=AsinhNorm(a, vmin=sky_mean-sky_std,
                                 vmax=sky_mean+k_std*sky_std))
 
-def display_background_sub(field, back):
+def display_background(image, back):
     """ Display fitted background """
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
-    ax1.imshow(field, aspect="auto", cmap="gray",
-               norm=LogNorm(vmin=vmin_3mad(field), vmax=vmax_2sig(field)))
+    ax1.imshow(image, aspect="auto", cmap="gray",
+               norm=LogNorm(vmin=vmin_Nmad(image, N=3), vmax=vmax_Nsig(image, N=2)))
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
     colorbar(im2)
-    ax3.imshow(field - back, aspect="auto", cmap='gray',
-               norm=LogNorm(vmin=0., vmax=vmax_2sig(field - back)))
+    ax3.imshow(image - back, aspect="auto", cmap='gray',
+               norm=LogNorm(vmin=0., vmax=vmax_Nsig(image - back, N=2)))
     plt.tight_layout()
+    
+def display_source(image, segm, mask):
+    """ Display soruce detection and deblend around the target """
+    bkg_val = np.median(back)
+    vmin, vmax = vmin_Nmad(image, N=3), vmax_Nsig(image)
+    
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
+    ax1.imshow(image, norm=LogNorm(vmin=vmin, vmax=vmax))
+    ax1.set_title("target", fontsize=16)
+    
+    if type(segm) is np.ndarray:
+        from photutils.segmentation import SegmentationImage
+        segm = SegmentationImage(segm)
+    ax2.imshow(segm, cmap=segm.make_cmap(random_state=12345))
+    ax2.set_title("segm", fontsize=16)
+
+    image_ma = image.copy()
+    image_ma[star_ma] = -1
+    ax3.imshow(image_ma, norm=LogNorm(vmin=vmin, vmax=vmax))
+    ax3.set_title("extracted", fontsize=16)
+    plt.show()
 
 
 def draw_bounds(data, bounds, sub_bounds=None, seg_map=None,
