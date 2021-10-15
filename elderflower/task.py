@@ -345,7 +345,7 @@ def Match_Mask_Measure(hdu_path,
     from .crossmatch import cross_match_PS1
     
     # Identify bright extended sources and enlarge their mask
-    SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
+    SE_cat_target, ext_cat, mag_saturate = identify_extended_source(SE_cat, draw=draw)
 
     # Use PANSTARRS DR1 or DR2?
     if use_PS1_DR2:
@@ -447,13 +447,13 @@ def Match_Mask_Measure(hdu_path,
         msg += "{0}.".format(bounds)
         logger.info(msg)
         
+        width_cross = int(10/pixel_scale)
         tab_norm, res_thumb = \
                     measure_Rnorm_all(tab_target_patch, bounds,
                                       wcs_data, data, seg_map,
                                       mag_limit=mag_limit,
                                       r_scale=r_scale,
-                                      width_ring_pix=0.5,
-                                      width_cross_pix=int(10/pixel_scale),
+                                      width_cross=width_cross,
                                       obj_name=obj_name,
                                       mag_name=mag_name_cat,
                                       save=save, dir_name=dir_name)
@@ -834,7 +834,7 @@ def Run_PSF_Fitting(hdu_path,
             if use_PS1_DR2: suffix += '_ps2'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
-            bounds_str = 'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
+            bounds_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
             
             fname = f'{obj_name}-{reg}-{bounds_str}-{band}-fit{suffix}.res'
     

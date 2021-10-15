@@ -296,7 +296,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         
     return popt, pcov, clip_func
     
-def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=True):
+def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13.5, draw=True):
     """ Empirically pick out (bright) extended sources in the SE_catalog.
         The catalog need to contain following columns:
         'MAG_AUTO', 'MU_MAX', 'ELLIPTICITY', 'CLASS_STAR' """
@@ -308,16 +308,21 @@ def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=Tru
     else:
         return SE_catalog, None
     
-    MU_saturate = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
-    MAG_saturate = mag_saturate # guess of saturated MAG_AUTO
+    MU_satur_0 = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
+    MAG_satur_0 = mag_saturate # guess of saturated MAG_AUTO
     
     # Fit a flattened linear
+    logger.info("Fit an empirical relation to exclude extended sources...")
     popt, _, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
-                                        p0=(1, MAG_saturate, MU_saturate),
+                                        p0=(1, MAG_satur_0, MU_satur_0),
                                         x_max=mag_limit, x_min=max(7,np.min(x_data)),
                                         draw=draw, c_lab='CLASS_STAR',
                                         color=SE_bright['CLASS_STAR'],
                                         x_lab='MAG_AUTO',y_lab='MU_MAX')
+    if draw: plt.show()
+    
+    mag_saturate = popt[1]
+    logger.info("Saturation occurs at mag = {:.2f}".format(mag_saturate))
 
     # pick outliers in the catalog
     outlier = clip_func(SE_catalog['MAG_AUTO'], SE_catalog['MU_MAX'])
@@ -326,15 +331,16 @@ def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13, draw=Tru
     # (1) elliptical object or CLASS_STAR<0.5
     # (2) brighter than mag_limit
     # (3) lie out of MU_MAX vs MAG_AUTO relation
-    is_extend = ((SE_catalog['ELLIPTICITY']>0.7)|(SE_catalog['CLASS_STAR']<0.5)) & bright & outlier
+    is_extend = (SE_catalog['ELLIPTICITY']>0.7) | (SE_catalog['CLASS_STAR']<0.5)
+    is_extend = is_extend & bright & outlier
     
     SE_catalog_extend = SE_catalog[is_extend]
     
     if len(SE_catalog_extend)>0:
         SE_catalog_point = setdiff(SE_catalog, SE_catalog_extend)
-        return SE_catalog_point, SE_catalog_extend
+        return SE_catalog_point, SE_catalog_extend, mag_saturate
     else:
-        return SE_catalog, None
+        return SE_catalog, None, mag_saturate
     
 
 def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
@@ -353,12 +359,12 @@ def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="Intensity",
                    seeing=2.5, pixel_scale=DF_pixel_scale, ZP=27.1,
-                   sky_mean=884, sky_std=3, dr=1.5,
+                   sky_mean=884, sky_std=3, dr=1,
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, figsize=None,
                    label=None, plot_line=False, mock=False,
                    plot=True, errorbar=False,
-                   scatter=False, fill=False):
+                   scatter=False, fill=False, use_annulus=False):
                    
     """
     Calculate 1d radial profile of a given star postage.
@@ -371,45 +377,47 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     bkg_val = np.median(back)
     if cen is None:
         cen = (img.shape[1]-1)/2., (img.shape[0]-1)/2.
-        
-    yy, xx = np.indices((img.shape))
+    
+    if use_annulus:
+        img[mask] = np.nan
+    
+    yy, xx = np.indices(img.shape)
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
     r = rr[~mask].ravel()  # radius in pix
     z = img[~mask].ravel()  # pixel intensity
-    r_core = np.int(3 * seeing/pixel_scale) # core radius in pix
+    r_core = np.int(2 * seeing) # core radius in pix
 
     # Decide the outermost radial bin r_max before going into the background
     bkg_cumsum = np.arange(1, len(z)+1, 1) * bkg_val
     z_diff =  abs(z.cumsum() - bkg_cumsum)
     n_pix_max = len(z) - np.argmin(abs(z_diff - 0.00005 * z_diff[-1]))
-    r_max = np.sqrt(n_pix_max/np.pi)
-    r_max = np.min([img.shape[0]//2, r_max])
+    r_max = np.min([img.shape[0]//2, np.sqrt(n_pix_max/np.pi)])
     
     if xunit == "arcsec":
-        r = r * pixel_scale   # radius in arcsec
-        r_core = r_core * pixel_scale
-        r_max = r_max * pixel_scale
-        
-    d_r = dr * pixel_scale if xunit == "arcsec" else dr
+        r *= pixel_scale   # radius in arcsec
+        r_core *= pixel_scale
+        r_max *= pixel_scale
+        d_r = dr * pixel_scale
+    else:
+        d_r = dr
     
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-#        if mock:
-        clip = lambda z: sigma_clip((z), sigma=3, maxiters=5)
-#        else:
-#            clip = lambda z: 10**sigma_clip(np.log10(z+1e-10), sigma=3, maxiters=5)
+        clip = lambda z: sigma_clip((z), sigma=5, maxiters=5)
         
     if bins is None:
         # Radial bins: discrete/linear within r_core + log beyond it
         if core_undersample:  
-            # for undersampled core, bin in individual pixels 
-            bins_inner = np.unique(r[r<r_core]) + 1e-3
-        else: 
-            bins_inner = np.linspace(0, r_core+d_r, int(min((r_core/d_r*2), 5))) - 1e-5
+            # for undersampled core, bin at int pixels
+            bins_inner = np.unique(r[r<r_core]) - 1e-3
+        else:
+            n_bin_inner = int(min((r_core/d_r*2), 6))
+            bins_inner = np.linspace(0, r_core-d_r, n_bin_inner) - 1e-3
 
-        n_bin_outer = np.max([7, np.min([np.int(r_max/d_r/10), 50])])
+        n_bin_outer = np.max([6, np.min([np.int(r_max/d_r/10), 50])])
         if r_max > (r_core+d_r):
-            bins_outer = np.logspace(np.log10(r_core+d_r), np.log10(r_max+2*d_r), n_bin_outer)
+            bins_outer = np.logspace(np.log10(r_core+d_r),
+                                     np.log10(r_max+2*d_r), n_bin_outer)
         else:
             bins_outer = []
         bins = np.concatenate([bins_inner, bins_outer])
@@ -419,25 +427,37 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     r_rbin = np.array([])
     z_rbin = np.array([])
     zerr_rbin = np.array([])
-    zstd_rbin = np.array([])
+    
     for k, b in enumerate(bins[:-1]):
-        in_bin = (r>bins[k])&(r<bins[k+1])
-        
-        z_clip = clip(z[~np.isnan(z) & in_bin])
-        if np.ma.is_masked(z_clip):
-            z_clip = z_clip.compressed()
-        if len(z_clip)==0:
-            continue
+        r_in, r_out = bins[k], bins[k+1]
+        in_bin = (r>=r_in) & (r<=r_out)
+        if use_annulus:
+            # Fractional ovelap w/ annulus
+            annl = CircularAnnulus(cen, abs(r_in)/pixel_scale, r_out/pixel_scale)
+            annl_ma = annl.to_mask()
+            # Intensity by fractional mask
+            z_ = annl_ma.multiply(img)
+            
+            zb = np.sum(z_[~np.isnan(z_)]) / annl.area
+            zerr_b = sky_std / annl.area
+            rb = np.mean(r[in_bin])
+            
+        else:
+            z_clip = clip(z[~np.isnan(z) & in_bin])
+            if np.ma.is_masked(z_clip):
+                z_clip = z_clip.compressed()
+            if len(z_clip)==0:
+                continue
 
-        zb = np.mean(z_clip)
-        zstd_b = np.std(z_clip) if len(z_clip) > 10 else 0
-        zerr_b = np.sqrt((zstd_b**2 + sky_std**2) / (len(z_clip)))
-       
+            zb = np.mean(z_clip)
+            zstd_b = np.std(z_clip) if len(z_clip) > 10 else 0
+            zerr_b = np.sqrt((zstd_b**2 + sky_std**2) / len(z_clip))
+            rb = np.mean(r[in_bin])
+           
         z_rbin = np.append(z_rbin, zb)
         zerr_rbin = np.append(zerr_rbin, zerr_b)
-        zstd_rbin = np.append(zstd_rbin, zstd_b)
-        r_rbin = np.append(r_rbin, np.mean(r[in_bin]))
-        
+        r_rbin = np.append(r_rbin, rb)
+
     logzerr_rbin = 0.434 * abs( zerr_rbin / (z_rbin-sky_mean))
     
     if yunit == "SB":
@@ -461,7 +481,8 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
 
         elif yunit == "SB":  
             # plot radius in Surface Brightness
-            I_sky = -2.5*np.log10(sky_std) + ZP + 2.5 * math.log10(pixel_scale**2)
+            if mock is False:
+                I_sky = -2.5*np.log10(sky_std) + ZP + 2.5 * math.log10(pixel_scale**2)
 
             p = plt.plot(r_rbin, I_rbin, "-o", mec="k",
                          lw=lw, ms=markersize, color=color,
@@ -488,8 +509,12 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             plt.ylim(30,17)
 
         plt.xscale("log")
-        plt.xlim(max(r_rbin[np.isfinite(r_rbin)][0]*0.8, 1e-1),r_rbin[np.isfinite(r_rbin)][-1]*1.2)
-        plt.xlabel("Radius [arcsec]") if xunit == "arcsec" else plt.xlabel("radius [pix]")
+        plt.xlim(max(r_rbin[np.isfinite(r_rbin)][0]*0.8, pixel_scale*0.5),
+                 r_rbin[np.isfinite(r_rbin)][-1]*1.2)
+        if xunit == "arcsec":
+            plt.xlabel("Radius [arcsec]")
+        else:
+            plt.xlabel("radius [pix]")
         
         if scatter:
             plt.scatter(r[r<3*r_core], I[r<3*r_core], color=color, 
@@ -605,50 +630,48 @@ class Thumb_Image:
         self.row = row
         self.pixel_scale = pixel_scale
         
-    def get(self, key):
-        """ Get the value of keyword from the SExtractor table row. """
-        return self.row[key]
-        
     def make_star_thumb(self,
                         image, seg_map=None,
-                        n_win=20, seeing=5., max_size=160,
+                        n_win=20, seeing=2.5, max_size=160,
                         origin=1, verbose=False):
         """
         Crop the image and segmentation map into thumbnails.
 
         Parameters
         ----------
-        image : full image (2d array)
-        seg_map : full segmentation map (2d array)
+        image : 2d array
+            Full image
+        seg_map : 2d array
+            Full segmentation map
         n_win : int, optional, default 20
-            enlarge factor (of fwhm) for the thumb size
-        seeing : float, optional, default 5
-            estimate of FWHM in arcsec
+            Enlarge factor (of fwhm) for the thumb size
+        seeing : float, optional, default 2.5
+            Estimate of seeing FWHM in pixel
         max_size : int, optional, default 160
-            max thumb size in pixel
+            Max thumb size in pixel
         origin : 1 or 0, optional, default 1
-            position of the first pixel. origin=1 for SE convention.
+            Position of the first pixel. origin=1 for SE convention.
             
         """
 
-        # Centroid from the SE measurement
+        # Centroid in the image from the SE measurement
         # Note SE convention is 1-based (differ from photutils)
-        X_c, Y_c = self.get("X_IMAGE"), self.get("Y_IMAGE")
+        X_c, Y_c = self.row["X_IMAGE"], self.row["Y_IMAGE"]
 
         # Define thumbnail size
-        fwhm =  max(self.get("FWHM_IMAGE"), seeing/self.pixel_scale)
+        fwhm =  max(self.row["FWHM_IMAGE"], seeing)
         win_size = min(int(n_win * max(fwhm, 2)), max_size)
 
         # Calculate boundary
-        X_min, X_max = max(1, X_c - win_size), min(image.shape[1], X_c + win_size)
-        Y_min, Y_max = max(1, Y_c - win_size), min(image.shape[0], Y_c + win_size)
+        X_min, X_max = max(origin, X_c - win_size), min(image.shape[1], X_c + win_size)
+        Y_min, Y_max = max(origin, Y_c - win_size), min(image.shape[0], Y_c + win_size)
         x_min, y_min = coord_Im2Array(X_min, Y_min, origin) # py convention
         x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
 
-        X_WORLD, Y_WORLD = self.get("X_WORLD"), self.get("Y_WORLD")
+        X_WORLD, Y_WORLD = self.row["X_WORLD"], self.row["Y_WORLD"]
 
         if verbose:
-            print("NUMBER: ", self.get("NUMBER"))
+            print("NUMBER: ", self.row["NUMBER"])
             print("X_c, Y_c: ", (X_c, Y_c))
             print("RA, DEC: ", (X_WORLD, Y_WORLD))
             print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
@@ -663,9 +686,9 @@ class Thumb_Image:
             self.seg_thumb = seg_map[x_min:x_max, y_min:y_max]
             self.mask_thumb = (self.seg_thumb!=0) # mask sources
 
-        # The center position is converted from world with wcs
-        X_cen, Y_cen = self.wcs.wcs_world2pix(X_WORLD, Y_WORLD, origin)
-        self.cen_star = np.array([X_cen - X_min, Y_cen - Y_min])
+        # Centroid position in the cutout (0-based py convention)
+        #self.cen_star = np.array([X_c - X_min, Y_c - Y_min])
+        self.cen_star = np.array([X_c - y_min - origin, Y_c - x_min - origin])
     
     def extract_star(self, image,
                      seg_map=None,
@@ -680,14 +703,16 @@ class Thumb_Image:
         
         Parameters
         ----------
-        image : full image (2d array)
-        seg_map : full segmentation map (2d array)
+        image : 2d array
+            Full image
+        seg_map : 2d array
+            Full segmentation map
         sn_thre : float, optional, default 2.5
             SNR threshold used for detection if seg_map is None
         display_bkg : bool, optional, default False
-            whether to display background measurment
+            Whether to display background measurment
         display : bool, optional, default False
-            whether to display detection & deblend around the star
+            Whether to display detection & deblend around the star
         
         """
         
@@ -697,7 +722,6 @@ class Thumb_Image:
         img_thumb = self.img_thumb
         seg_thumb = self.seg_thumb
         mask_thumb = self.mask_thumb
-        cen_star = self.cen_star
         
         # Measure local background, use constant if the thumbnail is small
         shape = img_thumb.shape
@@ -724,19 +748,19 @@ class Thumb_Image:
             segm = detect_sources(img_thumb, threshold, npixels=5)
 
             # deblending using photutils
-            segm_deblend = deblend_sources(img_thumb, segm, npixels=5,
+            segm_deb = deblend_sources(img_thumb, segm, npixels=5,
                                            nlevels=64, contrast=0.005)
         else:
-            segm_deblend = SegmentationImage(seg_thumb)
+            segm_deb = SegmentationImage(seg_thumb)
             
         # mask other sources in the thumbnail
-        star_label = segm_deblend.data[int(cen_star[1]), int(cen_star[0])]
-        star_ma = ~((segm_deblend.data==star_label) | (segm_deblend.data==0))
+        star_label = segm_deb.data[round(self.cen_star[1]), round(self.cen_star[0])]
+        star_ma = ~((segm_deb.data==star_label) | (segm_deb.data==0))
         self.star_ma = star_ma
         
         if display:
             from .plotting import display_source
-            display_source(img_thumb, segm_deblend, star_ma)
+            display_source(img_thumb, segm_deb, star_ma)
             
             
     def compute_Rnorm(self, R=12, **kwargs):
@@ -745,7 +769,7 @@ class Thumb_Image:
         Note the output values include the background level.
         
         Paramters
-        ----------
+        ---------
         R : int, optional, default 12
             radius in pix at which the scaling factor is meausured
         kwargs : dict
@@ -773,7 +797,7 @@ def compute_Rnorm(image, mask_field, cen,
     Note the output values include the background level.
     
     Paramters
-    ----------
+    ---------
     image : input image for measurement
     mask_field : mask map with masked pixels = 1.
     cen : center of the target in image coordiante
@@ -830,7 +854,8 @@ def compute_Rnorm(image, mask_field, cen,
         
         # Label mean value
         plt.axvline(I_mean, color='k')
-        plt.text(0.5, 0.9, "%.1f"%I_mean, color='darkorange', ha='center', transform=ax2.transAxes)
+        plt.text(0.5, 0.9, "%.1f"%I_mean,
+                 color='darkorange', ha='center', transform=ax2.transAxes)
         
         # Label 20% / 80% quantiles
         I_20 = np.quantile(z, 0.2)
@@ -856,23 +881,34 @@ def compute_Rnorm_batch(table_target,
                         
     """
     Compute scaling factors for objects in the table.
-    Return an array with measurement and a dictionary
-    containing maps and centers.
+    Return an array with measurement and a dictionary containing maps and centers.
     
     Paramters
-    ----------
-    table_target :
-    image :
-    seg_map :
-    wcs :
-    r_scale : radius of annulus in pix
-    wid_ring : half-width of annulus in pix
-    wid_cross : half-width of spike mask in pix
+    ---------
+    table_target : astropy.table
+        SExtractor table containing measurements of sources.
+    image : 2d array
+        Full image.
+    seg_map : 2d array
+        Full segmentation map used to mask nearby sources during the measurement.
+    wcs_data : astropy.wcs.wcs
+        WCS of image.
+    r_scale : int, optional, default 12
+        Radius in pixel at which the flux scaling is measured.
+    k_win : int, optional, default 1
+        Enlargement factor for extracting thumbnails.
+    wid_ring : float, optional, default 0.5
+        Half-width in pixel of ring used to measure the scaling.
+    wid_cross : float, optional, default 4
+        Half-width  in pixel of the spike mask when measuring the scaling.
         
     Returns
     -------
-    res_norm :
-    res_thumb :
+    res_norm : nd array
+        A N x 5 array saving the measurements.
+        [I_mean, I_med, I_std, I_sky, I_flag]
+    res_thumb : dict
+        A dictionary storing thumbnails, mask, background and center of object.
         
     """
 
@@ -920,41 +956,68 @@ def compute_Rnorm_batch(table_target,
 
     return res_norm, res_thumb
 
-def measure_Rnorm_all(table, bounds,
-                      wcs_data, image, seg_map=None, 
-                      r_scale=12, mag_limit=15,
-                      enlarge_window=1,
-                      width_ring_pix=0.5, width_cross_pix=4,
-                      mag_name='rmag_PS', read=False,
-                      obj_name="", save=True, dir_name='.',
+def measure_Rnorm_all(table,
+                      bounds,
+                      wcs_data,
+                      image,
+                      seg_map=None,
+                      r_scale=12,
+                      mag_limit=15,
+                      k_enlarge=1,
+                      width_ring=0.5,
+                      width_cross=4,
+                      mag_name='rmag_PS',
+                      read=False, obj_name="",
+                      save=True, dir_name='.',
                       display=False, verbose=True):
     """
     Measure normalization at r_scale for bright stars in table.
 
     Parameters
     ----------
-    table : table containing list of sources
-    bounds : 1X4 1d array defining the bound of region
-    wcs_data : wcs
-    image : image data
-    
-    seg_map : segm map used to mask nearby sources during the measurement.
-            If not given, it will be done locally by photutils.
-    r_scale : radius at which the flux scaling is measured (default: 12 pix)
-    enlarge_window : window enlargement for extraction (default: 1)
-    width_ring_pix : half-width of ring used to measure the flux scaling at r_scale (default: 0.5 pix)
-    width_cross_pix : half-width of spike mask(default: 4 pix)
-    mag_name : magnitude column name
-    mag_limit : magnitude upper limit below which are measured
-    read : whether to read existed outputs
-    save : whether to save output table and thumbnails
-    obj_name : object name used as prefix of saved output
-    dir_name : path of saving 
+    table : astropy.table
+        SExtractor table containing measurements of sources.
+    bounds : 1d array or list
+        Boundaries of the region in the image [Xmin, Ymin, Xmax, Ymax].
+    wcs_data : astropy.wcs.wcs
+        WCS of image.
+    image : 2d array
+        Full image.
+    seg_map : 2d array, optional, default None
+        Full segmentation map used to mask nearby sources during the measurement.
+        If not given, it will be done locally by photutils.
+    r_scale : int, optional, default 12
+        Radius in pixel at which the flux scaling is measured.
+    k_enlarge : int, optional, default 1
+        Enlargement factor for extracting thumbnails.
+    width_ring : float, optional, default 0.5
+        Half-width in pixel of ring used to measure the scaling.
+    width_cross : float, optional, default 4
+        Half-width  in pixel of the spike mask when measuring the scaling.
+    mag_name : str, optional, default 'rmag_PS'
+        Column name of magnitude used in the table.
+    mag_limit : float, optional, default 15
+        Magnitude upper limit for measurement.
+    read : bool, optional, default False
+        Whether to read existed outputs if available.
+    obj_name : str, optional
+        Object name used as prefix of saved output.
+    save : bool, optional, default True
+        Whether to save output table and thumbnails.
+    dir_name : str, optional
+        Path of saving. Use currrent one as default.
     
     Returns
-    ----------
-    table_norm : table containing measurement results
-    res_thumb : thumbnails of image, mask, background and center of object, stored as dictionary
+    -------
+    table_norm : astropy.table
+        Table containing measurement results.
+        
+    res_thumb : dict
+        A dictionary storing thumbnails, mask, background and center of object.
+        'image' : image of the object
+        'mask' : mask map from SExtractor with nearby sources masked (masked = 1)
+        'bkg' : estimated local 2d background
+        'center' : 0-based centroid of the object from SExtracror
         
     """
     
@@ -976,9 +1039,9 @@ def measure_Rnorm_all(table, bounds,
             res_norm, res_thumb = compute_Rnorm_batch(tab, image,
                                                       seg_map, wcs_data,
                                                       r_scale=r_scale,
-                                                      wid_ring=width_ring_pix,
-                                                      wid_cross=width_cross_pix,
-                                                      k_win=enlarge_window,
+                                                      wid_ring=width_ring,
+                                                      wid_cross=width_cross,
+                                                      k_win=k_enlarge,
                                                       display=display,
                                                       verbose=verbose)
         
@@ -1003,6 +1066,162 @@ def measure_Rnorm_all(table, bounds,
             table_norm.write(table_norm_name, overwrite=True, format='ascii')
             
     return table_norm, res_thumb
+
+
+### Stacking PSF functions ###
+
+def resample_thumb(image, mask, center):
+    """
+    Shift and resample the thumb image & mask to have odd dimensions
+    and center at the center pixel.
+    
+    Parameters
+    ----------
+    
+    image : input image, 2d array
+    mask : input mask, 2d bool array (masked =1)
+    center : center of the target, array or turple
+    
+    Returns
+    -------
+    image_ : output image, 2d array
+    mask_ : output mask, 2d bool array (masked =1)
+    center_ : center of the target after the shift
+        
+    """
+
+    from scipy.interpolate import RectBivariateSpline
+
+    X_c, Y_c = center
+    NY, NX = image.shape
+
+    # original grid points
+    Xp, Yp = np.linspace(0, NX-1, NX), np.linspace(0, NY-1, NY)
+
+    rbspl = RectBivariateSpline(Xp, Yp, image, kx=3, ky=3)
+    rbspl_ma = RectBivariateSpline(Xp, Yp, mask, kx=1, ky=1)
+
+    # new NAXIS
+    NY_ = NX_ = int(np.floor(shape_star[0]/2) * 2 - 3)
+
+    # shift grid points
+    Xp_ = np.linspace(X_c - NX_//2, X_c + NX_//2, NX_)
+    Yp_ = np.linspace(Y_c - NY_//2, Y_c + NY_//2, NY_)
+
+    # resample image
+    image_ = rbspl(Xp_, Yp_)
+    mask_ = rbspl_ma(Xp_, Yp_) > 0.5
+
+    center_ = np.array([X_c - Xp_[0], Y_c - Yp_[0]])
+    return image_, mask_, center_
+
+def stack_star_image(table_stack, res_thumb, shape=(61,61)):
+    """
+    Stack images of stars in the table.
+    
+    Parameters
+    ----------
+    table_stack : SExtarctor table of stars to stack
+    res_thumb : a dict containing the thumbnails, masks and centers
+    shape : shape of the stacked image, need to be odd number
+    
+    Returns
+    -------
+    image_stack : stacked image
+    
+    """
+    canvas = np.zeros(shape)
+    footprint = np.zeros_like(canvas)
+
+    for i, num in enumerate(table_stack['NUMBER']):
+
+        # Read image, mask and center
+        img_star = res_thumb[num]['image']
+        mask_star = res_thumb[num]['mask']
+        cen_star = res_thumb[num]['center']
+        
+        # enlarge mask
+        for j in range(3):
+            mask_star = binary_dilation(mask_star)
+        
+        shape_star = img_star.shape
+        
+        if shape_star[0]!=shape_star[1]: continue
+           
+        # meausre local background
+        r_out = min(img_star.shape) * 0.8 //2
+        r_in = r_out - 5
+        bkg = background_annulus(cen_star, img_star, mask_star, r_in=r_in, r_out=r_out, draw=False)
+        
+        # resample thumbnail centroid to center
+        img_star_, mask_star_, cen_star_ = resample_thumb(img_star, mask_star, cen_star)
+        shape_star_ = img_star_.shape
+        
+        # remove nearby sources
+        img_star_ = img_star_ - bkg
+        img_star_[mask_star_] = 0
+        
+        # cutout
+        if shape_star_[0] > shape[0]+1:
+            dx = (shape_star_[0]-canvas.shape[0])//2
+            dy = (shape_star_[1]-canvas.shape[1])//2
+            cutout = img_star_[dx:-dx,dy:-dy]
+        
+        # add to canvas
+        canvas += cutout
+        footprint += (cutout!=0)
+        
+    image_stack = canvas/footprint
+
+    return image_stack
+    
+def montage_psf(psf, wide_psf, r=10, dr=0.5):
+    """
+    Montage the core of the stacked psf and the wing of the wide psf model.
+    
+    Parameters
+    ----------
+    psf : 2d array
+        The inner PSF.
+    wide_psf : 2d array
+        The outer PSF.
+    r : int, optional, default 10
+        Radius in pixel at which the PSF is montaged.
+    dr : float, optional, default 0.5
+        Width of annulus for measuring the scaling.
+    
+    Returns
+    -------
+    PSF : 2d array
+        The output PSF.
+        
+    """
+
+    PSF = wide_psf.copy()
+
+    # Wide PSF
+    size = wide_psf.shape[0]
+    cen = ((size-1)/2., (size-1)/2.)
+    x = y = np.linspace(0,size-1,size)
+    xx, yy = np.meshgrid(x, y)
+    rr = np.sqrt((yy-cen[0])**2+(xx-cen[1])**2)
+
+    I_wide = np.median(wide_psf[(rr<r+dr)&(rr>r-dr)])
+
+    # Stacked PSF
+    size_psf = psf.shape[0]
+    cen_psf = ((size_psf-1)/2., (size_psf-1)/2.)
+    x_psf = y_psf = np.linspace(0,size_psf-1,size_psf)
+    xx_psf, yy_psf = np.meshgrid(x_psf, y_psf)
+    rr_psf = np.sqrt((yy_psf-cen_psf[0])**2+(xx_psf-cen_psf[1])**2)
+
+    I_psf = np.median(psf[(rr_psf<r+dr)&(rr_psf>r-dr)])
+
+    # Montage
+    PSF[rr<r] = psf[rr_psf<r]/ I_psf * I_wide
+    PSF = PSF/PSF.sum()
+
+    return PSF
 
 
 ### Resampling functions ###
@@ -1219,11 +1438,6 @@ def crop_image(data, bounds, wcs=None, draw=False, **kwargs):
     """ Crop the data (and segm map if given) with the given bouds.
         Note boundaries are in 1-based pixel coordianates. """
     
-#    Xmin, Ymin, Xmax, Ymax = bounds
-#    xmin, ymin = coord_Im2Array(Xmin, Ymin, origin)
-#    xmax, ymax = coord_Im2Array(Xmax, Ymax, origin)
-#    patch = np.copy(data[xmin:xmax, ymin:ymax])
-    
     Xmin, Ymin, Xmax, Ymax = bounds
     
     # X, Y image size
@@ -1244,7 +1458,8 @@ def crop_image(data, bounds, wcs=None, draw=False, **kwargs):
     else:
         return cutout.data, cutout.wcs
 
-def transform_coords2pixel(table, wcs, name='', RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
+def transform_coords2pixel(table, wcs, name='',
+                           RA_key="RAJ2000", DE_key="DEJ2000", origin=1):
     """ Transform the RA/DEC columns in the table into pixel coordinates given wcs"""
     coords = np.vstack([np.array(table[RA_key]), 
                         np.array(table[DE_key])]).T
@@ -1313,9 +1528,10 @@ def read_measurement_table(dir_name, bounds0,
     
     ## Read measurement for bright stars
     # Catalog name
-    fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_X[%d-%d]Y[%d-%d].txt"\
-                                   %(obj_name, r_scale, b_name, mag_limit,
-                                   patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0))
+    bounds_str = "X[{:d}-{:d}]Y[{:d}-{:d}]"
+    bounds_str = bounds_str.format(patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0)
+    fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_%s.txt"\
+                            %(obj_name, r_scale, b_name, mag_limit, bounds_str))
     # Check if the file exist before read
     assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
     
@@ -1508,10 +1724,11 @@ def fit_n0(dir_measure, bounds,
 
         tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_fit]
         if len(tab_fit)==0:
-            logger.warning('No enought bright stars in this region. n0 will be included in the fitting.')
+            msg = "No enought bright stars in this region. Include n0 in the fitting."
+            logger.warning(msg)
             return None, None
             
-        logger.info('Fit n0 with profiles of %d bright stars...'%(len(tab_fit)))
+        logger.info("Fit n0 with profiles of %d bright stars..."%(len(tab_fit)))
         for num in tab_fit['NUMBER']:
             res = res_thumb[num]
             img, ma, cen = res['image'], res['mask'], res['center']
@@ -1559,7 +1776,6 @@ def fit_n0(dir_measure, bounds,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
 
         if draw:
-#            ax.text(6, 30, 'N = %d'%len(tab_fit))
             ax.set_xlim(5.,4e2)
             ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.axvspan(r1, r2, color='gold', alpha=0.1)
@@ -1572,7 +1788,7 @@ def fit_n0(dir_measure, bounds,
                                 bbox_transform=ax.transAxes)
             
     else:
-        logger.warning('r0 is out of fit_range! n0 will be included in the fitting.')
+        logger.warning("r0 is out of fit_range! n0 will be included in the fitting.")
         return None, None
 
     if norm=="intp":
@@ -1588,9 +1804,9 @@ def fit_n0(dir_measure, bounds,
         p_log_linear = partial(log_linear)
         popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
                                                x_min=r1, x_max=r2, p0=(10, r0, I_norm),
-                                               bounds=([3,r1,I_norm-1], [15,r2,I_norm+1]), n_iter=3,
+                                               bounds=([3,r1,I_norm-1], [15,r2,I_norm+1]),
                                                x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
-                                               draw=draw, fig=fig, ax=ax_ins)
+                                               n_iter=3, draw=draw, fig=fig, ax=ax_ins)
         r_n, I_n = r0, p_log_linear(r0, *popt)
 
     if draw:
@@ -1688,7 +1904,7 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
                                         p0=(1, 2, mag_saturate, mag_saturate),
                                         bounds=(0.9, [2, 4, mag_lim, mag_lim]),
                                         x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
-                                    
+
     # Empirical corrected magnitude
     f_corr = lambda x: piecewise_linear(x, *popt)
     mag_corr = f_corr(tab['MAG_AUTO'])
@@ -1729,9 +1945,12 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
         return tab
     
     
-def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verbose=True, draw=True):
+def calculate_color_term(tab_target,
+                         mag_range=[13,18], mag_name='gmag_PS',
+                         verbose=True, draw=True):
     """
-    Use non-saturated stars to calculate Color Correction between SE MAG_AUTO and magnitude in the matched catalog . 
+    Use non-saturated stars to calculate color term between SE MAG_AUTO
+    and magnitude in the matched catalog .
     
     Parameters
     ----------
@@ -1771,7 +1990,7 @@ def calculate_color_term(tab_target, mag_range=[13,18], mag_name='gmag_PS', verb
         plt.ylabel("MAG_AUTO - %s"%mag_name)
         plt.show()
         
-    logger.info('Average Color Term [SE-%s] = %.5f'%(mag_name, CT))
+    logger.info("Average Color Term [SE-%s] = %.5f"%(mag_name, CT))
         
     return np.around(CT,5)
 
@@ -1780,7 +1999,8 @@ def fit_empirical_aperture(tab_target, seg_map, mag_name='rmag_PS',
                            K=2, R_min=1, R_max=100,
                            mag_range=[11, 22], degree=2, draw=True):
     """
-    Fit an empirical polynomial curve for log radius of aperture based on corrected magnitudes and segm map of SE. Radius is enlarged K times.
+    Fit an empirical polynomial curve for log radius of aperture based on
+    corrected magnitudes and segm map of SE. Radius is enlarged K times.
     
     Parameters
     ----------
@@ -1890,7 +2110,9 @@ def make_segm_from_catalog(catalog_star,
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
         
     catalog = catalog[catalog[mag_name]<mag_limit]
-    logger.info("Make segmentation map based on catalog %s: %d stars"%(mag_name, len(catalog)))
+    msg = "Make segmentation map based on catalog {:s}: {:d} stars"
+    msg = msg.format(mag_name, len(catalog))
+    logger.info(msg)
     
     # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
@@ -1932,9 +2154,12 @@ def make_segm_from_catalog(catalog_star,
         check_save_path(dir_name, overwrite=True, verbose=False)
         hdu_seg = fits.PrimaryHDU(seg_map.astype(int))
         
-        file_name = os.path.join(dir_name, "%s-segm_%s_catalog_X[%d-%d]Y[%d-%d].fits" %(obj_name, band.lower(), Xmin, Xmax, Ymin, Ymax))
-        hdu_seg.writeto(file_name, overwrite=True)
-        logger.info("Saved segmentation map made from catalog as %s"%file_name)
+        band = band.lower()
+        bounds_str = f"X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]"
+        fname = f"{obj_name}-segm_{band}_catalog_{bounds_str}.fits"
+        filename = os.path.join(dir_name, fname)
+        hdu_seg.writeto(filename, overwrite=True)
+        logger.info(f"Saved segmentation map made from catalog as {filename}")
         
     return seg_map
     

@@ -248,7 +248,7 @@ class Image(ImageButler):
         bounds = self.bounds
         
         SE_cat = crop_catalog(SE_catalog, bounds)
-        SE_cat_target, ext_cat = identify_extended_source(SE_cat, draw=draw)
+        SE_cat_target, ext_cat, mag_saturate = identify_extended_source(SE_cat, draw=draw)
         
         # Use PANSTARRS DR1 or DR2?
         if use_PS1_DR2:
@@ -285,13 +285,18 @@ class Image(ImageButler):
         self.tab_target = tab_target
         
         # Measure I at r0
-        tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds,
-                                                self.full_wcs, self.full_image, seg_map,
-                                                mag_limit=mag_limit, r_scale=r_scale, width_ring_pix=0.5,
-                                                enlarge_window=2,
-                                                width_cross_pix=int(10/self.pixel_scale),
-                                                obj_name=obj_name, mag_name=mag_name_cat,
-                                                save=True, verbose=False, dir_name=dir_tmp)
+        wcs, image = self.full_wcs, self.full_image
+        width_cross = int(10/self.pixel_scale)
+        tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds, wcs,
+                                                image, seg_map,
+                                                mag_limit=mag_limit,
+                                                r_scale=r_scale,
+                                                k_enlarge=2,
+                                                width_cross=width_cross,
+                                                obj_name=obj_name,
+                                                mag_name=mag_name_cat,
+                                                save=True, dir_name=dir_tmp,
+                                                verbose=False)
         
         self.read_measurement_table(dir_tmp, r_scale=r_scale, mag_limit=mag_limit)
         
