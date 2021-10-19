@@ -204,10 +204,9 @@ def Match_Mask_Measure(hdu_path,
                        ZP=None,
                        bkg=None,
                        field_pad=50,
-                       sep=DF_pixel_scale,
                        r_scale=12,
                        mag_limit=15,
-                       mag_saturate=13,
+                       mag_saturate=13.5,
                        draw=True,
                        save=True,
                        use_PS1_DR2=False,
@@ -233,40 +232,40 @@ def Match_Mask_Measure(hdu_path,
     ----------
     
     hdu_path : str
-        Full path of hdu data
+        Full path of hdu data.
     bounds_list : 2D list / turple
-        List of boundaries of regions to be fit (Nx4)
+        List of boundaries of regions to be fit (Nx4).
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
-        Object name
-    band : str
-        Filter name ('G', 'g' or 'R', 'r')
+        Object name.
+    band :  str, 'g' 'G' 'r' or 'R'
+        Filter name.
     pixel_scale : float, optional, default 2.5
-        Pixel scale in arcsec/pixel
+        Pixel scale in arcsec/pixel.
     ZP : float or None, optional, default None
-        Zero point value (if None, read ZP from header)
+        Zero point value (if None, read ZP from header).
     bkg : float or None, optional, default None
-        Background estimated value (if None, read BACKVAL from header)
+        Background estimated value (if None, read BACKVAL from header).
     field_pad : int, optional, default 100
         Padding size (in pix) of the field for crossmatch.
         Only used if use_PS1_DR2=False
     r_scale : int, optional, default 12
-        Radius (in pix) at which the brightness is measured
+        Radius (in pix) at which the brightness is measured.
         Default is 30" for Dragonfly.
     mag_limit : float, optional, default 15
-        Magnitude upper limit below which are measured
-    mag_saturate : float, optional, default 13
+        Magnitude upper limit below which are measured.
+    mag_saturate : float, optional, default 13.5
         Estimate of magnitude at which the image is saturated.
-        The exact value will be fit if ZP provided.
+        The exact value will be fit.
     draw : bool, optional, default True
-        Whether to draw diagnostic plots
+        Whether to draw diagnostic plots.
     save : bool, optional, default True
         Whether to save results.
     use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query, which
-        could easily fail if a field is too large (> 1 deg^2)
+        could easily fail if a field is too large (> 1 deg^2).
     work_dir : str, optional, default current directory
-        Full path of directory for saving
+        Full path of directory for saving.
     
     
     Returns
@@ -279,7 +278,7 @@ def Match_Mask_Measure(hdu_path,
     msg += "for stars < {0:.1f} as normalization of fitting".format(mag_limit)
     logger.info(msg)
     
-    b_name = band.lower()
+    band = band.lower()
     bounds_list = np.atleast_2d(bounds_list).astype(int)
     
     ##################################################
@@ -301,9 +300,9 @@ def Match_Mask_Measure(hdu_path,
         wcs_data = wcs.WCS(header)
 
     # Read output from SExtractor detection
-    SE_cat_full = Table.read(os.path.join(work_dir, f'{obj_name}-{b_name}.cat'), format="ascii.sextractor")
+    SE_cat_full = Table.read(os.path.join(work_dir, f'{obj_name}-{band}.cat'), format="ascii.sextractor")
     
-    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{b_name}_seg.fits'))
+    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{band}_seg.fits'))
 
     # Get ZP from header
     if ZP is None: ZP = find_keyword_header(header, "ZP", raise_error=True)
@@ -345,15 +344,17 @@ def Match_Mask_Measure(hdu_path,
     from .crossmatch import cross_match_PS1
     
     # Identify bright extended sources and enlarge their mask
-    SE_cat_target, ext_cat, mag_saturate = identify_extended_source(SE_cat, draw=draw)
+    SE_cat_target, ext_cat, mag_saturate = identify_extended_source(SE_cat, draw=draw,
+                                                                    mag_limit=mag_limit,
+                                                                    mag_saturate=mag_saturate)
 
     # Use PANSTARRS DR1 or DR2?
     if use_PS1_DR2:
-        mag_name = mag_name_cat = b_name+'MeanPSFMag'
+        mag_name = mag_name_cat = band+'MeanPSFMag'
         bounds_crossmatch = bounds_list
         dir_name = os.path.join(work_dir, 'Measure-PS2/')
     else:
-        mag_name = b_name+'mag'
+        mag_name = band+'mag'
         mag_name_cat = mag_name+'_PS'
         bounds_crossmatch = field_bounds
         dir_name = os.path.join(work_dir, 'Measure-PS1/')
@@ -364,7 +365,7 @@ def Match_Mask_Measure(hdu_path,
                                                 SE_cat_target,
                                                 bounds_crossmatch,
                                                 pixel_scale=pixel_scale,
-                                                sep=sep,
+                                                sep=DF_pixel_scale,
                                                 mag_limit=mag_limit,
                                                 use_PS1_DR2=use_PS1_DR2)
    
@@ -372,7 +373,7 @@ def Match_Mask_Measure(hdu_path,
     CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
                               mag_name=mag_name_cat, draw=draw)
     
-    catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT #corrected mag
+    catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT # corrected MAG_AUTO
     tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
     
     # Mannually add stars missed in the crossmatch or w/ weird mag to table
@@ -387,12 +388,12 @@ def Match_Mask_Measure(hdu_path,
         check_save_path(dir_name, overwrite=True, verbose=False)
         
         tab_target_name = os.path.join(dir_name,
-       '%s-catalog_match_%smag%d.txt'%(obj_name, b_name, mag_limit))
+       '%s-catalog_match_%smag%d.txt'%(obj_name, band, mag_limit))
         tab_target.write(tab_target_name,
                          overwrite=True, format='ascii')
 
         catalog_star_name = os.path.join(dir_name,
-                 f'{obj_name}-catalog_PS_{b_name}_all.txt')
+                 f'{obj_name}-catalog_PS_{band}_all.txt')
         catalog_star.write(catalog_star_name, 
                            overwrite=True, format='ascii')
         
@@ -404,7 +405,8 @@ def Match_Mask_Measure(hdu_path,
     ##################################################
     from .utils import (fit_empirical_aperture,
                         make_segm_from_catalog,
-                        measure_Rnorm_all)
+                        measure_Rnorm_all,
+                        make_global_stack_PSF)
     from .plotting import plot_bright_star_profile
     
     # Empirical enlarged aperture size from magnitude based on matched SE detection
@@ -431,15 +433,15 @@ def Match_Mask_Measure(hdu_path,
 
         # Make segmentation map from catalog based on SE seg map of one band
         seg_map_c = make_segm_from_catalog(catalog_star_patch,
-                                         bounds,
-                                         estimate_radius,
-                                         mag_name=mag_name,
-                                         obj_name=obj_name,
-                                         band=band,
-                                         ext_cat=ext_cat,
-                                         draw=draw,
-                                         save=save,
-                                         dir_name=dir_name)
+                                          bounds,
+                                          estimate_radius,
+                                          mag_name=mag_name,
+                                          obj_name=obj_name,
+                                          band=band,
+                                          ext_cat=ext_cat,
+                                          draw=draw,
+                                          save=save,
+                                          dir_name=dir_name)
 
         # Measure average intensity (source+background) at r_scale
         msg = "Measure intensity at R = {0} ".format(r_scale)
@@ -447,16 +449,17 @@ def Match_Mask_Measure(hdu_path,
         msg += "{0}.".format(bounds)
         logger.info(msg)
         
-        width_cross = int(10/pixel_scale)
-        tab_norm, res_thumb = \
-                    measure_Rnorm_all(tab_target_patch, bounds,
-                                      wcs_data, data, seg_map,
-                                      mag_limit=mag_limit,
-                                      r_scale=r_scale,
-                                      width_cross=width_cross,
-                                      obj_name=obj_name,
-                                      mag_name=mag_name_cat,
-                                      save=save, dir_name=dir_name)
+        tab_norm, res_thumb = measure_Rnorm_all(tab_target_patch, bounds,
+                                                wcs_data, data, seg_map,
+                                                mag_limit=mag_limit,
+                                                r_scale=r_scale,
+                                                width_cross=int(10/pixel_scale),
+                                                obj_name=obj_name,
+                                                mag_name=mag_name_cat,
+                                                save=save, dir_name=dir_name)
+                                                
+        make_global_stack_PSF(dir_name, bounds_list, obj_name, band)
+        
         if draw:
             plot_bright_star_profile(tab_target_patch,
                                      tab_norm, res_thumb,
@@ -485,12 +488,13 @@ def Run_PSF_Fitting(hdu_path,
                     n_spline=3,
                     r_core=24,
                     r_out=None,
-                    cutoff=True,
+                    cutoff=False,
                     n_cutoff=4,
                     theta_cutoff=1200,
-                    core_param={"frac":0.3, "beta":6.7},
-                    n0=None,
+                    core_param={"frac":0.3, "beta":6.},
+                    n0_=None,
                     fit_n0=True,
+                    fix_n0=False,
                     fit_sigma=True,
                     fit_frac=False,
                     leg2d=False,
@@ -522,8 +526,8 @@ def Run_PSF_Fitting(hdu_path,
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         Object name
-    band : str
-        Filter name ('G', 'g' or 'R', 'r')
+    band : str, 'g' 'G' 'r' or 'R'
+        Filter name
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
     ZP : float or None, optional, default None
@@ -563,7 +567,7 @@ def Run_PSF_Fitting(hdu_path,
     r_out : int or [int, int] or None, optional, default None
         Radius (in pix) for the outer mask of [very, medium]
         bright stars. If None, turn off outer mask.
-    cutoff : bool, optional, default True
+    cutoff : bool, optional, default False
         If True, the aureole will be cutoff at theta_cutoff.
     n_cutoff : float, optional, default 4
         Cutoff slope for the aureole model.
@@ -572,24 +576,26 @@ def Run_PSF_Fitting(hdu_path,
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
     core_param: dict, optional
-        Parameters of the PSF core  (retrieved from stacked PSF)
+        Estimate of parameters of the PSF core.
+        Will be derived from stacked PSF (does not need to be accurate).
             "frac": fraction of aureole
             "beta": moffat beta
             "fwhm": moffat fwhm, in arcsec (optional)
-    n0 : float, optional, default None
-        Power index of the first component, only used if fit_n0=False.
-        If not None, n0 will be fixed at that value in the prior.
+    n0_ : float, optional, default None
+        Power index of the first component, use this value if fix_n0=True.
     fit_n0 : bool, optional, default True
-        Whether to fit n0 with profiles of bright stars in advance.
+        If True, fit n0 from profiles of bright stars before the Bayesian fitting.
+    fix_n0 : bool, optional, default False
+        If True, n0 will be fixed to that value in the fitting.
+        Only set as True when n0 is known to be proper of for test purpose.
     fit_sigma : bool, optional, default False
         Whether to fit the background stddev.
-        If False, will use the estimated value
+        If False, will use the estimated value.
     fit_frac : bool, optional, default False
         Whether to fit the fraction of the aureole.
-        If False, use a static value.
-        (* will change to values from stacked profiles)
+        If False, use the fiducial value in core_param.
     leg2d : bool, optional, default False
-        Whether to fit a varied background with 2D Legendre polynomial.
+        If True, fit a varied background with 2D Legendre polynomial.
         Currently only support 1st order.
     draw_real : bool, optional, default True
         Whether to draw very bright stars in real space.
@@ -604,10 +610,11 @@ def Run_PSF_Fitting(hdu_path,
     nlive_init : int, optional, default None
         Number of initial live points in dynesty. If None will
         use nlive_init = ndim*10.
-    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice', 'rslice', 'hslice', callable},
+    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice',
+                     'rslice', 'hslice', callable},
                     optional, default is 'auto'
-        Samplimg method in dynesty. If 'auto', the method is 'unif' for ndim < 10, 'rwalk' for
-        10 <= ndim <= 20, 'slice' for ndim > 20.
+        Samplimg method in dynesty. If 'auto', the method is 'unif' for ndim < 10,
+        'rwalk' for 10 <= ndim <= 20, 'slice' for ndim > 20.
     print_progress : bool, optional, default True
         Whether to turn on the progress bar of dynesty
     draw : bool, optional, default True
@@ -628,6 +635,9 @@ def Run_PSF_Fitting(hdu_path,
         A list of Sampler class which contains fitting results.
         
     """
+    
+    band = band.lower()
+    bounds_list = np.atleast_2d(bounds_list).astype(int)
     
     # Set up directory names
     plot_dir = os.path.join(work_dir, 'plot')
@@ -674,7 +684,7 @@ def Run_PSF_Fitting(hdu_path,
             logger.info("Effective Gain = %.3f"%G_eff)
             
     # Get background from header or simple stats
-    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{band.lower()}_seg.fits'))
+    seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{band}_seg.fits'))
     bkg, std = background_stats(data, header, mask=(seg_map>0), bkg_keyname="BACKVAL")
     
     # Construct Image List
@@ -729,46 +739,52 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.estimate_bkg()
     
-    if fit_n0:
-        DF_Images.fit_n0(dir_measure, pixel_scale=pixel_scale,
-                         r_scale=r_scale, mag_limit=mag_limit,
-                         mag_max=12, draw=draw)
+    if fix_n0:
+        DF_Images.n0_ = n0 = n0_   # fixed value
+        DF_Images.fix_n0 = True    # fix n0 as the input value
     else:
-        DF_Images._n0 = n0  # fixed n0 if not None
-        
+        DF_Images.fit_n0(dir_measure,
+                         pixel_scale=pixel_scale,
+                         mag_max=12, mag_limit=mag_limit,
+                         r_scale=r_scale, draw=draw,
+                         save=save, save_dir=plot_dir)
+        DF_Images.fix_n0 = fit_n0      # if use prefit value, also fix n0
+        n0 = np.median(DF_Images.n0)   # initial guess
+            
     ############################################
-    # Setup PSF
+    # Setup PSF and Fit the Core
     ############################################
-    from .modeling import PSF_Model
+    from .utils import (make_psf_2D, montage_psf_image)
 
+    ## PSF Parameters ##
+    
     theta_0 = 5.
-    # radius in which power law is flattened, in arcsec (arbitrary)
+    # flattened radius (arbitrary but need to be small) in arcsec
 
-    n_s = np.array([3.4, 2.2, n_cutoff])     # initial guess of power index
-    theta_s = np.array([theta_0, 10**2., theta_cutoff])
-        # initial of transition radius in arcsec
-
-    # Multi-power-law PSF
-    if "fwhm" in core_param.keys():
-        fwhm = core_param[prop]
-    else:
-        fwhm = DF_Images.fwhm
-    frac, beta = [core_param[prop] for prop in ["frac", "beta"]]
-    params_mpow = {"fwhm":fwhm, "beta":beta, "frac":frac,
-                   "n_s":n_s, "theta_s":theta_s, "cutoff":cutoff,
-                   "n_c":n_cutoff, "theta_c":theta_cutoff}
-    psf = PSF_Model(params=params_mpow,
-                    aureole_model='multi-power')
-
-    # Pixelize PSF
-    psf.pixelize(pixel_scale)
-
-    # Generate core and aureole PSF
-    psf_c = psf.generate_core()
-    psf_e, psf_size = psf.generate_aureole(contrast=1e6,
-                                           psf_range=1200,
-                                           psf_scale=DF_pixel_scale)
-                
+    n_s = np.array([n0, 2.5, 2.])    # initial guess of power index
+    theta_s = np.array([theta_0, 10**1.8, 10**2.0])
+                                # initial guess of transition radius in arcsec
+    
+    # Core parameters, will be fitted
+    frac, beta = [core_param.get(prop) for prop in ["frac", "beta"]]
+    fwhm = core_param.get("fwhm", DF_Images.fwhm)
+    
+    cutoff_param = dict(cutoff=cutoff, n_c=n_cutoff, theta_c=theta_cutoff)
+    
+    # Make 2D PSF and a PSF Model ('psf')
+    image_psf, psf = make_psf_2D(n_s=n_s, theta_s=theta_s,
+                                 frac=frac, beta=beta, fwhm=fwhm,
+                                 cutoff_param=cutoff_param,
+                                 pixel_scale=pixel_scale, psf_range=1200)
+                         
+    # Montage the core and the 1st model component
+    fn_psf_satck = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
+    psf_stack = fits.getdata(fn_psf_satck)
+    image_psf = montage_psf_image(psf_stack, image_psf, r=10)
+    
+    # Fit and update core parameters
+    psf.fit_psf_core_1D(image_psf, save=save, save_dir=plot_dir)
+    
     ############################################
     # Set Basement Image
     ############################################
@@ -786,7 +802,8 @@ def Run_PSF_Fitting(hdu_path,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
                             fit_frac=fit_frac,
-                            brightest_only=brightest_only)
+                            brightest_only=brightest_only,
+                            verbose=True)
     
     ## (a stop for inspection/developer)
     if stop:
@@ -797,7 +814,7 @@ def Run_PSF_Fitting(hdu_path,
     # Run Sampling
     ############################################
     from .sampler import Sampler
-    from .io import DateToday, AsciiUpper, save_pickle
+    from .io import DateToday, AsciiUpper
     
     samplers = []
     
@@ -817,16 +834,17 @@ def Run_PSF_Fitting(hdu_path,
         if save:
             # Save outputs
             s.fit_info = {'obj_name':obj_name,
-                          'band':band.lower(),
+                          'band':band,
+                          'date':DateToday(),
                           'n_spline':n_spline,
                           'bounds':bounds_list[i],
+                          'pixel_scale':pixel_scale,
                           'r_scale':r_scale,
-                          'n_cutoff': n_cutoff,
-                          'theta_cutoff': theta_cutoff,
-                          'cutoff': cutoff,
-                          'fit_n0':fit_n0,
-                          'date':DateToday()}
-                        
+                          'core_param':{"frac":frac, "fwhm":fwhm, "beta":beta},
+                          'fit_n0':fit_n0}
+            if cutoff:
+                s.fit_info.update(cutoff_param)
+                
             suffix = str(n_spline)+'p'
             if leg2d: suffix+='l'
             if fit_frac: suffix+='f'
@@ -834,12 +852,12 @@ def Run_PSF_Fitting(hdu_path,
             if use_PS1_DR2: suffix += '_ps2'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
-            bounds_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
+            range_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
             
-            fname = f'{obj_name}-{reg}-{bounds_str}-{band}-fit{suffix}.res'
+            fname = f'{obj_name}-{band}-{reg}-{range_str}-fit{suffix}.res'
     
             s.save_results(fname, save_dir=work_dir)
-            stars[i].save(f'stars-{reg}-{bounds_str}-{band.upper()}', save_dir=work_dir)
+            stars[i].save(f'{obj_name}-{band}-{reg}-{range_str}-stars', save_dir=work_dir)
         
         ############################################
         # Plot Results
@@ -848,7 +866,7 @@ def Run_PSF_Fitting(hdu_path,
         
         suffix = str(n_spline)+'p'+'_'+obj_name
         
-        # Recovered 1D PSF
+        # Generate bright star model with the PSF
         s.generate_fit(psf, stars[i], image_base=DF_Images[i].image_base)
         
         if draw:
@@ -899,7 +917,7 @@ class berry:
         list of boundaries of regions to be fit (Nx4)
     obj_name : str
         object name
-    band : str
+    band : str, 'g' 'G' 'r' or 'R'
         filter name
     work_dir : str, optional, default current directory
         Full Path of directory for saving
@@ -950,7 +968,6 @@ class berry:
         from .io import config_kwargs, default_config
         if config_file is None: config_file = default_config
         self.config_func = partial(config_kwargs, config_file=config_file)
-    
 
     @property
     def parameters(self):
@@ -975,7 +992,8 @@ class berry:
             
         @self.config_func
         def _run(func, **kwargs):
-            keys = set(kwargs.keys()).intersection(func.__code__.co_varnames)
+            argnames = func.__code__.co_varnames[:func.__code__.co_argcount]
+            keys = set(kwargs.keys()).intersection(argnames)
             pars = {key: kwargs[key] for key in keys}
             
             return func(self.hdu_path, self.bounds_list,

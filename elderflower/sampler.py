@@ -111,7 +111,7 @@ class Sampler:
         else:
              return self._results
     
-    def get_params(self, return_sample=False):
+    def get_params_fit(self, return_sample=False):
         return get_params_fit(self.results, return_sample)
     
     def save_results(self, filename, save_dir='.'):
@@ -133,7 +133,7 @@ class Sampler:
             if hasattr(res['container'], attr):
                 delattr(res['container'], attr)
         
-        save_pickle(res, os.path.join(save_dir, filename))
+        save_pickle(res, os.path.join(save_dir, filename), 'fitting result')
         
     @classmethod
     def load_results(cls, filename):
@@ -189,7 +189,7 @@ class Sampler:
         
         ct = self.container
         image_shape = ct.image_shape
-        psf_fit, params = make_psf_from_fit(self, psf.copy(), psf_range=max(image_shape))
+        psf_fit, params = make_psf_from_fit(self, psf, psf_range=max(image_shape))
         
         self.bkg_fit = psf_fit.bkg
         self.bkg_std_fit = psf_fit.bkg_std

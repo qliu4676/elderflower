@@ -164,7 +164,7 @@ class Mask:
         r_core : core radius of [medium, very bright] stars to be masked
         count : absolute count (in ADU) above which is masked        
         obj_name : name of object
-        band : filter name. r/R/G/g for DF.
+        band : filter name. r/R/G/g
         draw : whether to draw mask map
         save : whether to save the image
         save_dir : path of saving
@@ -493,7 +493,7 @@ def make_mask_map_dual(image, stars,
     
     if by == 'aper':
         # mask core for bright stars out to given radii
-        logger.info("Mask core regions: r < %d/%d pix (VB/MB)"%(r_core_A, r_core_B))
+        logger.info("Mask core regions: r < %d (VB) /%d (MB) pix"%(r_core_A, r_core_B))
         core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r
                                             for (pos,r) in zip(star_pos,r_core_s)])
         mask_star = core_region.copy()

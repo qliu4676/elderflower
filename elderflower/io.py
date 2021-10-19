@@ -196,10 +196,10 @@ def AsciiUpper(N):
     """ ascii uppercase letters """
     return string.ascii_uppercase[:N]
     
-def save_pickle(data, filename):
+def save_pickle(data, filename, name=""):
     """ Save data as pickle file. """
     try:
-        logger.info(f"Saved to {filename}")
+        logger.info(f"Saved {name} to {filename}")
         with open(filename, 'wb') as f:
             pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
     except PicklingError:
@@ -241,6 +241,12 @@ def load_config(filename):
             return yaml.load(f, Loader=yaml.FullLoader)
         except yaml.YAMLError as err:
             logger.error(err)
+            
+def check_config_keys(config, func):
+    """ List all keynames that are not of the function. """
+    argnames = func.__code__.co_varnames[:func.__code__.co_argcount]
+    extra_keys = set(config.keys()).difference(argnames)
+    logger.warning("{} in config are not parameters.".format(extra_keys))
 
 def config_kwargs(func, config_file):
     """Wrap keyword arguments from a yaml configuration file."""

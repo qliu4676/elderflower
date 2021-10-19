@@ -81,7 +81,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
                               columns=columns[cat_name],
                               column_filters=column_filters[cat_name],
                               coord=coord_cen)
-        #breakpoint()
+
         Cat_full = result[table_name]
         
         if len(cat_name) > 4:

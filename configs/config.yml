@@ -4,7 +4,7 @@
     r_scale: 12
     field_pad: 50
     mag_limit: 15
-    mag_saturate: 13
+    mag_saturate: 13.5
     draw: True
     save: True
     use_PS1_DR2: False
@@ -14,14 +14,14 @@
     use_PS1_DR2: False
     pixel_scale: 2.5
     pad: 50
-    mag_threshold: [13,10.5]
+    mag_threshold: [13,11]
     mask_type: 'aper'
     mask_obj: ~
     SB_threshold: 24.5
     r_core: 24
     r_out: ~
     theta_cutoff: 1200
-    n0: ~
+    n0_: ~
     fit_n0: True
     fit_sigma: True
     fit_frac: False

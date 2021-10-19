@@ -7,6 +7,7 @@ from astropy import wcs
 from astropy.io import fits
 import astropy.units as u
 from astropy.utils import lazyproperty
+from photutils.segmentation import SegmentationImage
 
 from .io import logger
 from .plotting import display, AsinhNorm, colorbar
@@ -30,7 +31,7 @@ class ImageButler:
         path of hdu data
     obj_name : str
         object name
-    band : str
+    band : str, 'g' 'G' 'r' or 'R'
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
@@ -92,7 +93,7 @@ class Image(ImageButler):
         boundary of region to be fit
     obj_name : str
         object name
-    band : str
+    band : str, 'g' 'G' 'r' or 'R'
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
@@ -351,7 +352,7 @@ class ImageList(ImageButler):
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         object name
-    band : str
+    band : str, 'g' 'G' 'r' or 'R'
         filter name
     pixel_scale : float
         pixel scale in arcsec/pixel
@@ -391,7 +392,7 @@ class ImageList(ImageButler):
     
     @lazyproperty
     def images(self):
-        return np.array([Img.image for Img in self.Images])
+        return np.array([Img.image for Img in self.Images], dtype=np.ndarray)
 
     def display(self, fig=None, ax=None):
         """ Display the image list """
@@ -450,7 +451,7 @@ class ImageList(ImageButler):
                   sn_thre=2.5, count=None, mask_obj=None,
                   n_strip=48, wid_strip=30, dist_strip=None,
                   wid_cross=20, dist_cross=180, clean=True,
-                  draw=True, save=False, save_dir='../output/pic'):
+                  draw=True, save=False, save_dir='../output/pic', verbose=True):
         
         """Make Strip + Cross Mask"""
         
@@ -459,8 +460,10 @@ class ImageList(ImageButler):
         
         masks = []
         
-        for Image, stars in zip(self.Images,
-                                stars_list):
+        for i, (Image, stars) in enumerate(zip(self.Images, stars_list)):
+            if verbose:
+                logger.info("Prepare mask for region {}.".format(i+1))
+                
             mask = Mask(Image, stars)
             
             # Read a map of object masks (e.g. large galaxies) or
@@ -479,7 +482,8 @@ class ImageList(ImageButler):
                                     r_core, r_out, count,
                                     obj_name=self.obj_name,
                                     band=self.band, 
-                                    draw=draw, save=save, save_dir=save_dir)
+                                    draw=draw, save=save,
+                                    save_dir=save_dir)
             
             # Supplementary Strip + Cross mask
             if dist_strip is None:
@@ -556,8 +560,9 @@ class ImageList(ImageButler):
                       parallel=False,
                       draw_real=True,
                       n_min=1,
+                      d_n0_min = 0.1,
                       theta_in=50,
-                      theta_out=300):
+                      theta_out=300, verbose=True):
         """ Container for fit storing prior and likelihood function """
         
         from .container import Container
@@ -565,6 +570,8 @@ class ImageList(ImageButler):
         self.containers = []
         
         for i in range(self.N_Image):
+            if verbose:
+                logger.info("Region {}:".format(i+1))
             image_shape = self.Images[i].image_shape
             
             container = Container(n_spline, leg2d, 
@@ -572,20 +579,33 @@ class ImageList(ImageButler):
                                   brightest_only=brightest_only,
                                   parallel=parallel, draw_real=draw_real)
             
-            if hasattr(self, '_n0'):
-                # use fixed n0 is given
-                n0, d_n0 = self._n0, 1e-2
+            if hasattr(self, 'n0_'):
+                # Use a given fixed n0
+                n0, d_n0 = self.n0_, 1e-2
+                if verbose:
+                    msg = "   - n0 is fixed to be a static value = {}.".format(n0)
+                    logger.warning(msg)
             else:
-                # get first component power index if fitted
-                # if not fitted, n0 will be added to the prior
+                # Get first component power index if already fitted
+                # Otherwise n0 will be added as a parameter in the prior
                 n0 = getattr(self.Images[i],'n0', None)
                 d_n0 = getattr(self.Images[i],'d_n0', 1e-2)
-                
-            if n0 is None:
+            
+            if (self.fix_n0 is False) | (n0 is None):
                 container.fix_n0 = False
-                n0, d_n0 = psf.n0, 0.2
+                d_n0 = max(d_n0, d_n0_min) # set a min dev for n0
+                
+                if n0 is None:  n0, d_n0 = psf.n0, 0.3  # rare case
+                
+                if verbose:
+                    logger.info("   - n0 will be included in the full fitting.")
+                
             else:
-                container.fix_n0 = True
+                container.fix_n0 = self.fix_n0
+                if verbose:
+                    msg = "   - n0 will not be included in the full fitting."
+                    msg += "Adopt fitted value."
+                    logger.info(msg)
                 
             if theta_in is None:
                 theta_in = self.Masks[i].r_core_m * self.pixel_scale
@@ -621,3 +641,173 @@ class ImageList(ImageButler):
             self.containers += [container]
 
 
+class Thumb_Image:
+
+    """ A class for operation and info storing of a thumbnail image.
+        Used for measuring scaling and stacking. """
+
+    def __init__(self, row, wcs, pixel_scale=DF_pixel_scale):
+        self.wcs = wcs
+        self.row = row
+        self.pixel_scale = pixel_scale
+        
+    def make_star_thumb(self,
+                        image, seg_map=None,
+                        n_win=20, seeing=2.5, max_size=160,
+                        origin=1, verbose=False):
+        """
+        Crop the image and segmentation map into thumbnails.
+
+        Parameters
+        ----------
+        image : 2d array
+            Full image
+        seg_map : 2d array
+            Full segmentation map
+        n_win : int, optional, default 20
+            Enlarge factor (of fwhm) for the thumb size
+        seeing : float, optional, default 2.5
+            Estimate of seeing FWHM in pixel
+        max_size : int, optional, default 160
+            Max thumb size in pixel
+        origin : 1 or 0, optional, default 1
+            Position of the first pixel. origin=1 for SE convention.
+            
+        """
+        
+        from .utils import coord_Im2Array
+
+        # Centroid in the image from the SE measurement
+        # Note SE convention is 1-based (differ from photutils)
+        X_c, Y_c = self.row["X_IMAGE"], self.row["Y_IMAGE"]
+
+        # Define thumbnail size
+        fwhm =  max(self.row["FWHM_IMAGE"], seeing)
+        win_size = min(int(n_win * max(fwhm, 2)), max_size)
+
+        # Calculate boundary
+        X_min, X_max = max(origin, X_c - win_size), min(image.shape[1], X_c + win_size)
+        Y_min, Y_max = max(origin, Y_c - win_size), min(image.shape[0], Y_c + win_size)
+        x_min, y_min = coord_Im2Array(X_min, Y_min, origin) # py convention
+        x_max, y_max = coord_Im2Array(X_max, Y_max, origin)
+
+        X_WORLD, Y_WORLD = self.row["X_WORLD"], self.row["Y_WORLD"]
+
+        if verbose:
+            print("NUMBER: ", self.row["NUMBER"])
+            print("X_c, Y_c: ", (X_c, Y_c))
+            print("RA, DEC: ", (X_WORLD, Y_WORLD))
+            print("x_min, x_max, y_min, y_max: ", x_min, x_max, y_min, y_max)
+            print("X_min, X_max, Y_min, Y_max: ", X_min, X_max, Y_min, Y_max)
+
+        # Crop
+        self.img_thumb = image[x_min:x_max, y_min:y_max].copy()
+        if seg_map is None:
+            self.seg_thumb = None
+            self.mask_thumb = np.zeros_like(image, dtype=bool)
+        else:
+            self.seg_thumb = seg_map[x_min:x_max, y_min:y_max]
+            self.mask_thumb = (self.seg_thumb!=0) # mask sources
+
+        # Centroid position in the cutout (0-based py convention)
+        #self.cen_star = np.array([X_c - X_min, Y_c - Y_min])
+        self.cen_star = np.array([X_c - y_min - origin, Y_c - x_min - origin])
+
+    def extract_star(self, image,
+                     seg_map=None,
+                     sn_thre=2.5,
+                     display_bkg=False,
+                     display=False, **kwargs):
+        
+        """
+        Local background and segmentation.
+        If no segmentation map provided, do a local detection & deblend
+        to remove faint undetected source.
+        
+        Parameters
+        ----------
+        image : 2d array
+            Full image
+        seg_map : 2d array
+            Full segmentation map
+        sn_thre : float, optional, default 2.5
+            SNR threshold used for detection if seg_map is None
+        display_bkg : bool, optional, default False
+            Whether to display background measurment
+        display : bool, optional, default False
+            Whether to display detection & deblend around the star
+        
+        """
+        from .utils import (background_extraction,
+                            detect_sources, deblend_sources)
+        # Make thumbnail image
+        self.make_star_thumb(image, seg_map, **kwargs)
+        
+        img_thumb = self.img_thumb
+        seg_thumb = self.seg_thumb
+        mask_thumb = self.mask_thumb
+        
+        # Measure local background, use constant if the thumbnail is small
+        shape = img_thumb.shape
+        b_size = round(min(shape)//5/25)*25
+        
+        if shape[0] >= b_size:
+            back, back_rms = background_extraction(img_thumb, b_size=b_size)
+        else:
+            im_ = np.ones_like(img_thumb)
+            img_thumb_ma = img_thumb[~mask_thumb]
+            back, back_rms = (np.median(img_thumb_ma)*im_,
+                              mad_std(img_thumb_ma)*im_)
+        self.bkg = back
+        self.bkg_rms = back_rms
+        
+        if display_bkg:
+            # show background subtraction
+            from .plotting import display_background
+            display_background(img_thumb, back)
+                
+        if seg_thumb is None:
+            # do local source detection to remove faint stars using photutils
+            threshold = back + (sn_thre * back_rms)
+            segm = detect_sources(img_thumb, threshold, npixels=5)
+
+            # deblending using photutils
+            segm_deb = deblend_sources(img_thumb, segm, npixels=5,
+                                           nlevels=64, contrast=0.005)
+        else:
+            segm_deb = SegmentationImage(seg_thumb)
+            
+        # mask other sources in the thumbnail
+        star_label = segm_deb.data[round(self.cen_star[1]), round(self.cen_star[0])]
+        star_ma = ~((segm_deb.data==star_label) | (segm_deb.data==0))
+        self.star_ma = star_ma
+        
+        if display:
+            from .plotting import display_source
+            display_source(img_thumb, segm_deb, star_ma)
+            
+            
+    def compute_Rnorm(self, R=12, **kwargs):
+        """
+        Compute the scaling factor at R using an annulus.
+        Note the output values include the background level.
+        
+        Paramters
+        ---------
+        R : int, optional, default 12
+            radius in pix at which the scaling factor is meausured
+        kwargs : dict
+            kwargs passed to compute_Rnorm
+        
+        """
+        from .utils import compute_Rnorm
+        I_mean, I_med, I_std, I_flag = compute_Rnorm(self.img_thumb,
+                                                     self.star_ma,
+                                                     self.cen_star, **kwargs)
+        self.I_mean = I_mean
+        self.I_med = I_med
+        self.I_std = I_std
+        self.I_flag = I_flag
+        
+        # Use the median of background as the local background
+        self.I_sky = np.median(self.bkg)

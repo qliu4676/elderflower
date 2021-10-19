@@ -68,7 +68,7 @@ class PSF_Model:
         self.core_model = core_model
         self.aureole_model = aureole_model
         
-        self.cutoff = True   # with cutoff by default
+        self.cutoff = True   # cutoff by default
         
         # Build attribute for parameters from dictionary keys 
         for key, val in params.items():
@@ -456,6 +456,20 @@ class PSF_Model:
                                       for (I, pos) in zip(I_theta0, star_pos)])
             
         return f_aureole_2d_s
+        
+    def fit_psf_core_1D(self, image_psf, **kwargs):
+        """ Fit the core parameters from 1D profiles of the input 2D PSF. """
+        from .utils import fit_psf_core_1D
+        frac, beta = fit_psf_core_1D(image_psf,
+                                     frac=self.frac,
+                                     beta=self.beta,
+                                     fwhm=self.fwhm,
+                                     n_s=self.n_s,
+                                     theta_s=self.theta_s,
+                                     pixel_scale=self.pixel_scale,
+                                     **kwargs)
+        self.frac = frac
+        self.beta = beta
 
     
 class Stars:
@@ -643,10 +657,9 @@ class Stars:
      
     def save(self, name='stars', save_dir='./'):
         from .io import save_pickle
-        save_pickle(self, os.path.join(save_dir, name+'.pkl'))
+        save_pickle(self, os.path.join(save_dir, name+'.pkl'), 'Star model')
         
         
-
 ############################################
 # Analytic Functions for models
 ############################################
@@ -1680,7 +1693,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std)
         noise_image = image_stars_noise - image_stars
         bkg_image = psf_fit.bkg * np.ones((nY, nX))
-        logger.info("Background : %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+        logger.info("   - Background = %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = np.zeros_like(image_stars)
    
@@ -2059,8 +2072,8 @@ def set_likelihood(image, mask_fit, psf, stars,
         return loglike_mof
         
     else:
-        cutoff = psf.cutoff    # whether to cutoff
         theta_0 = psf.theta_0  # inner flattening
+        cutoff = psf.cutoff    # whether to cutoff
         theta_c = psf.theta_c  # outer cutoff
         n_c = psf.n_c
         
