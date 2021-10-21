@@ -1,10 +1,13 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from .io import logger
 
 class Container:
-    """ A container storing the prior, the loglikelihood function and fitting data & setups.
-        The container is to be passed to the sampler. """
+    """
+    A container storing the prior, the loglikelihood function and
+    fitting data & setups. The container is passed to the sampler.
+    """
     
     def __init__(self,
                  n_spline=2,
@@ -39,9 +42,11 @@ class Container:
             
         
     def set_prior(self, n_est, mu_est, std_est,
-                  n_min=1, d_n0=0.2,
+                  n_min=1.1, d_n0=0.2,
                   theta_in=50, theta_out=300):
-        """ Setup priors for fitting and labels for displaying the results"""
+                  
+        """ Setup priors for Bayesian fitting."""
+        
         from .modeling import set_prior
         
         fit_sigma = self.fit_sigma
@@ -57,20 +62,64 @@ class Container:
                              fit_sigma=fit_sigma, fit_frac=fit_frac)
         
         self.prior_transform = prior_tf
-
+        
+        # Set labels for displaying the results
         labels = set_labels(n_spline=n_spline, leg2d=leg2d,
                             fit_sigma=fit_sigma, fit_frac=fit_frac)
         
         self.labels = labels
         self.ndim = len(labels)
         
+        self.n_est = n_est
+        self.mu_est = mu_est
         self.std_est = std_est
     
+    def set_MLE_bounds(self, n_est, mu_est, std_est,
+                       n_min=1.1, d_n0=0.2,
+                       theta_in=50, theta_out=300):
+        
+        """ Setup p0 and bounds for MLE fitting """
+        
+        for option in ['fit_sigma', 'fit_frac', 'leg2d']:
+            if getattr(self, option):
+                logger.warning(f"{option} not supported in MLE. Will be turned off.")
+                exec('self.' + option + ' = False')
+            
+        n0 = n_est
+        n_spline = self.n_spline
+
+        log_t_in, log_t_out = np.log10(theta_in), np.log10(theta_out)
+        log_theta_bounds = [(log_t_in, log_t_out) for i in range(n_spline-1)]
+        
+        bkg_bounds = ([mu_est-std_est, mu_est+2*std_est])
+        
+        if n_spline == 2:
+            self.param0 = np.array([n0, 2.2, 1.8, mu_est])
+            n_bounds = [(n0-d_n0, n0+d_n0), (n_min, 2.5)]
+        elif n_spline == 3:
+            self.param0 = np.array([n0, 2.5, 2., 1.8, 2., mu_est])
+            n_bounds = [(n0-d_n0, n0+d_n0), (2., 2.5), (n_min, 2+d_n0)]
+        else:
+            n_guess = np.linspace(2.5, n_min, n_spline-1)
+            theta_guess = np.linspace(1.8, log_t_out-0.3, n_spline-1)
+            self.param0 = np.concatenate([[n0], n_guess, theta_guess, [mu_est]])
+    
+            n_bounds = [(n0-d_n0, n0+d_n0), (2., n0-d_n0)] + [(n_min, n0-d_n0) for i in range(n_spline-2)]
+            
+            logger.warning("Components > 3. The MLE might reach maxiter or maxfev.")
+            
+        self.MLE_bounds = tuple(n_bounds + log_theta_bounds + bkg_bounds)
+
+        self.n_est = n_est
+        self.mu_est = mu_est
+        self.std_est = std_est
+        
+        self.ndim = 2 * n_spline
+        
     def set_likelihood(self,
                        image, mask_fit,
                        psf, stars,
                        norm='brightness',
-                       n0=3.3,
                        psf_range=[None, None],
                        G_eff=1e5,
                        image_base=None):
@@ -93,7 +142,7 @@ class Container:
                                  psf_tri, stars_tri,
                                  norm=norm,
                                  psf_range=psf_range,
-                                 n0=n0, fix_n0=self.fix_n0,
+                                 fix_n0=self.fix_n0,
                                  std_est=self.std_est,
                                  G_eff=G_eff,
                                  n_spline=self.n_spline,
@@ -105,7 +154,7 @@ class Container:
                                  draw_real=self.draw_real)
         
         self.loglikelihood = loglike
-        
+            
         
 def set_labels(n_spline, fit_sigma=True, fit_frac=False, leg2d=False):
     

@@ -392,7 +392,7 @@ class ImageList(ImageButler):
     
     @lazyproperty
     def images(self):
-        return np.array([Img.image for Img in self.Images], dtype=np.ndarray)
+        return np.array([Img.image for Img in self.Images], dtype=np.float32)
 
     def display(self, fig=None, ax=None):
         """ Display the image list """
@@ -559,10 +559,12 @@ class ImageList(ImageButler):
                       brightest_only=False,
                       parallel=False,
                       draw_real=True,
-                      n_min=1,
-                      d_n0_min = 0.1,
+                      n_min=1.1,
+                      d_n0_min=0.1,
                       theta_in=50,
-                      theta_out=300, verbose=True):
+                      theta_out=300,
+                      method='nested',
+                      verbose=True):
         """ Container for fit storing prior and likelihood function """
         
         from .container import Container
@@ -614,19 +616,26 @@ class ImageList(ImageButler):
                 if psf.cutoff:
                     theta_out = psf.theta_c
                 else:
-                    theta_out = max(image_shape) * self.pixel_scale
+                    theta_out = int(0.8 * max(image_shape) * self.pixel_scale)
             psf.theta_out = theta_out
-                
-            # Set Priors
-            container.set_prior(n0, self.bkg, self.std_est[i],
-                                n_min=n_min, d_n0=d_n0,
-                                theta_in=theta_in, theta_out=theta_out)
+            
+            logger.info("theta_in = {:.2f}, theta_out = {:.2f}".format(theta_in, theta_out))
+            
+            # Set priors (Bayesian) or bounds (MLE)
+            prior_kws = dict(n_min=n_min, d_n0=d_n0,
+                             theta_in=theta_in, theta_out=theta_out)
+                             
+            if method == 'mle':
+                # Set bounds on variables
+                container.set_MLE_bounds(n0, self.bkg, self.std_est[i], **prior_kws)
+            else:
+                # Set Priors
+                container.set_prior(n0, self.bkg, self.std_est[i], **prior_kws)
 
             # Set Likelihood
             container.set_likelihood(self.images[i],
                                      self.mask_fit[i],
                                      psf, stars[i],
-                                     n0=n0,
                                      psf_range=[None, None],
                                      norm='brightness',
                                      G_eff=self.G_eff,

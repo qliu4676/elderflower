@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import multiprocess as mp
 
+from scipy.optimize import minimize
+
 import dynesty
 from dynesty import plotting as dyplot
 from dynesty import utils as dyfunc
@@ -17,21 +19,24 @@ from .plotting import colorbar
 class Sampler:
 
     def __init__(self, container,
-                 sample='auto', bound='multi',
+                 sample_method='auto', bound='multi',
                  n_cpu=None, n_thread=None,
-                 run=True, results=None):
+                 run='nested', results=None):
                  
         """ A class for runnning the sampling and plotting results """
                  
-        # False if a previous run is read
+        if sample_method=='mle': run = 'mle'
+        
+        # run = False if a previous run is read
         self.run = run
         
         self.container = container
         self.image = container.image
         self.ndim = container.ndim
-        self.labels = container.labels
         
-        if run:
+        if run == 'nested':
+            self.labels = container.labels
+            
             if n_cpu is None:
                 n_cpu = min(mp.cpu_count()-1, 10)
                 
@@ -48,11 +53,18 @@ class Sampler:
             self.prior_tf = container.prior_transform
             self.loglike = container.loglikelihood
             
-            dsampler = dynesty.DynamicNestedSampler(self.loglike, self.prior_tf, self.ndim,
-                                                    sample=sample, bound=bound,
+            dsampler = dynesty.DynamicNestedSampler(self.loglike,
+                                                    self.prior_tf, self.ndim,
+                                                    sample=sample_method, bound=bound,
                                                     pool=self.pool, queue_size=n_thread,
                                                     use_pool=self.use_pool)
             self.dsampler = dsampler
+        
+        elif run == 'mle':
+            self.MLE_bounds = container.MLE_bounds
+            self.param0 = container.param0
+            self.loglike = container.loglikelihood
+            self.NLL = lambda p: -self.loglike(p)
             
         else:
             self._results = results # use existed results
@@ -65,33 +77,46 @@ class Sampler:
                     maxbatch=2,
                     wt_kwargs={'pfrac': 0.8},
                     close_pool=True,
-                    print_progress=True):
+                    print_progress=True, **kwargs):
         
-        if not self.run: return None
-        
-        msg = "Run Nested sampling for the fitting... "
-        msg += "# of params: {0}".format(self.ndim)
-        logger.info(msg)
-        
+        if not self.run:
+            logger.warning("Not available to run the fitting.")
+            return None
+
         start = time.time()
-   
-        dlogz = 1e-3 * (nlive_init - 1) + 0.01
         
-        self.dsampler.run_nested(nlive_init=nlive_init, 
-                                 nlive_batch=nlive_batch, 
-                                 maxbatch=maxbatch,
-                                 maxiter=maxiter,
-                                 dlogz_init=dlogz, 
-                                 wt_kwargs=wt_kwargs,
-                                 print_progress=print_progress) 
-        
+        if self.run == 'nested':
+            msg = "Run Nested sampling for the fitting... "
+            msg += "# of params: {0}".format(self.ndim)
+            logger.info(msg)
+            
+            dlogz = 1e-3 * (nlive_init - 1) + 0.01
+            
+            self.dsampler.run_nested(nlive_init=nlive_init,
+                                     nlive_batch=nlive_batch,
+                                     maxbatch=maxbatch,
+                                     maxiter=maxiter,
+                                     dlogz_init=dlogz,
+                                     wt_kwargs=wt_kwargs,
+                                     print_progress=print_progress, **kwargs)
+                                     
+            if (self.pool is not None) & close_pool:
+                self.close_pool()
+                
+        elif self.run == 'mle':
+            msg = "Run maximum likelihood estimate... "
+            msg += "# of params: {0}".format(self.ndim)
+            logger.info(msg)
+            
+            results = minimize(self.NLL, self.param0, method='Nelder-Mead',
+                               bounds=self.MLE_bounds)
+                               
+            self.MLE_results = results
+            
         end = time.time()
         self.run_time = (end-start)
-        
+
         logger.info("Finish Fitting! Total time elapsed: %.3g s"%self.run_time)
-        
-        if (self.pool is not None) & close_pool:
-            self.close_pool()
         
     def open_pool(self, n_cpu):
         logger.info("Opening new pool: # of CPU used: %d"%(n_cpu))
@@ -106,18 +131,27 @@ class Sampler:
     @property
     def results(self):
         """ Results of the dynesty dynamic sampler class """
-        if self.run:
+        if self.run == 'nested':
             return getattr(self.dsampler, 'results', {})
+        elif self.run == 'mle':
+            return getattr(self, 'MLE_results')
         else:
-             return self._results
+            return self._results
     
     def get_params_fit(self, return_sample=False):
-        return get_params_fit(self.results, return_sample)
+        if self.run == 'nested':
+            return get_params_fit(self.results, return_sample)
+        elif self.run == 'mle':
+            return self.results.x, None, None
+        else:
+            return None
     
     def save_results(self, filename, save_dir='.'):
         """ Save fitting results """
         
-        if not self.run: return None
+        if not self.run:
+            logger.warning("No results to saved.")
+            return None
         
         res = {}
         if hasattr(self, 'fit_info'):
@@ -128,7 +162,7 @@ class Sampler:
         res['fit_res'] = self.results         # fitting results
         res['container'] = self.container     # a container for prior and likelihood
         
-        # Delete local prior and loglikelihood function which can't be pickled
+        # Delete <local> prior and loglikelihood function which can't be pickled
         for attr in ['prior_transform', 'loglikelihood']:
             if hasattr(res['container'], attr):
                 delattr(res['container'], attr)
@@ -146,11 +180,15 @@ class Sampler:
         if hasattr(res, 'fit_info'):
             logger.info(f"Read fitting results {filename}\n", res['fit_info'])
         
-        return cls(res['container'], run=False, results=res['fit_res'])
+        results = res['fit_res']
+        
+        return cls(res['container'], run=False, results=results)
     
     def cornerplot(self, truths=None, figsize=(16,15),
                    save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
+        
+        if self.run != 'nested': return None
         
         # hide n0 subplots if n0 is fixed during the fitting
         if self.container.fix_n0:
@@ -166,6 +204,8 @@ class Sampler:
     def cornerbounds(self, figsize=(10,10),
                     save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerbounds
+        
+        if self.run != 'nested': return None
         
         if hasattr(self, 'prior_tf'):
             draw_cornerbounds(self.results, self.ndim, self.prior_tf,
@@ -302,7 +342,6 @@ def get_params_fit(results, return_sample=False):
         return pmed, pmean, pcov, samples_eq
     else:
         return pmed, pmean, pcov
-        
 
     
 def merge_run(res_list):

@@ -708,6 +708,7 @@ def plot_fit_PSF1D(results, psf,
                    save=False, save_dir="./",
                    suffix='', figsize=(7,6)):
 
+    from scipy.optimize.optimize import OptimizeResult
     from astropy.stats import bootstrap
     from .sampler import get_params_fit
     
@@ -722,12 +723,16 @@ def plot_fit_PSF1D(results, psf,
         print("Truth : ", psf.params)
         psf.plot1D(psf_range=900, decompose=False, label='Truth')
     
+    MLE_fit = type(results) == OptimizeResult
     # read fitting results
-    pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
+    if MLE_fit:
+        pmed = pmean = results.x
+    else:
+        pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
+        samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
+        
     print("Fitting (mean) : ", np.around(pmean,3))
     print("Fitting (median) : ", np.around(pmed,3))
-    
-    samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
     
     # Number of n and theta in the fitting
     if psf.aureole_model != "moffat":
@@ -745,32 +750,33 @@ def plot_fit_PSF1D(results, psf,
         theta_c = psf.theta_c
     
     # Sample distribution from joint PDF
-    for sample in samples_eq_bs:
-        frac_k = frac
-        
-        if psf.aureole_model == "moffat":
-            gamma1_k = sample[0]
-            beta1_k = sample[1]
-            psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
+    if not MLE_fit:
+        for sample in samples_eq_bs:
+            frac_k = frac
             
-        else:
-            if psf.aureole_model == "power":
-                n_k = sample[0]
-                psf_fit.update({'n':n_k})
+            if psf.aureole_model == "moffat":
+                gamma1_k = sample[0]
+                beta1_k = sample[1]
+                psf_fit.update({'gamma1':gamma1_k, 'beta1':beta1_k})
+                
+            else:
+                if psf.aureole_model == "power":
+                    n_k = sample[0]
+                    psf_fit.update({'n':n_k})
 
-            elif psf.aureole_model == "multi-power":
-                n_s_k = sample[:N_n]
-                theta_s_k = np.append(theta_0, 10**sample[N_n:N_n+N_theta])
-                if psf.cutoff:
-                    n_s_k = np.append(n_s_k, n_c)
-                    theta_s_k = np.append(theta_s_k, theta_c)
-                                            
-                psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
-            
-        comp2_k = psf_fit.f_aureole1D(r)
-            
-        plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
-                     color="lightblue", lw=2,alpha=0.1,zorder=1)
+                elif psf.aureole_model == "multi-power":
+                    n_s_k = sample[:N_n]
+                    theta_s_k = np.append(theta_0, 10**sample[N_n:N_n+N_theta])
+                    if psf.cutoff:
+                        n_s_k = np.append(n_s_k, n_c)
+                        theta_s_k = np.append(theta_s_k, theta_c)
+                                                
+                    psf_fit.update({'n_s':n_s_k, 'theta_s':theta_s_k})
+                
+            comp2_k = psf_fit.f_aureole1D(r)
+                
+            plt.semilogy(r, (1-frac_k) * comp1 + frac_k * comp2_k,
+                         color="lightblue", lw=2,alpha=0.1,zorder=1)
         
     # Median and mean fitting
     for fits, c, ls, lab in zip([pmed, pmean], ["royalblue", "b"],
@@ -806,23 +812,9 @@ def plot_fit_PSF1D(results, psf,
                          color="orange", lw=2, ls="--", alpha=0.7, label="med core",zorder=4)
             plt.semilogy(r, frac * comp2,
                          color="seagreen", lw=2, ls="--", alpha=0.7, label="med aureole",zorder=4)
-
-#         if Amp_max is not None:
-#             std_fit = 10**fits[-1]
-#             contrast = Amp_max/(std_fit)
-#             y_min_contrast = y_fit.max()/contrast
-            
-#             plt.axhline(y_min_contrast, color="k", ls="-.", alpha=0.5)
-#             plt.axhline(y_min_contrast*2, color="k", ls=":", alpha=0.5)
-#             plt.text(1, y_fit.max()/contrast*1.2, '1 $\sigma$', fontsize=10)
-#             plt.text(1, y_fit.max()/contrast*2.5, '2 $\sigma$', fontsize=10)
-            
-#             r_max = r[np.argmin(abs(y_fit-y_fit.max()/contrast))]
-#             plt.xlim(0.9, 5*r_max)  
                 
     # Draw boundaries etc.
     if r_core is not None:
-        
         if figsize is not None:
             if psf.cutoff:
                 xlim = theta_c/pixel_scale

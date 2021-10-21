@@ -1713,7 +1713,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1, d_n0=0.1, d_n=0.2, std_min=3,
+              n_min=1.1, d_n0=0.1, d_n=0.2, std_min=3,
               theta_in=50, theta_out=300, leg2d=False,
               fix_n0=False, fix_theta=False,
               fit_sigma=True, fit_frac=False):
@@ -1801,8 +1801,8 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
                 v = u.copy()
                 
                 if fix_n0:
-#                    v[0] = n_est
-                    v[0] = np.random.normal(n_est, d_n0)
+                    v[0] = n_est
+                    #v[0] = np.random.normal(n_est, d_n0)
                 else:
                     v[0] = Prior_n0.ppf(u[0])
                     
@@ -1842,7 +1842,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
 
 def prior_tf_sp(u, Priors, n_spline=3,
-                d_n=0.2, n_min=1, n_max=4, n_est=3.3, d_n0=0.2,
+                d_n=0.2, n_min=1.1, n_max=4, n_est=3.3, d_n0=0.2,
                 leg2d=False, fix_n0=False, flexible=False,
                 fix_theta=False, log_t_s=[90, 180], log_t_out=300,
                 K=1, fit_sigma=True, fit_frac=False):
@@ -1858,7 +1858,6 @@ def prior_tf_sp(u, Priors, n_spline=3,
     # n prior
     if fix_n0:
         v[0] = n_est
-#        v[0] = np.random.normal(n_est, d_n0)
     else:
         v[0] = Prior_n0.ppf(u[0])
     
@@ -1880,12 +1879,12 @@ def prior_tf_sp(u, Priors, n_spline=3,
         v[n_spline:2*n_spline-1] = log_t_s
     else:
         v[n_spline] = Prior_logtheta1.ppf(u[n_spline])
-        # log theta1 : t_in-t_out  arcsec
+        # log theta1 : log t_in - t_out  # in arcsec
 
         for k in range(n_spline-2):
             v[k+n_spline+1] = u[k+n_spline+1] * \
                                 (log_t_out - v[k+n_spline]) + v[k+n_spline]
-            # log theta_k+1: theta_k - t_out  # in arcsec
+            # log theta_k+1: log theta_k - log t_out  # in arcsec
 
     # background prior
     v[-K-1] = Prior_mu.ppf(u[-K-1])          # mu
@@ -1975,11 +1974,11 @@ class Legendre2D:
 
 def set_likelihood(image, mask_fit, psf, stars,
                    norm='brightness', n_spline=2,
-                   n0=3.3, fix_n0=False,
+                   fix_n0=False, brightest_only=False,
                    psf_range=[None,None], leg2d=False,
                    std_est=None, G_eff=1e5,
                    fit_sigma=True, fit_frac=False,
-                   brightest_only=False, parallel=False, draw_real=False):
+                   parallel=False, draw_real=False):
     
     """
     Setup likelihood function.
@@ -2072,6 +2071,7 @@ def set_likelihood(image, mask_fit, psf, stars,
         return loglike_mof
         
     else:
+        n0 = psf.n0
         theta_0 = psf.theta_0  # inner flattening
         cutoff = psf.cutoff    # whether to cutoff
         theta_c = psf.theta_c  # outer cutoff
@@ -2142,7 +2142,10 @@ def set_likelihood(image, mask_fit, psf, stars,
 
                 n_s = v[:3]
                 
-                theta_s = [theta_0, 10**v[3], 10**v[4]]
+                if fix_n0:
+                    n_s[0] = n0
+                
+                theta_s = np.array([theta_0, 10**v[3], 10**v[4]])
                 
                 if cutoff:
                     n_s = np.append(n_s, n_c)
@@ -2194,17 +2197,15 @@ def set_likelihood(image, mask_fit, psf, stars,
                 
                 n_s = v[:n_spline]
                 
-                ### Below is new!
                 if fix_n0:
                     n_s[0] = n0
-                ###
                 
                 theta_s = np.append(theta_0, 10**v[n_spline:2*n_spline-1])
                 
                 if cutoff:
                     n_s = np.append(n_s, n_c)
                     theta_s = np.append(theta_s, theta_c)
-                    
+                
                 if not np.all(theta_s[1:] > theta_s[:-1]):
                     loglike = -1e100
                     return loglike

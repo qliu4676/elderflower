@@ -797,12 +797,13 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
                             theta_in=40, theta_out=300,
-                            n_min=1, leg2d=leg2d,
+                            n_min=1.1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,
                             fit_frac=fit_frac,
                             brightest_only=brightest_only,
+                            method=sample_method,
                             verbose=True)
     
     ## (a stop for inspection/developer)
@@ -823,10 +824,10 @@ def Run_PSF_Fitting(hdu_path,
         ct = DF_Images.containers[i]
         ndim = ct.ndim
 
-        s = Sampler(ct, n_cpu=n_cpu, sample=sample_method)
+        s = Sampler(ct, n_cpu=n_cpu, sample_method=sample_method)
                                   
         if nlive_init is None: nlive_init = ndim*10
-        # Run dynesty
+        # Run fitting
         s.run_fitting(nlive_init=nlive_init,
                       nlive_batch=5*ndim+5, maxbatch=2,
                       print_progress=print_progress)
@@ -844,12 +845,14 @@ def Run_PSF_Fitting(hdu_path,
                           'fit_n0':fit_n0}
             if cutoff:
                 s.fit_info.update(cutoff_param)
-                
+            
+            
             suffix = str(n_spline)+'p'
             if leg2d: suffix+='l'
             if fit_frac: suffix+='f'
             if brightest_only: suffix += 'b'
             if use_PS1_DR2: suffix += '_ps2'
+            if sample_method=='mle': suffix+='_mle'
             
             Xmin, Ymin, Xmax, Ymax = bounds_list[i]
             range_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
@@ -868,7 +871,7 @@ def Run_PSF_Fitting(hdu_path,
         
         # Generate bright star model with the PSF
         s.generate_fit(psf, stars[i], image_base=DF_Images[i].image_base)
-        
+            
         if draw:
             s.cornerplot(figsize=(18, 16),
                          save=save, save_dir=plot_dir, suffix=suffix)
@@ -881,7 +884,7 @@ def Run_PSF_Fitting(hdu_path,
             s.calculate_reduced_chi2(Gain=G_eff, dof=ndim)
 
             # Draw 2D compaison
-            s.draw_comparison_2D(r_core=r_core, Gain=G_eff, 
+            s.draw_comparison_2D(r_core=r_core, Gain=G_eff,
                                  vmin=DF_Images.bkg-s.bkg_std_fit,
                                  vmax=DF_Images.bkg+20*s.bkg_std_fit,
                                  save=save, save_dir=plot_dir, suffix=suffix)
@@ -890,7 +893,7 @@ def Run_PSF_Fitting(hdu_path,
                 # Draw background
                 s.draw_background(save=save, save_dir=plot_dir,
                                   suffix=suffix)
-        
+            
         # Append the sampler
         samplers += [s]
         

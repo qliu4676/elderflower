@@ -1120,7 +1120,7 @@ def stack_star_image(table_stack, res_thumb, size=61):
 
 def make_global_stack_PSF(dir_name, bounds_list, obj_name, band):
     """
-    Combine the stacked PSF of all regions into one.
+    Combine the stacked PSF of all regions into one, skip if existed.
     
     Parameters
     ----------
@@ -1136,26 +1136,29 @@ def make_global_stack_PSF(dir_name, bounds_list, obj_name, band):
     
     """
     
-    for i, bounds in enumerate(bounds_list):
-        range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
-        fn = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
-        image_psf = fits.getdata(fn)
-        
-        if i==0:
-            image_stack = image_psf
-        else:
-            image_stack += image_psf
-            
-    image_stack = image_stack/image_stack.sum()
-    
-    if i>0:
-        logger.info("Read & stack {:} PSF.".format(i+1))
-    
     fn_stack = os.path.join(dir_name, f'{obj_name}-{band}-PSF_stack.fits')
-    fits.writeto(fn_stack, data=image_stack, overwrite=True)
     
-    logger.info("Saved stacked PSF as {:}".format(fn_stack))
+    if not os.path.isfile(fn_stack):
+        for i, bounds in enumerate(bounds_list):
+            range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
+            fn = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
+            image_psf = fits.getdata(fn)
+            
+            if i==0:
+                image_stack = image_psf
+            else:
+                image_stack += image_psf
+                
+        image_stack = image_stack/image_stack.sum()
+        
+        if i>0:
+            logger.info("Read & stack {:} PSF.".format(i+1))
 
+        fits.writeto(fn_stack, data=image_stack, overwrite=True)
+        logger.info("Saved stacked PSF as {:}".format(fn_stack))
+    else:
+        logger.info("{:} existed. Skip Stack.".format(fn_stack))
+        
 def montage_psf_image(image_psf, image_wide_psf, r=10, dr=0.5):
     """
     Montage the core of the stacked psf and the wing of the wide psf model.
@@ -2279,7 +2282,7 @@ def make_psf_from_fit(sampler, psf,
     psf_fit : PSF_Model class
         Recostructed PSF.
     params : list
-    
+        Fitted parameters.
     """
     
     ct = sampler.container
@@ -2307,8 +2310,7 @@ def make_psf_from_fit(sampler, psf,
             except AttributeError:
                 n_c = 4
                 theta_c = 1200
-        
-    
+                
         if psf.aureole_model == "power":
             n_fit = params[0]
             param_update = {'n':n_fit}
