@@ -25,12 +25,12 @@ Basic Usage
 ```python
 bounds = ([100,100,700,700])
 obj_name = 'test'
-filt = 'r'
+band = 'r'
 
-ZP = Run_Detection('cutout.fits', obj_name, filt)
-Match_Mask_Measure('cutout.fits', bounds, obj_name, filt,
+ZP = Run_Detection('cutout.fits', obj_name, band)
+Match_Mask_Measure('cutout.fits', bounds, obj_name, band,
                     ZP=ZP, pixel_scale=2.5)
-samplers = Run_PSF_Fitting('cutout.fits', bounds, obj_name, filt,
+samplers = Run_PSF_Fitting('cutout.fits', bounds, obj_name, band,
                             n_spline=3, ZP=ZP, pixel_scale=2.5)   
 ```
 
@@ -40,7 +40,7 @@ from elderflower.task import berry
 
 bounds = ([100,100,700,700])
 elder = berry('cutout.fits', bounds,
-              obj_name='test', filt='r',
+              obj_name='test', band='r',
               config_file='config.yaml')
 elder.detection()
 elder.run()
