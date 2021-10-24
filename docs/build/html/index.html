@@ -34,7 +34,7 @@
             
   <section id="welcome-to-elderflower-s-documentation">
 <h1>Welcome to elderflower’s documentation!<a class="headerlink" href="#welcome-to-elderflower-s-documentation" title="Permalink to this headline">¶</a></h1>
-<img alt="_images/elderflower.png" class="no-scaled-link" src="_images/elderflower.png" style="width: 240.0px; height: 232.0px;" />
+<img alt="_images/elderflower.png" class="no-scaled-link" src="_images/elderflower.png" style="width: 293.0px; height: 285.0px;" />
 <section id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">elderflower</span></code> is a python package to fit the wide-angle point spread function (PSF) in wide-field low-surface brightness images, especially developed for the <a class="reference external" href="https://www.dragonflytelescope.org/">Dragonfly telescope</a>. It mainly utilizes Galsim and Dynesty to generate forward models of PSF for bright stars in the image and fit the parameters of the PSF wing in a Bayesian way.</p>
@@ -64,13 +64,14 @@
 </section>
 <section id="why-called-elderflower">
 <h2>Why called ‘elderflower’?<a class="headerlink" href="#why-called-elderflower" title="Permalink to this headline">¶</a></h2>
-<p>Well, reason #1 – I am an elderflower lover (also a lover of Fanta Shokata)!</p>
-<p>For another, check the image below which displays the open cluster M44 taken by the Dragonfly telescope. Look how similar it is to the beautiful picture of elderflower above!</p>
+<p>Well, reason #1 – I am a lover of elderflower (and a lover of <a class="reference external" href="https://the-soda.fandom.com/wiki/Fanta_Shokata">Fanta Shokata</a>)!</p>
+<p>For more, check the image below taken by the Dragonfly telescope which displays the open cluster M44. Look how similar it is to the beautiful elderflowers!</p>
 <img alt="_images/M44-1229.png" class="no-scaled-link" src="_images/M44-1229.png" style="width: 403.20000000000005px; height: 403.20000000000005px;" />
-<p>The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness level.</p>
+<p>The optical cleanliness of the lenses in this particular image was intentionally compromised, but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness levels.</p>
 </section>
 <section id="getting-started">
 <h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h2>
+<p>Here is a simple start-up with a cutout (under <code class="docutils literal notranslate"><span class="pre">tests/</span></code>) from a Dragonfly image.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.task</span> <span class="kn">import</span> <span class="n">berry</span>
 
 <span class="c1"># Local path of SExtractor executable</span>
@@ -78,7 +79,7 @@
 
 <span class="n">bounds</span> <span class="o">=</span> <span class="p">([</span><span class="mi">100</span><span class="p">,</span><span class="mi">100</span><span class="p">,</span><span class="mi">700</span><span class="p">,</span><span class="mi">700</span><span class="p">])</span>
 <span class="n">elder</span> <span class="o">=</span> <span class="n">berry</span><span class="p">(</span><span class="s1">&#39;cutout.fits&#39;</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span>
-              <span class="n">obj_name</span><span class="o">=</span><span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="n">filt</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span>
+              <span class="n">obj_name</span><span class="o">=</span><span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="n">band</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span>
               <span class="n">work_dir</span><span class="o">=</span><span class="s1">&#39;./test&#39;</span><span class="p">,</span>
               <span class="n">config_file</span><span class="o">=</span><span class="s1">&#39;config.yaml&#39;</span><span class="p">)</span>
 <span class="n">elder</span><span class="o">.</span><span class="n">detection</span><span class="p">(</span><span class="n">executable</span><span class="o">=</span><span class="n">SE_executable</span><span class="p">)</span>
@@ -86,8 +87,7 @@
 </pre></div>
 </div>
 <img alt="_images/test_2d.png" class="align-center" src="_images/test_2d.png" />
-<p>For further examples in detail, refer to examples page.
-For parameters tweaking, refer to configuration page.</p>
+<p>For further details, please refer to the <a class="reference external" href="tutorial.html">Tutorial</a> page.</p>
 </section>
 </section>
 <section id="indices-and-tables">

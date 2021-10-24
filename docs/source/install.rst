@@ -46,11 +46,9 @@ To install ``galsim``, try ``pip install galsim``. If it reports errors, it is l
 
 	conda install -c conda-forge galsim
 
-Or you can install it from source.
+Or you can install it from `source <https://github.com/GalSim-developers/GalSim>`__.
 
 To fully run the process, it also needs ``SExtractor`` to be installed. Note using old version of ``SExtractor`` may report errors.
-
-Temporarily, the newly developed Dragonfly data reduction pipeline  (author: Johnny Greco, Allison Merrit, et al.) ``dfreduce`` is required for running the first-step detection on the image. You can intsall it from the dfreduce Github `repository <https://github.com/johnnygreco/DFReduce>`__.
 
 Optionally, the high performance compiler package ``numba`` can be installed (and recommended) to accelerate some numeric functions. This can be done by::
 
@@ -59,7 +57,7 @@ Optionally, the high performance compiler package ``numba`` can be installed (an
 
 Installation
 ------------
-``elderflower`` can be installed by cloning the GitHub `repository <https://github.com/NGC4676/elderflower>`__.
+After installing the dependencies, ``elderflower`` can be installed by cloning the GitHub `repository <https://github.com/NGC4676/elderflower>`__.
 This can be done by running:
 
 .. code-block:: python

@@ -559,7 +559,7 @@ def make_psf_2D(n_s, theta_s,
     n_s : 1d list or array
         Power index of PSF aureole.
     theta_s : 1d list or array
-        Transition radii of PSF aureole.
+        Transition radii of PSF aureole in arcsec.
     frac: float
         Fraction of aureole [0 - 1]
     beta : float

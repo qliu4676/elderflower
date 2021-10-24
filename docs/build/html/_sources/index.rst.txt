@@ -9,7 +9,7 @@ Welcome to elderflower's documentation!
 
 .. image:: images/elderflower.png
 	:class: no-scaled-link
-	:scale: 20%
+	:scale: 50%
 
 
 Introduction
@@ -31,20 +31,22 @@ Introduction
 
 Why called 'elderflower'?
 -------------------------
-Well, reason #1 -- I am an elderflower lover (also a lover of Fanta Shokata)! 
+Well, reason #1 -- I am a lover of elderflower (and a lover of `Fanta Shokata <https://the-soda.fandom.com/wiki/Fanta_Shokata>`__)! 
 
-For another, check the image below which displays the open cluster M44 taken by the Dragonfly telescope. Look how similar it is to the beautiful picture of elderflower above!
+For more, check the image below taken by the Dragonfly telescope which displays the open cluster M44. Look how similar it is to the beautiful elderflowers!
 
 
 .. image:: images/M44-1229.png
 	:class: no-scaled-link
 	:scale: 80%
 
-The optical cleanliness of the lenses was bad but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness level.
+The optical cleanliness of the lenses in this particular image was intentionally compromised, but it illustrates how big the impact of the scattered light from bright stars (the wide-angle PSF) could be in deep images at low surface brightness levels.
 
 
 Getting Started
 ---------------
+
+Here is a simple start-up with a cutout (under ``tests/``) from a Dragonfly image.
 
 .. code-block:: python
 
@@ -55,7 +57,7 @@ Getting Started
 
     bounds = ([100,100,700,700])
     elder = berry('cutout.fits', bounds,
-		  obj_name='test', filt='r',
+		  obj_name='test', band='r',
 		  work_dir='./test',
 		  config_file='config.yaml') 
     elder.detection(executable=SE_executable)
@@ -65,8 +67,7 @@ Getting Started
 	:align: center
 
 
-For further examples in detail, refer to examples page.
-For parameters tweaking, refer to configuration page.
+For further details, please refer to the `Tutorial <tutorial.html>`__ page.
 
 
 Indices and tables

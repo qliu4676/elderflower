@@ -717,7 +717,6 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
-                        dist_cross=180, wid_cross=30,
                         sn_thre=2.5, draw=draw, mask_obj=mask_obj,
                         save=save, save_dir=plot_dir)
 
@@ -896,7 +895,7 @@ def Run_PSF_Fitting(hdu_path,
     # Clean intermediate outputs of each region for measurement
     if clean_measure:
         for file in Path(dir_measure).glob('*X*Y*'):
-        os.remove(file)
+            os.remove(file)
         
     return samplers
     
