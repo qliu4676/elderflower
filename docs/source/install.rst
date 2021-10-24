@@ -26,8 +26,6 @@ Dependencies
 
 * photutils>=0.7.2
 
-* scikit_image>=0.14.2
-
 * pandas>=1.0.1
 
 * pyyaml>=5.3
@@ -48,7 +46,7 @@ To install ``galsim``, try ``pip install galsim``. If it reports errors, it is l
 
 Or you can install it from `source <https://github.com/GalSim-developers/GalSim>`__.
 
-To fully run the process, it also needs ``SExtractor`` to be installed. Note using old version of ``SExtractor`` may report errors.
+To fully run the process, it also needs ``SExtractor`` to be installed.
 
 Optionally, the high performance compiler package ``numba`` can be installed (and recommended) to accelerate some numeric functions. This can be done by::
 
