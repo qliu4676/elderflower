@@ -40,7 +40,7 @@ Install elderflower
   pip install -e .
 ```
 
-See documentation for details about installation.
+To fully run the process, SExtractor is needed to be installed. See documentation for details about installation.
 
 Basic Usage
 -----------
