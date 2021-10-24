@@ -1,38 +1,44 @@
 ---
-    # Match_Mask_Measure
-    pixel_scale: 2.5
-    r_scale: 12
-    field_pad: 50
+    # General
+    pixel_scale: 2.5        # arcsec/pix
+    r_scale: 12             # pix
     mag_limit: 15
-    mag_saturate: 13.5
     draw: True
     save: True
-    use_PS1_DR2: False
-    
-    # Run_PSF_Fitting
-    n_spline: 3
-    use_PS1_DR2: False
-    pixel_scale: 2.5
+    ZP: ~
     pad: 50
-    mag_threshold: [13,11]
-    mask_type: 'aper'
-    mask_obj: ~
-    SB_threshold: 24.5
-    r_core: 24
-    r_out: ~
+    
+    # crossmatch
+    mag_saturate: 13.5      # estimate, not required to be accurate
+    use_PS1_DR2: False
+    field_pad: 50
+    
+    # fitting
+    mag_threshold: [13,11]  # MB /VB
+    n_spline: 3
+    cutoff: False
+    n_cutoff: 4
     theta_cutoff: 1200
+    
     n0_: ~
     fit_n0: True
+    fix_n0: False
     fit_sigma: True
     fit_frac: False
     leg2d: False
+    
+    # mask
+    r_core: 24              # Inner mask
+    r_out: ~
     wid_strip: 24
     n_strip: 48
-    n_cpu: 4
-    parallel: False
+    mask_obj: ~
+    
+    # sampling
     brightest_only: False
     draw_real: True
+    parallel: False
+    n_cpu: 4
     nlive_init: ~
     sample_method: 'auto'
-    draw: True
     print_progress: False
