@@ -228,8 +228,7 @@ The fitted image is stored as ``sampler.image_fit`` and image of bright stars is
 
 You can also make a 2D image of the PSF directly with parameters (theta and fwhm in arcsec)::
 
-	image_psf, psf = utils.make_psf_2D(n_s, theta_s, frac, beta, fwhm,
-		                psf_range=1200, pixel_scale=pixel_scale)
+	image_psf, psf = utils.make_psf_2D(n_s, theta_s, frac, beta, fwhm, psf_range=1200, pixel_scale=pixel_scale)
 
 ``image_psf`` is a 2D array of the wide PSF normalized to have sum of 1 and ``psf`` is an ``elderflower.modeling.PSF_Model`` object.
 
