@@ -16,8 +16,31 @@ Installation
   cd <install directory>
   git clone https://github.com/NGC4676/elderflower.git
   cd elderflower
+```
+
+Install ``galsim``. The optimal way is via conda:
+
+```bash
+  conda install -c conda-forge galsim
+```
+
+Install other dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Optionally install the high performance compiler package ``numba``:
+```bash
+pip install numba
+```
+
+Install elderflower
+```bash
   pip install -e .
 ```
+
+See documentation for details about installation.
 
 Basic Usage
 -----------
@@ -46,7 +69,8 @@ elder.detection()
 elder.run()
 ```
 
-See doucementaton for paramter retrievement and bright star subtraction using ``samplers``.
+The output will be saved as a ``.res`` pickle.
+See doucementaton for paramter extraction and bright star subtraction.
 
 Examples
 --------
