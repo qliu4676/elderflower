@@ -500,6 +500,7 @@ def Run_PSF_Fitting(hdu_path,
                     draw=True,
                     save=True,
                     stop=False,
+                    clean_measure=True,
                     use_PS1_DR2=False,
                     work_dir='./'):
     
@@ -611,8 +612,8 @@ def Run_PSF_Fitting(hdu_path,
         Whether to draw diagnostic plots
     save : bool, optional, default True
         Whether to save results
-    clean : : bool, optional, default True
-        Whether to clean intermediate files
+    clean_measure : bool, optional, default True
+        Whether to clean intermediate files for measurement
     use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2.
         Crossmatch with DR2 is done by MAST query, which might fail
@@ -891,6 +892,11 @@ def Run_PSF_Fitting(hdu_path,
         
     # Delete Stars to avoid pickling error in rerun
     clean_pickling_object('stars')
+    
+    # Clean intermediate outputs of each region for measurement
+    if clean_measure:
+        for file in Path(dir_measure).glob('*X*Y*'):
+        os.remove(file)
         
     return samplers
     

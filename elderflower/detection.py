@@ -1,3 +1,8 @@
+"""
+Submodule for running SExtractor from dfreduce (credit: Johnny Greco).
+Will be replaced by an independent module.
+"""
+
 import os
 from subprocess import call
 

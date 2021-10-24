@@ -71,7 +71,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
         radius = L * pixel_scale * u.arcsec
     if verbose:
         msg = "Search {0} ".format(np.around(radius.to(u.deg), 3))
-        msg += f"around: ({coord_cen.to_string()})"
+        msg += f"around: (ra, dec) = ({coord_cen.to_string()})"
         logger.info(msg)
     
     for j, (cat_name, table_name) in enumerate(catalog.items()):
@@ -228,7 +228,7 @@ def cross_match_PS1_DR2(wcs_data, SE_catalog, bounds,
         
         if verbose:
             msg = "Search {0} ".format(np.around(radius.to(u.deg), 3))
-            msg += f"around: ({coord_cen.to_string()})"
+            msg += f"around: (ra, dec) = ({coord_cen.to_string()})"
             logger.info(msg)
         
         #### Query PANSTARRS start ####
