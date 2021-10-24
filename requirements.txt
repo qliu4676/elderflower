@@ -8,7 +8,6 @@ requests>=2.21.0
 astropy>=4.0
 dynesty>=0.9.7
 photutils>=0.7.2
-pandas>=1.0.1
 joblib>=0.14
 tqdm
 dill
