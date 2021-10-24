@@ -48,8 +48,8 @@ def Run_Detection(hdu_path,
         Full path of hdu data
     obj_name : str
         Object name
-    band : str
-        Filter name ('G', 'g' or 'R', 'r')
+    band : str, ‘G’, ‘g’, ‘R’, ‘r’
+        Filter name
     threshold : int, optional, default 5
         Detection and analysis threshold of SExtractor
     work_dir : str, optional, default current directory
@@ -58,15 +58,17 @@ def Run_Detection(hdu_path,
         Full path of configuration file of running SExtractor.
         By default it uses the one stored in configs/
     executable : str, optional, None
-        Full path of the SExtractor executable. If SExtractor is installed this can be retrieved
-        by typing '$which sex'  or  '$which source-extractor' in the shell.
+        Full path of the SExtractor executable. If SExtractor is installed
+        this can be obtained by typing '$which source-extractor' or
+        '$which sex' in the shell.
         By default it will searched with an attempt.
     ZP_keyname : str, optional, default REFZP
         Keyword names of zero point in the header.
         If not found, a value can be passed by ZP.
     ZP : float or None, optional, default None
-        Zero point value. If None, it finds ZP_keyname in the header. If not provided either,
-        it will compute a zero point by cross-match with the APASS catalog.
+        Zero point value. If None, it finds ZP_keyname in the header.
+        If not provided either, it will compute a zero point by
+        cross-match with the APASS catalog.
     ref_cat : str, optional, default 'APASSref.cat'
         Full path file name of the APASS reference catalog.
         If not found, it will generate a reference catalog.
@@ -95,6 +97,7 @@ def Run_Detection(hdu_path,
     from .io import update_SE_kwargs
     
     logger.info(f"Run SExtractor on {hdu_path}...")
+    
     check_save_path(work_dir, overwrite=True, verbose=False)
     
     band = band.lower()
@@ -112,7 +115,7 @@ def Run_Detection(hdu_path,
     
     # Find zero-point in the fits header
     if ZP_keyname not in header.keys():
-        logger.warning(f"{ZP_keyname} is not found in the header")
+        logger.warning("ZP_keyname is not found in the header")
     
         # If not in the header, check kwargs
         if type(ZP) is not float:
@@ -238,7 +241,7 @@ def Match_Mask_Measure(hdu_path,
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         Object name.
-    band :  str, 'g' 'G' 'r' or 'R'
+    band :  str, 'g', 'G', 'r', 'R'
         Filter name.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel.
@@ -262,8 +265,8 @@ def Match_Mask_Measure(hdu_path,
     save : bool, optional, default True
         Whether to save results.
     use_PS1_DR2 : bool, optional, default False
-        Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query, which
-        could easily fail if a field is too large (> 1 deg^2).
+        Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query,
+        which could easily fail if a field is too large (> 1 deg^2).
     work_dir : str, optional, default current directory
         Full path of directory for saving.
     
@@ -274,9 +277,6 @@ def Match_Mask_Measure(hdu_path,
         None
         
     """
-    msg = "Measure the intensity at R = {0} ".format(r_scale)
-    msg += "for stars < {0:.1f} as normalization of fitting".format(mag_limit)
-    logger.info(msg)
     
     band = band.lower()
     bounds_list = np.atleast_2d(bounds_list).astype(int)
@@ -369,7 +369,7 @@ def Match_Mask_Measure(hdu_path,
                                                 mag_limit=mag_limit,
                                                 use_PS1_DR2=use_PS1_DR2)
    
-   # Calculate color correction between PANSTARRS and DF filter
+    # Calculate color correction between PANSTARRS and DF filter
     CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
                               mag_name=mag_name_cat, draw=draw)
     
@@ -380,7 +380,6 @@ def Match_Mask_Measure(hdu_path,
     tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
                                            mag_saturate, draw=draw)
                                             
-    
     ##################################################
     # Save matched table and catalog
     ##################################################
@@ -442,12 +441,6 @@ def Match_Mask_Measure(hdu_path,
                                           draw=draw,
                                           save=save,
                                           dir_name=dir_name)
-
-        # Measure average intensity (source+background) at r_scale
-        msg = "Measure intensity at R = {0} ".format(r_scale)
-        msg += "for catalog stars {0:s} < {1:.1f} in ".format(mag_name, mag_limit)
-        msg += "{0}.".format(bounds)
-        logger.info(msg)
         
         tab_norm, res_thumb = measure_Rnorm_all(tab_target_patch, bounds,
                                                 wcs_data, data, seg_map,
@@ -457,14 +450,13 @@ def Match_Mask_Measure(hdu_path,
                                                 obj_name=obj_name,
                                                 mag_name=mag_name_cat,
                                                 save=save, dir_name=dir_name)
-                                                
-        make_global_stack_PSF(dir_name, bounds_list, obj_name, band)
-        
         if draw:
             plot_bright_star_profile(tab_target_patch,
                                      tab_norm, res_thumb,
                                      bkg_sky=bkg, std_sky=std, ZP=ZP,
                                      pixel_scale=pixel_scale)
+                                     
+    make_global_stack_PSF(dir_name, bounds_list, obj_name, band)
         
         
 def Run_PSF_Fitting(hdu_path,
@@ -526,7 +518,7 @@ def Run_PSF_Fitting(hdu_path,
         [[X min, Y min, X max, Y max],[...],...]
     obj_name : str
         Object name
-    band : str, 'g' 'G' 'r' or 'R'
+    band : str, 'g', 'G', 'r', 'R'
         Filter name
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
@@ -544,8 +536,8 @@ def Run_PSF_Fitting(hdu_path,
     mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured
     mag_threshold : [float, float], default: [14, 11]
-        Magnitude theresholds to classify faint stars, medium bright stars and very bright stars.
-        The conversion from brightness is using a static PSF. (* will change to stacked profiles)
+        Magnitude theresholds to classify faint stars, medium bright stars and
+        very bright stars. The conversion from brightness is using a static PSF.
     mask_type : 'aper' or 'brightness', optional, default 'aper'
         "aper": aperture masking
         "brightness": brightness-limit masking
@@ -578,9 +570,9 @@ def Run_PSF_Fitting(hdu_path,
     core_param: dict, optional
         Estimate of parameters of the PSF core.
         Will be derived from stacked PSF (does not need to be accurate).
-            "frac": fraction of aureole
-            "beta": moffat beta
-            "fwhm": moffat fwhm, in arcsec (optional)
+        "frac": fraction of aureole
+        "beta": moffat beta
+        "fwhm": moffat fwhm, in arcsec (optional)
     n0_ : float, optional, default None
         Power index of the first component, use this value if fix_n0=True.
     fit_n0 : bool, optional, default True
@@ -610,9 +602,7 @@ def Run_PSF_Fitting(hdu_path,
     nlive_init : int, optional, default None
         Number of initial live points in dynesty. If None will
         use nlive_init = ndim*10.
-    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice',
-                     'rslice', 'hslice', callable},
-                    optional, default is 'auto'
+    sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice', 'rslice', 'hslice', callable}, optional, default is 'auto'
         Samplimg method in dynesty. If 'auto', the method is 'unif' for ndim < 10,
         'rwalk' for 10 <= ndim <= 20, 'slice' for ndim > 20.
     print_progress : bool, optional, default True
@@ -621,6 +611,8 @@ def Run_PSF_Fitting(hdu_path,
         Whether to draw diagnostic plots
     save : bool, optional, default True
         Whether to save results
+    clean : : bool, optional, default True
+        Whether to clean intermediate files
     use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2.
         Crossmatch with DR2 is done by MAST query, which might fail
@@ -909,7 +901,7 @@ class berry:
     """
     
     Fruit of elderflower.
-    A class wrapper for running the package.
+    (A wrapper for running the functions.)
     
     Parameters
     ----------
@@ -920,7 +912,7 @@ class berry:
         list of boundaries of regions to be fit (Nx4)
     obj_name : str
         object name
-    band : str, 'g' 'G' 'r' or 'R'
+    band : str, 'g', 'G', 'r', 'R'
         filter name
     work_dir : str, optional, default current directory
         Full Path of directory for saving
@@ -933,16 +925,15 @@ class berry:
     -------
         
     # Initialize the task
-        from elderflower.task import berry
-        
-        elder = berry(hdu_path, bounds, obj_name, filt='g', work_dir='...', config_file='...')
+        elder = berry(hdu_path, bounds, obj_name, 'g', work_dir, config_file)
                   
     # Check keyword parameters listed in the configuration:
         elder.parameters
     
-    # Run the task
+    # Run detection
         elder.detection()
-
+        
+    # Run the task
         elder.run()
         
     """

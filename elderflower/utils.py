@@ -258,8 +258,9 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     popt, pcov = curve_fit(func, x_data, y_data, p0=p0, **kwargs)
     
     if draw:
-        if fig is None: fig = plt.figure()
-        if ax is None: ax = fig.add_subplot(1,1,1)
+        with plt.rc_context({"text.usetex": False}):
+            if fig is None: fig = plt.figure()
+            if ax is None: ax = fig.add_subplot(1,1,1)
         
     # Iterative sigma clip
     for i in range(n_iter):
@@ -284,14 +285,21 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
                     facecolors='none', edgecolors='orange', alpha=0.7)
         ax.plot(x_test, func(x_test, *popt), color='r')
         
-        if color is not None: fig.colorbar(s, label=c_lab)
+        if plt.rcParams['text.usetex']:
+            c_lab = c_lab.replace('_','$\_$')
+            x_lab = x_lab.replace('_','$\_$')
+            y_lab = y_lab.replace('_','$\_$')
+        
+        if color is not None:
+            with plt.rc_context({"text.usetex": False}):
+                fig.colorbar(s, label=c_lab)
         
         ax.set_xlim(x_min, x_max)
         invert = lambda lab: ('MAG' in lab) | ('MU' in lab)
         if invert(x_lab): ax.invert_xaxis()
         if invert(y_lab): ax.invert_yaxis()
-        ax.set_xlabel(x_lab.replace('_','$\_$'))
-        ax.set_ylabel(y_lab.replace('_','$\_$'))
+        ax.set_xlabel(x_lab)
+        ax.set_ylabel(y_lab)
         
     return popt, pcov, clip_func
     
@@ -889,7 +897,7 @@ def measure_Rnorm_all(table,
                       save=True, dir_name='.',
                       read=False, verbose=True):
     """
-    Measure normalization at r_scale for bright stars in table.
+    Measure intensity at r_scale for bright stars in table.
 
     Parameters
     ----------
@@ -940,6 +948,11 @@ def measure_Rnorm_all(table,
         'center' : 0-based centroid of the object from SExtracror
         
     """
+    
+    msg = "Measure intensity at R = {0} ".format(r_scale)
+    msg += "for catalog stars {0:s} < {1:.1f} in ".format(mag_name, mag_limit)
+    msg += "{0}.".format(bounds)
+    logger.info(msg)
     
     band = mag_name[0]
     range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
@@ -2227,7 +2240,7 @@ def make_segm_from_catalog(catalog_star,
                                               ext_cat['THETA_IMAGE'],):
                 pos = (X_c-Xmin, Y_c-Ymin)
                 theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*5, b*5, theta_)
+                aper = EllipticalAperture(pos, a*6, b*6, theta_)
                 apers.append(aper)
             
     # Draw segment map generated from the catalog

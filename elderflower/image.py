@@ -392,7 +392,7 @@ class ImageList(ImageButler):
     
     @lazyproperty
     def images(self):
-        return np.array([Img.image for Img in self.Images], dtype=np.float32)
+        return np.array([Img.image for Img in self.Images], dtype=np.ndarray)
 
     def display(self, fig=None, ax=None):
         """ Display the image list """
@@ -606,7 +606,7 @@ class ImageList(ImageButler):
                 container.fix_n0 = self.fix_n0
                 if verbose:
                     msg = "   - n0 will not be included in the full fitting."
-                    msg += "Adopt fitted value."
+                    msg += " Adopt fitted value n0 = {:.3f}.".format(n0)
                     logger.info(msg)
                 
             if theta_in is None:
