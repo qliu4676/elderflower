@@ -6,20 +6,20 @@ Here we show applications of ``elderflower``. The data is from the Dragonfly tel
 1. Build Wide-PSF Model from parameters
 ---------------------------------------
 
-You can make a 2D image of the PSF directly with the fitted parameters (note theta and fwhm are in arcsec)::
+A 2D image of the PSF can be created directly with the fitted parameters::
 
 	from elderflower import utils
 	image_psf, psf = utils.make_psf_2D(n_s, theta_s, frac, beta, fwhm, psf_range=1200, pixel_scale=pixel_scale)
 
-``image_psf`` is a 2D array of the wide PSF normalized to have sum of 1 and ``psf`` is an ``elderflower.modeling.PSF_Model`` object.
+Note theta and fwhm are in arcsec. ``image_psf`` is a 2D array of the wide PSF normalized to have sum of 1 and ``psf`` is an ``elderflower.modeling.PSF_Model`` object.
 
-Thie parametric wide-angle PSF can be combined with PSF from other measurements, e.g. a stacked PSF. Note stacking multi-epoch data would smear out the temporal variability of the PSF, especially in the extended wing.
+This parametric wide-angle PSF model can be combined with PSF from other measurements, e.g. a  PSF obtained from stacking techniques. Note stacking multi-epoch data has the risk of smearing out the temporal variability of the PSF, especially in the extended wing, which is one motivation of inferring an `instantaneous` PSF from the image itself, as ``elderflower`` does.
 
-To replace the parametric core in the model we built with a non-parametric one (say, sticthed at ``r=10``)::
+To replace the parametric core in the model built above with a non-parametric core::
 
 	image_PSF = utils.montage_psf_image(image_psf_core, image_psf, r=10)
 
-Here ``image_psf_core`` is the image of the inner PSF. Note it requires to have odd dimensions.
+The core and the aureole are stitched at ``r=10``. Here ``image_psf_core`` is the image of the inner PSF. Note it requires to have odd dimensions. An utility to map the asymmetry and high-order features of the inner PSF (e.g., ellipticity, position angle, spikes) is under implementation.
 
 ``elderflower`` produces a decent stacking of unsaturated bright stars within the region(s), which is stored in ``work_dir``. The accuracy, however, may not be very high if one needs high precision as well on small scales. The user can turn to the `mrf <https://mrfiltering.readthedocs.io/en/latest/index.html>`__ package, where the inner PSF is treated more carefully, or replace with their own measurements. 
 
@@ -27,7 +27,7 @@ Here ``image_psf_core`` is the image of the inner PSF. Note it requires to have 
 2. Apply Wide-PSF Subtraction on Image
 --------------------------------------
 
-At ultra-low surface brightness levels, the scattered light might pervade the entire field, affecting *every* pixel on the image. A few percetage of ADU difference might not be important for normal photometry, but it could matter a lot below 30 mag/arcsec^2.
+At ultra-low surface brightness levels, the scattered light might pervade the entire field, affecting *every* pixel on the image. A few percetage of difference in ADU might not be important for normal photometry, but it could matter a lot below 30 mag/arcsec^2.
 
 Therefore, one practical application of our PSF model is to eliminate the scattering starlight on the image. 
 
