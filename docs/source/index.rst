@@ -25,7 +25,6 @@ Introduction
    install.rst
    tutorial.rst
    example.rst
-   config.rst
    api.rst
 
 

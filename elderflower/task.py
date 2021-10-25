@@ -5,6 +5,7 @@ import sys
 import warnings
 import numpy as np
 
+from pathlib import Path
 from functools import partial
 
 from astropy.io import fits
@@ -484,6 +485,7 @@ def Run_PSF_Fitting(hdu_path,
                     n_cutoff=4,
                     theta_cutoff=1200,
                     core_param={"frac":0.3, "beta":6.},
+                    theta_0=5,
                     n0_=None,
                     fit_n0=True,
                     fix_n0=False,
@@ -574,6 +576,8 @@ def Run_PSF_Fitting(hdu_path,
         "frac": fraction of aureole
         "beta": moffat beta
         "fwhm": moffat fwhm, in arcsec (optional)
+    theta_0 : float, optional, default 5
+        Flattened radius. Arbitrary but need to be small. in arcsec
     n0_ : float, optional, default None
         Power index of the first component, use this value if fix_n0=True.
     fit_n0 : bool, optional, default True
@@ -750,9 +754,6 @@ def Run_PSF_Fitting(hdu_path,
 
     ## PSF Parameters ##
     
-    theta_0 = 5.
-    # flattened radius (arbitrary but need to be small) in arcsec
-
     n_s = np.array([n0, 2.5, 2.])    # initial guess of power index
     theta_s = np.array([theta_0, 10**1.8, 10**2.0])
                                 # initial guess of transition radius in arcsec

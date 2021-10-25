@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>Examples &#8212; elderflower 0.1 documentation</title>
+    <title>Examples &#8212; elderflower 0.3 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
     <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
@@ -35,34 +35,61 @@
             
   <section id="examples">
 <h1>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h1>
-<p>Here we show some examples of how <code class="docutils literal notranslate"><span class="pre">elderflower</span></code> works. The data is from the Dragonfly telescope. The examples below are run in the functional way, but they can be run in the same manner by feeding a configuration file with the keyword parameters replaced.</p>
-<section id="ngc3432">
-<h2>NGC3432<a class="headerlink" href="#ngc3432" title="Permalink to this headline">¶</a></h2>
-<p>This example illustrates fitting multiple regions in an image. The data is the combined image of the NGC3432 field as part of the Dragonfly nearby edge-on galaxy survey.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">obj_name</span> <span class="o">=</span> <span class="s1">&#39;NGC3432&#39;</span>
-<span class="n">work_dir</span> <span class="o">=</span> <span class="s1">&#39;./NGC3432/&#39;</span>
-<span class="n">filt</span> <span class="o">=</span> <span class="s1">&#39;r&#39;</span>
-
-<span class="n">fn</span>  <span class="o">=</span> <span class="s1">&#39;NGC3432/coadd_SloanR_NGC_3432_new.fits&#39;</span>
-<span class="n">bounds</span> <span class="o">=</span> <span class="p">((</span><span class="mi">3400</span><span class="p">,</span> <span class="mi">3000</span><span class="p">,</span> <span class="mi">4400</span><span class="p">,</span> <span class="mi">4000</span><span class="p">),</span>
-          <span class="p">(</span><span class="mi">1600</span><span class="p">,</span> <span class="mi">2000</span><span class="p">,</span> <span class="mi">2400</span><span class="p">,</span> <span class="mi">2800</span><span class="p">),</span>
-          <span class="p">(</span><span class="mi">3000</span><span class="p">,</span> <span class="mi">600</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">1600</span><span class="p">))</span>
-
-
-<span class="n">Run_Detection</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">obj_name</span><span class="p">,</span> <span class="n">filt</span><span class="p">,</span>
-              <span class="n">threshold</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">work_dir</span><span class="o">=</span><span class="n">work_dir</span><span class="p">,</span>
-              <span class="n">ZP_keyname</span><span class="o">=</span><span class="s1">&#39;REFZP&#39;</span><span class="p">,</span> <span class="n">ZP</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-
-
-
-<span class="n">Match_Mask_Measure</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span> <span class="n">obj_name</span><span class="p">,</span> <span class="n">band</span><span class="o">=</span><span class="s2">&quot;R&quot;</span><span class="p">,</span>
-                                <span class="n">ZP</span><span class="o">=</span><span class="mf">27.15</span><span class="p">,</span> <span class="n">field_pad</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">pixel_scale</span><span class="o">=</span><span class="mf">2.5</span><span class="p">,</span>
-                                <span class="n">use_PS1_DR2</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">work_dir</span><span class="o">=</span><span class="n">work_dir</span><span class="p">)</span>
+<p>Here we show applications of <code class="docutils literal notranslate"><span class="pre">elderflower</span></code>. The data is from the Dragonfly telescope.</p>
+<section id="build-wide-psf-model-from-parameters">
+<h2>1. Build Wide-PSF Model from parameters<a class="headerlink" href="#build-wide-psf-model-from-parameters" title="Permalink to this headline">¶</a></h2>
+<p>You can make a 2D image of the PSF directly with the fitted parameters (note theta and fwhm are in arcsec):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower</span> <span class="kn">import</span> <span class="n">utils</span>
+<span class="n">image_psf</span><span class="p">,</span> <span class="n">psf</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">make_psf_2D</span><span class="p">(</span><span class="n">n_s</span><span class="p">,</span> <span class="n">theta_s</span><span class="p">,</span> <span class="n">frac</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">fwhm</span><span class="p">,</span> <span class="n">psf_range</span><span class="o">=</span><span class="mi">1200</span><span class="p">,</span> <span class="n">pixel_scale</span><span class="o">=</span><span class="n">pixel_scale</span><span class="p">)</span>
 </pre></div>
 </div>
-<img alt="_images/NGC3432_panoram.png" class="align-center" src="_images/NGC3432_panoram.png" />
-<img alt="_images/NGC3432A_pdf.png" class="align-center" src="_images/NGC3432A_pdf.png" />
-<img alt="_images/NGC3432A_2d.png" class="align-center" src="_images/NGC3432A_2d.png" />
+<p><code class="docutils literal notranslate"><span class="pre">image_psf</span></code> is a 2D array of the wide PSF normalized to have sum of 1 and <code class="docutils literal notranslate"><span class="pre">psf</span></code> is an <code class="docutils literal notranslate"><span class="pre">elderflower.modeling.PSF_Model</span></code> object.</p>
+<p>Thie parametric wide-angle PSF can be combined with PSF from other measurements, e.g. a stacked PSF. Note stacking multi-epoch data would smear out the temporal variability of the PSF, especially in the extended wing.</p>
+<p>To replace the parametric core in the model we built with a non-parametric one (say, sticthed at <code class="docutils literal notranslate"><span class="pre">r=10</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">image_PSF</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">montage_psf_image</span><span class="p">(</span><span class="n">image_psf_core</span><span class="p">,</span> <span class="n">image_psf</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Here <code class="docutils literal notranslate"><span class="pre">image_psf_core</span></code> is the image of the inner PSF. Note it requires to have odd dimensions.</p>
+<p><code class="docutils literal notranslate"><span class="pre">elderflower</span></code> produces a decent stacking of unsaturated bright stars within the region(s), which is stored in <code class="docutils literal notranslate"><span class="pre">work_dir</span></code>. The accuracy, however, may not be very high if one needs high precision as well on small scales. The user can turn to the <a class="reference external" href="https://mrfiltering.readthedocs.io/en/latest/index.html">mrf</a> package, where the inner PSF is treated more carefully, or replace with their own measurements.</p>
+</section>
+<section id="apply-wide-psf-subtraction-on-image">
+<h2>2. Apply Wide-PSF Subtraction on Image<a class="headerlink" href="#apply-wide-psf-subtraction-on-image" title="Permalink to this headline">¶</a></h2>
+<p>At ultra-low surface brightness levels, the scattered light might pervade the entire field, affecting <em>every</em> pixel on the image. A few percetage of ADU difference might not be important for normal photometry, but it could matter a lot below 30 mag/arcsec^2.</p>
+<p>Therefore, one practical application of our PSF model is to eliminate the scattering starlight on the image.</p>
+<p>The following figure illustrate why such subtraction is important and how good we can achieve in a scenario where scattered light from bright stars are dominant. The subtraction is done for all bright stars except the central one (the traget). The data is from the open cluster M44, which suffers much that makes it visible to eyes, but normal fields would have the same kind of issue.</p>
+<img alt="_images/scatter_starlight_subtraction.png" class="align-center" src="_images/scatter_starlight_subtraction.png" />
+<p>In the tutorial we have obtained a PSF model <code class="docutils literal notranslate"><span class="pre">psf</span></code>. This output PSF can be applied on a broader region of the image and build a model of bright stars. For example, we would like to use our fitted PSF above to subtract the bright stars in a broader region in the original NGC3432 image (the image will be released soon with an upcoming paper, Gilhuly et al. submitted). To do so we first read the Image into an <code class="docutils literal notranslate"><span class="pre">Image</span></code> class:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.image</span> <span class="kn">import</span> <span class="n">Image</span>
+<span class="n">DF_Image</span> <span class="o">=</span> <span class="n">Image</span><span class="p">(</span><span class="s1">&#39;coadd_SloanR_NGC_3432_new.fits&#39;</span><span class="p">,</span>
+                <span class="p">(</span><span class="mi">1500</span><span class="p">,</span> <span class="mi">1500</span><span class="p">,</span> <span class="mi">3000</span><span class="p">,</span> <span class="mi">3000</span><span class="p">),</span> <span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span>
+                <span class="n">pixel_scale</span><span class="o">=</span><span class="mf">2.5</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">ZP</span><span class="o">=</span><span class="mf">27.15</span><span class="p">,</span> <span class="n">bkg</span><span class="o">=</span><span class="mi">1049</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It can be quickly visualized by calling <code class="docutils literal notranslate"><span class="pre">DF_Image.display()</span></code>.</p>
+<p>We also need the SExtractor catalog and segmentation map of the full image. These are products of <code class="docutils literal notranslate"><span class="pre">Run_Detection</span></code> but can be generated separately:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">astropy.table</span> <span class="kn">import</span> <span class="n">Table</span>
+<span class="n">SE_catalog</span> <span class="o">=</span> <span class="n">Table</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s1">&#39;NGC3432-g.cat&#39;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;ascii.sextractor&quot;</span><span class="p">)</span>
+<span class="n">seg_map</span> <span class="o">=</span> <span class="n">fits</span><span class="o">.</span><span class="n">getdata</span><span class="p">(</span><span class="s1">&#39;NGC3432-g_seg.fits&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The image of bright stars can then be created by simply running:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">image_stars</span> <span class="o">=</span> <span class="n">DF_Image</span><span class="o">.</span><span class="n">generate_image_psf</span><span class="p">(</span><span class="n">psf</span><span class="p">,</span> <span class="n">SE_catalog</span><span class="p">,</span> <span class="n">seg_map</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The function does all the steps in the modeling but will adopt the given PSF model, you can control the brightness thresholds with <code class="docutils literal notranslate"><span class="pre">mag_threshold</span></code> and the scale radius <code class="docutils literal notranslate"><span class="pre">r_scale</span></code> used to measure the normalization. As flux-based normalization suffers from saturation, we use intensity.</p>
+<p>It might takea bit of time to make segmentation for a wide area if set <code class="docutils literal notranslate"><span class="pre">make_segm=True</span></code>.</p>
+<p>To see how the subtraction works, let’s draw the original image, the image of bright stars (<code class="docutils literal notranslate"><span class="pre">image_stars</span></code>) and the residual:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
+<span class="n">fig</span><span class="p">,</span> <span class="p">(</span><span class="n">ax1</span><span class="p">,</span><span class="n">ax2</span><span class="p">,</span><span class="n">ax3</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">22</span><span class="p">,</span><span class="mi">7</span><span class="p">))</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">DF_Image</span><span class="o">.</span><span class="n">image</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">1049</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">1149</span><span class="p">))</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM1: Data&#39;</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">image_stars</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">100</span><span class="p">))</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM2: Bright Stars&#39;</span><span class="p">)</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">DF_Image</span><span class="o">.</span><span class="n">image</span><span class="o">-</span><span class="n">image_stars</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">1049</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">1149</span><span class="p">))</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM1 - IM2&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<img alt="_images/subtract_stars_by_psf.png" class="align-center" src="_images/subtract_stars_by_psf.png" />
 </section>
 </section>
 
@@ -88,7 +115,8 @@
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#ngc3432">NGC3432</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#build-wide-psf-model-from-parameters">1. Build Wide-PSF Model from parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#apply-wide-psf-subtraction-on-image">2. Apply Wide-PSF Subtraction on Image</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>

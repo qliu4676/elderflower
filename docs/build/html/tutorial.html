@@ -6,7 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
 
-    <title>Tutorial &#8212; elderflower 0.1 documentation</title>
+    <title>Tutorial &#8212; elderflower 0.3 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
     <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
@@ -180,8 +180,8 @@ The parameters are stored in <code class="docutils literal notranslate"><span cl
 </div>
 <p>Plotting options can be changed by passing them as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> of the function in <code class="docutils literal notranslate"><span class="pre">dynesty.plotting</span></code>. See <a class="reference external" href="https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot">https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot</a>.</p>
 <p>To reconstruct the PSF, one can run:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower</span> <span class="kn">import</span> <span class="n">utils</span>
-<span class="n">psf</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">make_psf_from_fit</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.utils</span> <span class="kn">import</span> <span class="n">make_psf_from_fit</span>
+<span class="n">psf</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_psf_from_fit</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
 
 <span class="n">psf_core</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">generate_core</span><span class="p">()</span>
 <span class="n">psf_aureole</span><span class="p">,</span> <span class="n">psf_size</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">generate_aureole</span><span class="p">(</span><span class="n">psf_range</span><span class="o">=</span><span class="mi">1200</span><span class="p">)</span> <span class="c1"># arcsec</span>
@@ -208,51 +208,6 @@ The parameters are stored in <code class="docutils literal notranslate"><span cl
 </pre></div>
 </div>
 <p>The fitted image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image_fit</span></code> and image of bright stars is saved as <code class="docutils literal notranslate"><span class="pre">sampler.image_stars</span></code>. The original image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image</span></code>.</p>
-<p>You can also make a 2D image of the PSF directly with parameters (theta and fwhm in arcsec):</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">image_psf</span><span class="p">,</span> <span class="n">psf</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">make_psf_2D</span><span class="p">(</span><span class="n">n_s</span><span class="p">,</span> <span class="n">theta_s</span><span class="p">,</span> <span class="n">frac</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">fwhm</span><span class="p">,</span> <span class="n">psf_range</span><span class="o">=</span><span class="mi">1200</span><span class="p">,</span> <span class="n">pixel_scale</span><span class="o">=</span><span class="n">pixel_scale</span><span class="p">)</span>
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">image_psf</span></code> is a 2D array of the wide PSF normalized to have sum of 1 and <code class="docutils literal notranslate"><span class="pre">psf</span></code> is an <code class="docutils literal notranslate"><span class="pre">elderflower.modeling.PSF_Model</span></code> object.</p>
-<p>To replace the parametric core with a non-parametric one (sticthed at <code class="docutils literal notranslate"><span class="pre">r=10</span></code>):</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">image_PSF</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">montage_psf_image</span><span class="p">(</span><span class="n">image_psf_core</span><span class="p">,</span> <span class="n">image_psf</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Here <code class="docutils literal notranslate"><span class="pre">image_psf_core</span></code> can be the image of stacked PSF from unsaturated stars, which is stored in <code class="docutils literal notranslate"><span class="pre">work_dir</span></code>, or the user’s own measurement. Note it requires to have odd dimensions.</p>
-</section>
-<section id="apply-subtraction-on-image">
-<h2>4. Apply Subtraction on Image<a class="headerlink" href="#apply-subtraction-on-image" title="Permalink to this headline">¶</a></h2>
-<p>The output PSF can be applied on a broader region of the image and build a model of bright stars. For example, we would like to use our fitted PSF above to subtract the bright stars in a broader region in the original NGC3432 image. To do so we first read the Image into an <code class="docutils literal notranslate"><span class="pre">Image</span></code> class:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.image</span> <span class="kn">import</span> <span class="n">Image</span>
-<span class="n">DF_Image</span> <span class="o">=</span> <span class="n">Image</span><span class="p">(</span><span class="s1">&#39;coadd_SloanR_NGC_3432_new.fits&#39;</span><span class="p">,</span>
-                <span class="p">(</span><span class="mi">1500</span><span class="p">,</span> <span class="mi">1500</span><span class="p">,</span> <span class="mi">3000</span><span class="p">,</span> <span class="mi">3000</span><span class="p">),</span> <span class="s1">&#39;test&#39;</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span>
-                <span class="n">pixel_scale</span><span class="o">=</span><span class="mf">2.5</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">ZP</span><span class="o">=</span><span class="mf">27.15</span><span class="p">,</span> <span class="n">bkg</span><span class="o">=</span><span class="mi">1049</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>It can be quickly visualized by calling <code class="docutils literal notranslate"><span class="pre">DF_Image.display()</span></code>.</p>
-<p>We also need the SExtractor catalog and segmentation map of the full image. These are products of <code class="docutils literal notranslate"><span class="pre">Run_Detection</span></code>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">astropy.table</span> <span class="kn">import</span> <span class="n">Table</span>
-<span class="n">SE_catalog</span> <span class="o">=</span> <span class="n">Table</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s1">&#39;NGC3432-g.cat&#39;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;ascii.sextractor&quot;</span><span class="p">)</span>
-<span class="n">seg_map</span> <span class="o">=</span> <span class="n">fits</span><span class="o">.</span><span class="n">getdata</span><span class="p">(</span><span class="s1">&#39;NGC3432-g_seg.fits&#39;</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>The image of bright stars can be created by simply running:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">image_stars</span> <span class="o">=</span> <span class="n">DF_Image</span><span class="o">.</span><span class="n">generate_image_psf</span><span class="p">(</span><span class="n">psf</span><span class="p">,</span> <span class="n">SE_catalog</span><span class="p">,</span> <span class="n">seg_map</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>The function does the same steps in the modeling, you can control the brightness range with <code class="docutils literal notranslate"><span class="pre">mag_threshold</span></code> and the scale radius <code class="docutils literal notranslate"><span class="pre">r_scale</span></code>.
-It might takea bit of time to make segmentation for a wide area if set <code class="docutils literal notranslate"><span class="pre">make_segm=True</span></code>.</p>
-<p>To see how the subtraction works, we draw the original image, the image of bright stars (<code class="docutils literal notranslate"><span class="pre">image_stars</span></code>) and the residual:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
-<span class="n">fig</span><span class="p">,</span> <span class="p">(</span><span class="n">ax1</span><span class="p">,</span><span class="n">ax2</span><span class="p">,</span><span class="n">ax3</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">22</span><span class="p">,</span><span class="mi">7</span><span class="p">))</span>
-<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">DF_Image</span><span class="o">.</span><span class="n">image</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">1049</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">1149</span><span class="p">))</span>
-<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM1: Data&#39;</span><span class="p">)</span>
-<span class="n">ax2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">image_stars</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">100</span><span class="p">))</span>
-<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM2: Bright Stars&#39;</span><span class="p">)</span>
-<span class="n">ax3</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">DF_Image</span><span class="o">.</span><span class="n">image</span><span class="o">-</span><span class="n">image_stars</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">1049</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mi">1149</span><span class="p">))</span>
-<span class="n">ax3</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;IM1 - IM2&#39;</span><span class="p">)</span>
-</pre></div>
-</div>
-<img alt="_images/subtract_stars_by_psf.png" class="align-center" src="_images/subtract_stars_by_psf.png" />
 </section>
 </section>
 
@@ -280,7 +235,6 @@ It might takea bit of time to make segmentation for a wide area if set <code cla
 <li class="toctree-l2"><a class="reference internal" href="#run-with-functions">1. Run with functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#run-with-config-yaml">2. Run with <code class="docutils literal notranslate"><span class="pre">config.yaml</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#read-fitting-results">3. Read fitting results</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#apply-subtraction-on-image">4. Apply Subtraction on Image</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="example.html">Examples</a></li>

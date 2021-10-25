@@ -392,7 +392,7 @@ class ImageList(ImageButler):
     
     @lazyproperty
     def images(self):
-        return np.array([Img.image for Img in self.Images], dtype=np.ndarray)
+        return np.array([Img.image for Img in self.Images])
 
     def display(self, fig=None, ax=None):
         """ Display the image list """
@@ -583,7 +583,7 @@ class ImageList(ImageButler):
             
             if hasattr(self, 'n0_'):
                 # Use a given fixed n0
-                n0, d_n0 = self.n0_, 1e-2
+                n0, d_n0 = self.n0_, 0.1
                 if verbose:
                     msg = "   - n0 is fixed to be a static value = {}.".format(n0)
                     logger.warning(msg)
@@ -591,7 +591,7 @@ class ImageList(ImageButler):
                 # Get first component power index if already fitted
                 # Otherwise n0 will be added as a parameter in the prior
                 n0 = getattr(self.Images[i],'n0', None)
-                d_n0 = getattr(self.Images[i],'d_n0', 1e-2)
+                d_n0 = getattr(self.Images[i],'d_n0', 0.1)
             
             if (self.fix_n0 is False) | (n0 is None):
                 container.fix_n0 = False

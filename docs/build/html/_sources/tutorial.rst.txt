@@ -190,8 +190,8 @@ Plotting options can be changed by passing them as ``**kwargs`` of the function 
 
 To reconstruct the PSF, one can run::
 
-	from elderflower import utils
-	psf, params = utils.make_psf_from_fit(sampler)
+	from elderflower.utils import make_psf_from_fit
+	psf, params = make_psf_from_fit(sampler)
 
 	psf_core = psf.generate_core()
 	psf_aureole, psf_size = psf.generate_aureole(psf_range=1200) # arcsec
@@ -225,54 +225,3 @@ To regenerate the fitted image and bright stars::
 	sampler.generate_fit(psf, stars)
 
 The fitted image is stored as ``sampler.image_fit`` and image of bright stars is saved as ``sampler.image_stars``. The original image is stored as ``sampler.image``.
-
-You can also make a 2D image of the PSF directly with parameters (theta and fwhm in arcsec)::
-
-	image_psf, psf = utils.make_psf_2D(n_s, theta_s, frac, beta, fwhm, psf_range=1200, pixel_scale=pixel_scale)
-
-``image_psf`` is a 2D array of the wide PSF normalized to have sum of 1 and ``psf`` is an ``elderflower.modeling.PSF_Model`` object.
-
-To replace the parametric core with a non-parametric one (sticthed at ``r=10``)::
-
-	image_PSF = utils.montage_psf_image(image_psf_core, image_psf, r=10)
-
-Here ``image_psf_core`` can be the image of stacked PSF from unsaturated stars, which is stored in ``work_dir``, or the user's own measurement. Note it requires to have odd dimensions.
-
-
-4. Apply Subtraction on Image
------------------------------
-The output PSF can be applied on a broader region of the image and build a model of bright stars. For example, we would like to use our fitted PSF above to subtract the bright stars in a broader region in the original NGC3432 image. To do so we first read the Image into an ``Image`` class::
-	
-	from elderflower.image import Image
-	DF_Image = Image('coadd_SloanR_NGC_3432_new.fits', 
-			(1500, 1500, 3000, 3000), 'test', 'r',
-			pixel_scale=2.5, pad=0, ZP=27.15, bkg=1049)
-
-It can be quickly visualized by calling ``DF_Image.display()``. 
-
-We also need the SExtractor catalog and segmentation map of the full image. These are products of ``Run_Detection``::
-
-	from astropy.table import Table
-	SE_catalog = Table.read('NGC3432-g.cat', format="ascii.sextractor")
-	seg_map = fits.getdata('NGC3432-g_seg.fits')
-
-The image of bright stars can be created by simply running::
-
-	image_stars = DF_Image.generate_image_psf(psf, SE_catalog, seg_map)
-
-The function does the same steps in the modeling, you can control the brightness range with ``mag_threshold`` and the scale radius ``r_scale``.
-It might takea bit of time to make segmentation for a wide area if set ``make_segm=True``.
-
-To see how the subtraction works, we draw the original image, the image of bright stars (``image_stars``) and the residual::
-
-	from elderflower.plotting import LogNorm
-	fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(22,7))
-	ax1.imshow(DF_Image.image, norm=LogNorm(vmin=1049, vmax=1149))
-	ax1.set_title('IM1: Data')
-	ax2.imshow(image_stars, norm=LogNorm(vmin=0, vmax=100))
-	ax2.set_title('IM2: Bright Stars')
-	ax3.imshow(DF_Image.image-image_stars, norm=LogNorm(vmin=1049, vmax=1149))
-	ax3.set_title('IM1 - IM2')
-
-.. image:: images/subtract_stars_by_psf.png
-	:align: center

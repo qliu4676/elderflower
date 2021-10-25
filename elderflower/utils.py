@@ -626,7 +626,7 @@ def make_psf_1D(n_s, theta_s,
                 frac=0.3, beta=6.6, fwhm=6.,
                 cutoff_param={"cutoff":False, "n_c":4, "theta_c":1200},
                 psf_range=1200, pixel_scale=DF_pixel_scale,
-                dr=0.5, mag=0, ZP=0, plot=False):
+                dr=1, mag=0, ZP=0, plot=False):
     """
     Make 1D PSF profiles from parameters.
     
@@ -690,7 +690,7 @@ def make_psf_1D(n_s, theta_s,
                               core_undersample=True)
     if plot:
         plt.xlim(2, max(1e3, np.max(2*theta_s)))
-        plt.ylim(31,10)
+        plt.ylim(24,4)
         for pos in theta_s:
             plt.axvline(pos, ls="--", color="k", alpha=0.3, zorder=0)
 
@@ -1131,7 +1131,7 @@ def stack_star_image(table_stack, res_thumb, size=61):
 
     return image_stack
 
-def make_global_stack_PSF(dir_name, bounds_list, obj_name, band):
+def make_global_stack_PSF(dir_name, bounds_list, obj_name, band, overwrite=True):
     """
     Combine the stacked PSF of all regions into one, skip if existed.
     
@@ -1151,7 +1151,7 @@ def make_global_stack_PSF(dir_name, bounds_list, obj_name, band):
     
     fn_stack = os.path.join(dir_name, f'{obj_name}-{band}-PSF_stack.fits')
     
-    if not os.path.isfile(fn_stack):
+    if overwrite or (os.path.isfile(fn_stack)==False):
         for i, bounds in enumerate(bounds_list):
             range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
             fn = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
@@ -1271,8 +1271,8 @@ def fit_psf_core_1D(image_psf,
     cen = ((image_psf.shape[1]-1)/2., (image_psf.shape[0]-1)/2.)
 
     # Set grid points
-    rp = np.arange(0,theta_out+d_theta,d_theta)
-
+    rp = np.arange(1, theta_out+d_theta,d_theta)
+        
     # Calculate 1D profile
     r_psf, I_psf, _ = cal_profile_1d(image_psf, cen=cen, dr=0.5,
                                      ZP=0, sky_mean=0, plot=False,
@@ -1285,7 +1285,7 @@ def fit_psf_core_1D(image_psf,
 
     # Guess and bounds for core params
     p0 = [frac, beta]
-    bounds = [(0, 1.1), (1, beta_max)]
+    bounds = [(0, 0.5), (1.1, beta_max)]
     
     logger.info("Fitting core parameters from stacked PSF...")
     # Define the target function for fitting the core

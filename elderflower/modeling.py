@@ -242,11 +242,10 @@ class PSF_Model:
             elif self.aureole_model == "multi-power":
                 theta_s_pix = self.theta_s / psf_scale
                 psf_model =  multi_power2d(xx_psf, yy_psf,
-                                           self.n_s, theta_s_pix, 1, cen=cen_psf) 
-
+                                           self.n_s, theta_s_pix, 1, cen=cen_psf)
+            
             # Parse the image to Galsim PSF model by interpolation
             image_psf = galsim.ImageF(psf_model)
-#            self.image_psf = image_psf/image_psf.sum()
             psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
                                                    scale=psf_scale,
                                                    x_interpolant=interpolant,
@@ -784,7 +783,7 @@ def multi_power1d0(x, n0, theta0, I_theta0, n_s, theta_s):
         y[x>theta_i] = y_i[x>theta_i]
     return y
 
-def multi_power1d(x, n_s, theta_s, I_theta0):
+def multi_power1d(x, n_s, theta_s, I_theta0, clear=False):
     """ Multi-power law for 1d array, I = I_theta0 at theta0, theta in pix"""
     a_s = compute_multi_pow_norm(n_s, theta_s, I_theta0)
     theta0 = theta_s[0]
@@ -795,6 +794,9 @@ def multi_power1d(x, n_s, theta_s, I_theta0):
     for k in range(len(a_s)):
         reg = (x>theta_s[k]) & (x<=theta_s[k+1]) if k<len(a_s)-1 else (x>theta_s[k])  
         y[reg] = a_s[k] * np.power(x[reg], -n_s[k])
+        
+    if clear:
+        y[x<=theta0] = 0
     return y
 
 
@@ -878,7 +880,7 @@ def multi_power2d_cover(xx, yy, n0, theta0, I_theta0, n_s, theta_s, cen):
     return z
 
 @njit
-def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen):
+def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen, clear=False):
     """ Multi-power law for 2d array, I = I_theta0 at theta0, theta in pix"""
     a_s = compute_multi_pow_norm(n_s, theta_s, I_theta0)
     
@@ -886,6 +888,8 @@ def multi_power2d(xx, yy, n_s, theta_s, I_theta0, cen):
     z = np.zeros(xx.size) 
     theta0 = theta_s[0]
     z[rr<=theta0] = I_theta0
+    if clear:
+        z[rr<=theta0] = 0
     
     for k in range(len(a_s)):
         reg = (rr>theta_s[k]) & (rr<=theta_s[k+1]) if k<len(a_s)-1 else (rr>theta_s[k])     
