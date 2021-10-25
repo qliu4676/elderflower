@@ -52,7 +52,7 @@
 
 <span class="c1"># fitting</span>
 <span class="nt">mag_threshold</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">13</span><span class="p p-Indicator">,</span><span class="nv">11</span><span class="p p-Indicator">]</span>  <span class="c1"># MB /VB</span>
-<span class="nt">n_spline</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="nt">n_spline</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">2</span>
 <span class="nt">cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
 <span class="nt">n_cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">4</span>
 <span class="nt">theta_cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">1200</span>
@@ -77,9 +77,26 @@
 <span class="nt">n_cpu</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">4</span>
 <span class="nt">nlive_init</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
 <span class="nt">sample_method</span><span class="p">:</span> <span class="s">&#39;auto&#39;</span>
-<span class="nt">print_progress</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">print_progress</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
 </pre></div>
 </div>
+<section id="tips">
+<h2>Tips<a class="headerlink" href="#tips" title="Permalink to this headline">¶</a></h2>
+<p>To run <code class="docutils literal notranslate"><span class="pre">elderflower</span></code> we need some prior knowledge about the PSF and set the parameters properly.</p>
+<p>A key assumption here is that the aureole follows a multi-power law. Be careful if the PSF presents a clear bump or non-neglibile artifacts – the parametric form may not has a good representation.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">r_scale</span></code> is the radius at which the intensity is measured as normalization. Make sure <code class="docutils literal notranslate"><span class="pre">r_scale</span></code> falls in the wing (outside the core and saturation). It is recommended to have <code class="docutils literal notranslate"><span class="pre">r_scale</span></code> to be small so that the S/N of intensity is high.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">theta_0</span></code> is the inner flattening radius of the aureole. This should be small to avoid biasing the inner parts. 5 arcsec is used because Dragonfly has large pixel size.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mag_threshold</span></code> sets the thresholds defining the MB and VB stars. For a fast mode, set them to be lower. Increase if the region lacks bright stars (but not higher than <cite>mag_limit</cite>). Note it is recommended to pick regions with a decent number of bright stars.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">n_spline</span></code> sets the number of components of the aureole. For a fast start-up, try <code class="docutils literal notranslate"><span class="pre">n_spline=2</span></code>. Increase if the residual suggests a higher complexity is needed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fit_n0=False</span></code> will fix the first component (n0) to be the value from profile fitting. This is usually set when n_spline&gt;=3 to 1) avoid local minimum from too many parameters, and 2)save time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">use_PS1_DR2=True</span></code> will use the PAN-STARRS DR2 as the crossmatch. DR2 has a better performance in crossmatch in but the current MAST query approach using the PS1 API might result in HTTP Error in the case that the image is really large. Stars brighter than 7~8 mag may still be affected. A supplementary crossmatch with HLSP-ATLAS catalog improves (under implementation).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cutoff=True</span></code> applies a sharp cutoff (n_cutoff) beyond the outermost components (&gt; theta_cutoff). Often in actual data the scattered starlight does not extend to infinity because some scale of sky has been subtracted in the reduction step. Try this if the scattered light looks too extended.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">r_core</span></code> sets the mask aperture size for MB and/or VB stars because the cores are not well modelled. This can be a list: [VB, MB].</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">brightest_only=False</span></code> for a faster fitting on VB stars only. Sometimes useful when normalization for MB stars are not good.</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">draw=False</span></code> to disable the redundant plots. They can be generated with the output.</p></li>
+</ul>
+</section>
 </section>
 
 
@@ -104,7 +121,10 @@
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="example.html">Examples</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Configuration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Configuration</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#tips">Tips</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
 </ul>
 
