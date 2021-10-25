@@ -4,7 +4,7 @@ Configuration
 An example configuration file looks as follows:
 
 .. code-block:: yaml
----
+
 	# General
 	pixel_scale: 2.5        # arcsec/pix
 	r_scale: 12             # pix

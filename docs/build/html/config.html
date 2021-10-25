@@ -36,49 +36,50 @@
   <section id="configuration">
 <h1>Configuration<a class="headerlink" href="#configuration" title="Permalink to this headline">¶</a></h1>
 <p>An example configuration file looks as follows:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># General</span>
+<span class="nt">pixel_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">2.5</span>        <span class="c1"># arcsec/pix</span>
+<span class="nt">r_scale</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">12</span>             <span class="c1"># pix</span>
+<span class="nt">mag_limit</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">15</span>
+<span class="nt">draw</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+<span class="nt">save</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+<span class="nt">ZP</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+<span class="nt">pad</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">50</span>
+
+<span class="c1"># crossmatch</span>
+<span class="nt">mag_saturate</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">13.5</span>      <span class="c1"># estimate, not required to be accurate</span>
+<span class="nt">use_PS1_DR2</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">field_pad</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">50</span>
+
+<span class="c1"># fitting</span>
+<span class="nt">mag_threshold</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">13</span><span class="p p-Indicator">,</span><span class="nv">11</span><span class="p p-Indicator">]</span>  <span class="c1"># MB /VB</span>
+<span class="nt">n_spline</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="nt">cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">n_cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">4</span>
+<span class="nt">theta_cutoff</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">1200</span>
+
+<span class="nt">theta_0</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="nt">fit_n0</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+<span class="nt">fit_sigma</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+<span class="nt">fit_frac</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">leg2d</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+
+<span class="c1"># mask</span>
+<span class="nt">r_core</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">24</span>
+<span class="nt">r_out</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+<span class="nt">wid_strip</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">24</span>
+<span class="nt">n_strip</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">48</span>
+<span class="nt">mask_obj</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+
+<span class="c1"># sampling</span>
+<span class="nt">brightest_only</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">draw_real</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">True</span>
+<span class="nt">parallel</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
+<span class="nt">n_cpu</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">4</span>
+<span class="nt">nlive_init</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">~</span>
+<span class="nt">sample_method</span><span class="p">:</span> <span class="s">&#39;auto&#39;</span>
+<span class="nt">print_progress</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">False</span>
 </pre></div>
 </div>
-<dl>
-<dt>—</dt><dd><p># General
-pixel_scale: 2.5        # arcsec/pix
-r_scale: 12             # pix
-mag_limit: 15
-draw: True
-save: True
-ZP: ~
-pad: 50</p>
-<p># crossmatch
-mag_saturate: 13.5      # estimate, not required to be accurate
-use_PS1_DR2: False
-field_pad: 50</p>
-<p># fitting
-mag_threshold: [13,11]  # MB /VB
-n_spline: 3
-cutoff: False
-n_cutoff: 4
-theta_cutoff: 1200</p>
-<p>theta_0: 5
-fit_n0: True
-fit_sigma: True
-fit_frac: False
-leg2d: False</p>
-<p># mask
-r_core: 24
-r_out: ~
-wid_strip: 24
-n_strip: 48
-mask_obj: ~</p>
-<p># sampling
-brightest_only: False
-draw_real: True
-parallel: False
-n_cpu: 4
-nlive_init: ~
-sample_method: ‘auto’
-print_progress: False</p>
-</dd>
-</dl>
 </section>
 
 
