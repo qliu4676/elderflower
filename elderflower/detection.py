@@ -39,14 +39,15 @@ default_options = dict(
     ANALYSIS_THRESH=4,
     GAIN=0.37,
     PHOT_APERTURES=6,
-    PIXEL_SCALE=2.85,
+    PIXEL_SCALE=2.5,
     SEEING_FWHM=2.5,
     VERBOSE_TYPE='QUIET',
     MEMORY_BUFSIZE=4096,
     MEMORY_OBJSTACK=30000,
     MEMORY_PIXSTACK=3000000,
     PARAMETERS_NAME=default_param_file,
-    FILTER_NAME=default_conv
+    FILTER_NAME=default_conv,
+    STARNNW_NAME=default_nnw
 )
 
 def temp_fits_file(path_or_pixels, tmp_path='/tmp', run_label=None,

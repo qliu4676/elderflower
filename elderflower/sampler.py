@@ -139,12 +139,10 @@ class Sampler:
             return self._results
     
     def get_params_fit(self, return_sample=False):
-        if self.run == 'nested':
-            return get_params_fit(self.results, return_sample)
-        elif self.run == 'mle':
+        if self.run == 'mle':
             return self.results.x, None, None
         else:
-            return None
+            return get_params_fit(self.results, return_sample)
     
     def save_results(self, filename, save_dir='.'):
         """ Save fitting results """
@@ -176,11 +174,11 @@ class Sampler:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             res = load_pickle(filename)
-        
-        if hasattr(res, 'fit_info'):
-            logger.info(f"Read fitting results {filename}\n", res['fit_info'])
-        
+            
         results = res['fit_res']
+        if 'fit_info' in res.keys():
+            logger.info(f"Read fitting results {filename}\n", res['fit_info'])
+            results['fit_info'] = res['fit_info']
         
         return cls(res['container'], run=False, results=results)
     

@@ -591,7 +591,9 @@ def make_psf_2D(n_s, theta_s,
                    "n_s":np.atleast_1d(n_s), "theta_s":np.atleast_1d(theta_s)}
     
     params_mpow.update(cutoff_param)
-    psf_range = max(cutoff_param["theta_c"], psf_range)
+    
+    if cutoff_param["cutoff"]:
+        psf_range = max(cutoff_param["theta_c"], psf_range)
     
     # Build PSF Model
     psf = PSF_Model(params=params_mpow, aureole_model='multi-power')

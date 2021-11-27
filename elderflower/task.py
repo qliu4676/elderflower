@@ -12,8 +12,7 @@ from astropy.io import fits
 from astropy.table import Table
 
 from .io import logger
-from .io import (find_keyword_header, check_save_path,
-                get_SExtractor_path, clean_pickling_object)
+from .io import find_keyword_header, check_save_path, clean_pickling_object
 from .detection import default_SE_config, default_conv, default_nnw
 from .image import DF_pixel_scale
 
@@ -27,6 +26,7 @@ def Run_Detection(hdu_path,
                   executable=None,
                   ZP_keyname='REFZP',
                   ZP=None,
+                  pixel_scale=DF_pixel_scale,
                   ref_cat='APASSref.cat',
                   apass_dir=None,
                   **SE_kwargs):
@@ -70,6 +70,8 @@ def Run_Detection(hdu_path,
         Zero point value. If None, it finds ZP_keyname in the header.
         If not provided either, it will compute a zero point by
         cross-match with the APASS catalog.
+    pixel_scale : float, optional, default 2.5
+        Pixel scale in arcsec/pixel.
     ref_cat : str, optional, default 'APASSref.cat'
         Full path file name of the APASS reference catalog.
         If not found, it will generate a reference catalog.
@@ -95,7 +97,7 @@ def Run_Detection(hdu_path,
     """
                 
     from .detection import run as run_sextractor
-    from .io import update_SE_kwargs
+    from .io import update_SE_kwargs, get_SExtractor_path
     
     logger.info(f"Run SExtractor on {hdu_path}...")
     
@@ -144,6 +146,7 @@ def Run_Detection(hdu_path,
                                         catalog_path=catname,
                                         executable=executable,
                                         DETECT_THRESH=10, ANALYSIS_THRESH=10,
+                                        PIXEL_SCALE=pixel_scale,
                                         FILTER_NAME=default_conv,
                                         STARNNW_NAME=default_nnw)
                                         
@@ -175,12 +178,13 @@ def Run_Detection(hdu_path,
     else:
         ZP = np.float(header[ZP_keyname])
         logger.info("Read zero-point from header : ZP = {:.3f}".format(ZP))
-    
+    logger.info("Pixel scale = {:.1f}".format(pixel_scale))
     logger.info("Detection threshold = {:.1f}".format(threshold))
     
     SE_kwargs_update = {'DETECT_THRESH':threshold,
                         'ANALYSIS_THRESH':threshold,
-                        'MAG_ZEROPOINT':ZP}
+                        'MAG_ZEROPOINT':ZP,
+                        'PIXEL_SCALE':pixel_scale}
     SE_kwargs = update_SE_kwargs(SE_kwargs, SE_kwargs_update)
     
     SE_catalog = run_sextractor(hdu_path,
@@ -834,7 +838,7 @@ def Run_PSF_Fitting(hdu_path,
                           'bounds':bounds_list[i],
                           'pixel_scale':pixel_scale,
                           'r_scale':r_scale,
-                          'core_param':{"frac":frac, "fwhm":fwhm, "beta":beta},
+                          'core_param':{"frac":psf.frac, "fwhm":fwhm, "beta":psf.beta},
                           'fit_n0':fit_n0}
             if cutoff:
                 s.fit_info.update(cutoff_param)
