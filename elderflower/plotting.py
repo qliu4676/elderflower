@@ -41,6 +41,12 @@ from astropy.visualization import LogStretch, AsinhStretch, HistEqStretch
 from astropy.stats import mad_std, sigma_clip
 import astropy.units as u
 
+import photutils
+from packaging import version
+if version.parse(photutils.__version__) < version.parse("1.2"):
+    rand_state = "random_state"
+else:
+    rand_state = "seed"
 from photutils import CircularAperture
 
 # Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
@@ -93,9 +99,9 @@ def colorbar(mappable, pad=0.2, size="5%", loc="right",
     
     return cb
 
-def make_rand_cmap(n_label, rand_state = 12345):
+def make_rand_cmap(n_label, random_state=12345):
     from photutils.utils import make_random_cmap
-    rand_cmap = make_random_cmap(n_label, random_state=rand_state)
+    rand_cmap = make_random_cmap(n_label, **{rand_state:random_state})
     rand_cmap.set_under(color='black')
     rand_cmap.set_over(color='white')
     return rand_cmap
@@ -137,7 +143,7 @@ def display_background(image, back):
                norm=LogNorm(vmin=0., vmax=vmax_Nsig(image - back, N=2)))
     plt.tight_layout()
     
-def display_source(image, segm, mask):
+def display_source(image, segm, mask, random_state=12345):
     """ Display soruce detection and deblend around the target """
     bkg_val = np.median(back)
     vmin, vmax = vmin_Nmad(image, N=3), vmax_Nsig(image)
@@ -149,7 +155,7 @@ def display_source(image, segm, mask):
     if type(segm) is np.ndarray:
         from photutils.segmentation import SegmentationImage
         segm = SegmentationImage(segm)
-    ax2.imshow(segm, cmap=segm.make_cmap(random_state=12345))
+    ax2.imshow(segm, cmap=segm.make_cmap(**{rand_state:random_state}))
     ax2.set_title("segm", fontsize=16)
 
     image_ma = image.copy()
