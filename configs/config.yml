@@ -11,7 +11,7 @@
     # crossmatch
     mag_saturate: 13.5      # estimate, not required to be accurate
     use_PS1_DR2: False
-    field_pad: 50
+    field_pad: 25
     
     # fitting
     mag_threshold: [13,11]  # MB /VB
@@ -40,4 +40,4 @@
     n_cpu: 4
     nlive_init: ~
     sample_method: 'auto'
-    print_progress: False
+    print_progress: True
