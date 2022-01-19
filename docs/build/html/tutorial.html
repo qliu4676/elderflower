@@ -171,14 +171,14 @@ The parameters are stored in <code class="docutils literal notranslate"><span cl
 <h2>3. Read fitting results<a class="headerlink" href="#read-fitting-results" title="Permalink to this headline">¶</a></h2>
 <p>The fitting results are saved as a pickled file <code class="docutils literal notranslate"><span class="pre">.res</span></code> under <code class="docutils literal notranslate"><span class="pre">work_dir</span></code>. It can be read as a <code class="docutils literal notranslate"><span class="pre">Sampler</span></code> class through:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.sampler</span> <span class="kn">import</span> <span class="n">Sampler</span>
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">Sampler</span><span class="o">.</span><span class="n">read_results</span><span class="p">(</span><span class="s1">&#39;test/test-r-A-X[100-700]Y[100-700]-fit3p.res&#39;</span><span class="p">)</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">Sampler</span><span class="o">.</span><span class="n">load_results</span><span class="p">(</span><span class="s1">&#39;test/test-r-A-X[100-700]Y[100-700]-fit3p.res&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>One can then plot the PDF by:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sampler</span><span class="o">.</span><span class="n">cornerplot</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span><span class="mi">12</span><span class="p">),</span> <span class="n">title_fmt</span><span class="o">=</span><span class="s1">&#39;.3f&#39;</span><span class="p">)</span>
+<p>One can then plot the joint probability distribution functions (PDFs) by:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sampler</span><span class="o">.</span><span class="n">cornerplot</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span><span class="mi">22</span><span class="p">),</span> <span class="n">title_fmt</span><span class="o">=</span><span class="s1">&#39;.3f&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Plotting options can be changed by passing them as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> of the function in <code class="docutils literal notranslate"><span class="pre">dynesty.plotting</span></code>. See <a class="reference external" href="https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot">https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot</a>.</p>
+<p>The plot can be saved by passing <code class="docutils literal notranslate"><span class="pre">save=True</span></code>. Plotting options can be changed by passing them as <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code> of the function in <code class="docutils literal notranslate"><span class="pre">dynesty.plotting</span></code>. See <a class="reference external" href="https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot">https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot</a>.</p>
 <p>To reconstruct the PSF, one can run:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.utils</span> <span class="kn">import</span> <span class="n">make_psf_from_fit</span>
 <span class="n">psf</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_psf_from_fit</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span>
@@ -194,7 +194,7 @@ The parameters are stored in <code class="docutils literal notranslate"><span cl
 <span class="c1"># Draw PSF in 2D</span>
 <span class="n">image_psf</span> <span class="o">=</span> <span class="n">psf</span><span class="o">.</span><span class="n">image_psf</span><span class="o">.</span><span class="n">array</span>
 
-<span class="kn">from</span> <span class="nn">eldeflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
+<span class="kn">from</span> <span class="nn">elderflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">image_psf</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">LogNorm</span><span class="p">(),</span> <span class="n">vmin</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -207,7 +207,7 @@ The parameters are stored in <code class="docutils literal notranslate"><span cl
 <span class="n">sampler</span><span class="o">.</span><span class="n">generate_fit</span><span class="p">(</span><span class="n">psf</span><span class="p">,</span> <span class="n">stars</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>The fitted image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image_fit</span></code> and image of bright stars is saved as <code class="docutils literal notranslate"><span class="pre">sampler.image_stars</span></code>. The original image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image</span></code>.</p>
+<p>The fitted image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image_fit</span></code> and the image of bright stars is saved as <code class="docutils literal notranslate"><span class="pre">sampler.image_stars</span></code>. The original image is stored as <code class="docutils literal notranslate"><span class="pre">sampler.image</span></code>.</p>
 </section>
 </section>
 

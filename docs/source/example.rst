@@ -57,7 +57,7 @@ The image of bright stars can then be created by simply running::
 
 The function does all the steps in the modeling but will adopt the given PSF model, you can control the brightness thresholds with ``mag_threshold`` and the scale radius ``r_scale`` used to measure the normalization. As flux-based normalization suffers from saturation, we use intensity.
 
-It might takea bit of time to make segmentation for a wide area if set ``make_segm=True``.
+It might take a bit of time to generate segmentation for a wide area if set ``make_segm=True``.
 
 To see how the subtraction works, let's draw the original image, the image of bright stars (``image_stars``) and the residual::
 

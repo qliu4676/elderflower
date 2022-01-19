@@ -56,13 +56,13 @@ class PSF_Model:
     
     def __init__(self, params=None,
                  core_model='moffat',
-                 aureole_model='power'):
+                 aureole_model='multi-power'):
         """
         Parameters
         ----------
         params : a dictionary containing keywords of PSF parameter
         core_model : model of PSF core (moffat)
-        aureole_model : model of aureole ("moffat, "power" or "multi-power")    
+        aureole_model : model of aureole ("power" or "multi-power")    
         
         """
         self.core_model = core_model
@@ -459,12 +459,13 @@ class PSF_Model:
     def fit_psf_core_1D(self, image_psf, **kwargs):
         """ Fit the core parameters from 1D profiles of the input 2D PSF. """
         from .utils import fit_psf_core_1D
+        params0 = {"fwhm":self.fwhm,
+                   "beta":self.beta,
+                   "frac":self.frac,
+                   "n_s":self.n_s,
+                   "theta_s":self.theta_s}
         frac, beta = fit_psf_core_1D(image_psf,
-                                     frac=self.frac,
-                                     beta=self.beta,
-                                     fwhm=self.fwhm,
-                                     n_s=self.n_s,
-                                     theta_s=self.theta_s,
+                                     params0=params0,
                                      pixel_scale=self.pixel_scale,
                                      **kwargs)
         self.frac = frac

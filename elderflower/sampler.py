@@ -186,7 +186,7 @@ class Sampler:
                    save=False, save_dir='.', suffix='', **kwargs):
         from .plotting import draw_cornerplot
         
-        if self.run != 'nested': return None
+        if self.run == 'mle': return None
         
         # hide n0 subplots if n0 is fixed during the fitting
         if self.container.fix_n0:
@@ -194,10 +194,11 @@ class Sampler:
             dims = np.ix_(np.arange(1,ndim,1), range(nsamps))
         else:
             dims = None
-
+        
+        labels = self.container.labels
         return draw_cornerplot(self.results, dims,
-                                labels=self.labels, truths=truths, figsize=figsize,
-                                save=save, save_dir=save_dir, suffix=suffix, **kwargs)
+                               labels=labels, truths=truths, figsize=figsize,
+                               save=save, save_dir=save_dir, suffix=suffix, **kwargs)
         
     def cornerbounds(self, figsize=(10,10),
                     save=False, save_dir='.', suffix='', **kwargs):
@@ -220,7 +221,19 @@ class Sampler:
     
     def generate_fit(self, psf, stars, image_base=None, norm='brightness'):
     
-        """ Build psf from fitting results """
+        """
+        Build psf and images from fitting results.
+        
+        Parameters
+        ----------
+        psf : PSF_Model class
+            An inherited PSF model.
+        stars : Star class
+            A Star object storing info of stars.
+        image_base : numpy.array, default None
+            A base image to be added (e.g. faint stars)
+            
+        """
         
         from .utils import make_psf_from_fit
         from .modeling import generate_image_fit

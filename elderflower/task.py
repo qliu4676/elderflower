@@ -757,9 +757,8 @@ def Run_PSF_Fitting(hdu_path,
     from .utils import (make_psf_2D, montage_psf_image)
 
     ## PSF Parameters ##
-    
-    n_s = np.array([n0, 2.5, 2.])    # initial guess of power index
-    theta_s = np.array([theta_0, 10**1.8, 10**2.0])
+    n_s = np.array([n0, 2.5])    # initial guess of power index
+    theta_s = np.array([theta_0, 10**2.0])
                                 # initial guess of transition radius in arcsec
     
     # Core parameters, will be fitted

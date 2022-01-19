@@ -15,7 +15,7 @@
     <script src="_static/doctools.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="API reference" href="api.html" />
+    <link rel="next" title="Configuration" href="config.html" />
     <link rel="prev" title="Tutorial" href="tutorial.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -77,7 +77,7 @@
 </pre></div>
 </div>
 <p>The function does all the steps in the modeling but will adopt the given PSF model, you can control the brightness thresholds with <code class="docutils literal notranslate"><span class="pre">mag_threshold</span></code> and the scale radius <code class="docutils literal notranslate"><span class="pre">r_scale</span></code> used to measure the normalization. As flux-based normalization suffers from saturation, we use intensity.</p>
-<p>It might takea bit of time to make segmentation for a wide area if set <code class="docutils literal notranslate"><span class="pre">make_segm=True</span></code>.</p>
+<p>It might take a bit of time to generate segmentation for a wide area if set <code class="docutils literal notranslate"><span class="pre">make_segm=True</span></code>.</p>
 <p>To see how the subtraction works, let’s draw the original image, the image of bright stars (<code class="docutils literal notranslate"><span class="pre">image_stars</span></code>) and the residual:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">elderflower.plotting</span> <span class="kn">import</span> <span class="n">LogNorm</span>
 <span class="n">fig</span><span class="p">,</span> <span class="p">(</span><span class="n">ax1</span><span class="p">,</span><span class="n">ax2</span><span class="p">,</span><span class="n">ax3</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">22</span><span class="p">,</span><span class="mi">7</span><span class="p">))</span>
@@ -119,6 +119,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#apply-wide-psf-subtraction-on-image">2. Apply Wide-PSF Subtraction on Image</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
 </ul>
 
@@ -127,7 +128,7 @@
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="tutorial.html" title="previous chapter">Tutorial</a></li>
-      <li>Next: <a href="api.html" title="next chapter">API reference</a></li>
+      <li>Next: <a href="config.html" title="next chapter">Configuration</a></li>
   </ul></li>
 </ul>
 </div>

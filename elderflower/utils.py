@@ -42,6 +42,13 @@ except ImportError:
 SE_COLUMNS = ["NUMBER", "X_IMAGE", "Y_IMAGE", "X_WORLD", "Y_WORLD",
               "MAG_AUTO", "FLUX_AUTO", "FWHM_IMAGE", "MU_MAX", "FLAGS"]
 
+# Fiducial values of PSF parameters
+DF_default_params = {"fwhm":6.,
+                     "beta":6.6,
+                     "frac":0.3,
+                     "n_s":np.array([3.3, 2.5]),
+                     "theta_s":np.array([5, 100])}
+                     
 ### Baisc Funcs ###
 
 def coord_Im2Array(X_IMAGE, Y_IMAGE, origin=1):
@@ -1224,8 +1231,7 @@ def montage_psf_image(image_psf, image_wide_psf, r=10, dr=0.5):
     
     
 def fit_psf_core_1D(image_psf,
-                    frac=0.3, beta=6.6, fwhm=6.,
-                    n_s=[3.3, 2.], theta_s=[5, 10**2.],
+                    params0=DF_default_params,
                     theta_out=30, d_theta=1.,
                     pixel_scale=2.5, beta_max=8.,
                     obj_name="",band="r",
@@ -1237,18 +1243,21 @@ def fit_psf_core_1D(image_psf,
     ----------
     image_psf : 2d array
         The image of the PSF.
-    frac: float
-        Fraction of aureole [0 - 1]
-    beta : float
-        Moffat beta
-    fwhm : float
-        Moffat fwhm in arcsec
-    n_s : 1d list or array
-        Power index of PSF aureole.
-        Not required to be accurate except n0.
-    theta_s : 1d list or array
-        Transition radii of PSF aureole.
-        Not required to be accurate.
+    params0 : dict
+        Initial guess of oarameters of PSF.
+        Use Dragonfly fiducial vales is not given.
+        'frac' : float
+            Fraction of aureole [0 - 1]
+        'beta' : float
+            Moffat beta
+        'fwhm' : float
+            Moffat fwhm in arcsec
+        'n_s' : 1d list or array
+            Power index of PSF aureole.
+            Not required to be accurate. n0 is recommended to be close.
+        'theta_s' : 1d list or array
+            Transition radii of PSF aureole.
+            Not required to be accurate.
     theta_out : float, optional, default 30
         Max radias in arcsec of the profile.
     d_theta : float, optional, default 1.
@@ -1268,6 +1277,10 @@ def fit_psf_core_1D(image_psf,
     save_dir : str, optional
         Path of saving plot, default current.
     """
+    # Read initial guess of parameters
+    frac, beta, fwhm = [params0.get(prop) for prop in ["frac", "beta", "fwhm"]]
+    n_s = params0["n_s"]
+    theta_s = params0["theta_s"]
     
     # Center of the input PSF image
     cen = ((image_psf.shape[1]-1)/2., (image_psf.shape[0]-1)/2.)
@@ -2274,7 +2287,7 @@ def make_segm_from_catalog(catalog_star,
         
     return seg_map
     
-def make_psf_from_fit(sampler, psf,
+def make_psf_from_fit(sampler, psf=None,
                       pixel_scale=DF_pixel_scale,
                       psf_range=None,
                       leg2d=False):
@@ -2287,8 +2300,8 @@ def make_psf_from_fit(sampler, psf,
     ----------
     sampler : Sampler.sampler class
         The output sampler file (.res)
-    psf : PSF_Model class
-        Inherited PSF model.
+    psf : PSF_Model class, default None
+        An inherited PSF model. If None, initialize with a fiducial model.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
         
@@ -2304,14 +2317,21 @@ def make_psf_from_fit(sampler, psf,
     n_spline = ct.n_spline
     fit_sigma, fit_frac = ct.fit_sigma, ct.fit_frac
         
-    params, _, _ = sampler.get_params_fit()
+    params_fit, _, _ = sampler.get_params_fit()
         
     K = 0
     if fit_frac: K += 1        
     if fit_sigma: K += 1
-    
+
+    if psf is None:
+        # Fiducial PSF Model
+        from .modeling import PSF_Model
+        params = DF_default_params
+        psf = PSF_Model(params, aureole_model='multi-power')
+        psf.pixelize(pixel_scale)
+        
     if psf.aureole_model == "moffat":
-        gamma1_fit, beta1_fit = params[:2]
+        gamma1_fit, beta1_fit = params_fit[:2]
         param_update = {'gamma1':gamma1_fit, 'beta1':beta1_fit}
         
     else:
@@ -2327,12 +2347,12 @@ def make_psf_from_fit(sampler, psf,
                 theta_c = 1200
                 
         if psf.aureole_model == "power":
-            n_fit = params[0]
+            n_fit = params_fit[0]
             param_update = {'n':n_fit}
 
         elif psf.aureole_model == "multi-power":
-            n_s_fit = params[:N_n]
-            theta_s_fit = np.append(psf.theta_0, 10**params[N_n:N_n+N_theta])
+            n_s_fit = params_fit[:N_n]
+            theta_s_fit = np.append(psf.theta_0, 10**params_fit[N_n:N_n+N_theta])
             if psf.cutoff:
                 n_s_fit = np.append(n_s_fit, n_c)
                 theta_s_fit = np.append(theta_s_fit, theta_c)
@@ -2340,29 +2360,29 @@ def make_psf_from_fit(sampler, psf,
             param_update = {'n0':n_s_fit[0], 'n_s':n_s_fit, 'theta_s':theta_s_fit}
 
     if fit_frac:
-        frac = 10**params[-1]
+        frac = 10**params_fit[-1]
         param_update['frac'] = frac
     
-    # Make a new copy and update params
+    # Make a new copy and update parameters
     psf_fit = psf.copy()
     psf_fit.update(param_update)
 
-    mu_fit = params[-K-1]
+    mu_fit = params_fit[-K-1]
     
     if fit_sigma:
-        sigma_fit = 10**params[-K]
+        sigma_fit = 10**params_fit[-K]
     else:
         sigma_fit = ct.std_est
         
     if ct.leg2d:
-        psf_fit.A10, psf_fit.A01 = 10**params[-K-2], 10**params[-K-3]
+        psf_fit.A10, psf_fit.A01 = 10**params_fit[-K-2], 10**params_fit[-K-3]
         
     psf_fit.bkg, psf_fit.bkg_std  = mu_fit, sigma_fit
     
     _ = psf_fit.generate_core()
     _, _ = psf_fit.generate_aureole(psf_range=psf_range, psf_scale=pixel_scale)
     
-    return psf_fit, params
+    return psf_fit, params_fit
 
 
 def calculate_reduced_chi2(fit, data, uncertainty, dof=5):

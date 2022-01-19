@@ -180,13 +180,13 @@ It will complete procedures above in the functional mode and generate the same o
 The fitting results are saved as a pickled file ``.res`` under ``work_dir``. It can be read as a ``Sampler`` class through::
 
 	from elderflower.sampler import Sampler
-	sampler = Sampler.read_results('test/test-r-A-X[100-700]Y[100-700]-fit3p.res')
+	sampler = Sampler.load_results('test/test-r-A-X[100-700]Y[100-700]-fit3p.res')
 
-One can then plot the PDF by::
+One can then plot the joint probability distribution functions (PDFs) by::
 
-	sampler.cornerplot(figsize=(12,12), title_fmt='.3f')
+	sampler.cornerplot(figsize=(20,22), title_fmt='.3f')
 
-Plotting options can be changed by passing them as ``**kwargs`` of the function in ``dynesty.plotting``. See https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot.
+The plot can be saved by passing ``save=True``. Plotting options can be changed by passing them as ``**kwargs`` of the function in ``dynesty.plotting``. See https://dynesty.readthedocs.io/en/latest/api.html#dynesty.plotting.cornerplot.
 
 To reconstruct the PSF, one can run::
 
@@ -204,7 +204,7 @@ The psf can be visualized in 1D or 2D::
 	# Draw PSF in 2D
 	image_psf = psf.image_psf.array
 
-	from eldeflower.plotting import LogNorm
+	from elderflower.plotting import LogNorm
 	plt.imshow(image_psf, norm=LogNorm(), vmin=1e-8, vmax=1e-5, cmap='viridis')
 
 .. image:: images/reconstruct_psf_test_1d.png
@@ -224,4 +224,4 @@ To regenerate the fitted image and bright stars::
 	stars = load_pickle('test/test-r-A-X[100-700]Y[100-700]-stars.pkl')
 	sampler.generate_fit(psf, stars)
 
-The fitted image is stored as ``sampler.image_fit`` and image of bright stars is saved as ``sampler.image_stars``. The original image is stored as ``sampler.image``.
+The fitted image is stored as ``sampler.image_fit`` and the image of bright stars is saved as ``sampler.image_stars``. The original image is stored as ``sampler.image``.
