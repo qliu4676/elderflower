@@ -137,7 +137,7 @@ def Run_Detection(hdu_path,
             for axis in [1, 2]:
                 cd = 'CD{0}_{1}'.format(axis, axis)
                 if cd not in header.keys():
-                    header[cd] = header['CDELT{0}'.format(axis)]
+                    header[cd] = header['PC{0}_{1}'.format(axis, axis)]
             
             # Run sextractor with free zero-point
             SE_catalog = run_sextractor(hdu_path,
@@ -161,10 +161,13 @@ def Run_Detection(hdu_path,
 
                 minra, maxra = sorted([header['CRVAL1'] - ra_range, header['CRVAL1'] + ra_range])
                 mindec, maxdec = sorted([header['CRVAL2'] - dec_range, header['CRVAL2'] + dec_range])
-                if os.path.exists(apass_dir):
-                    refcat = load_apass_in_region(apass_dir,
-                                                  bounds=[mindec, maxdec, minra, maxra])
-                    refcat.write(ref_cat, format='ascii')
+                
+                bounds_cat = [mindec, maxdec, minra, maxra]
+                if apass_dir!=None:
+                    if os.path.exists(apass_dir):
+                        refcat = load_apass_in_region(apass_dir,
+                                                      bounds=bounds_cat)
+                        refcat.write(ref_cat, format='ascii')
                 else:
                     raise FileNotFoundError('APASS directory not available.')
 
@@ -178,7 +181,7 @@ def Run_Detection(hdu_path,
     else:
         ZP = np.float(header[ZP_keyname])
         logger.info("Read zero-point from header : ZP = {:.3f}".format(ZP))
-    logger.info("Pixel scale = {:.1f}".format(pixel_scale))
+    logger.info("Pixel scale = {:.2f}".format(pixel_scale))
     logger.info("Detection threshold = {:.1f}".format(threshold))
     
     SE_kwargs_update = {'DETECT_THRESH':threshold,
@@ -215,6 +218,8 @@ def Match_Mask_Measure(hdu_path,
                        r_scale=12,
                        mag_limit=15,
                        mag_saturate=13.5,
+                       width_ring=0.5,
+                       width_cross=4,
                        draw=True,
                        save=True,
                        use_PS1_DR2=False,
@@ -265,6 +270,10 @@ def Match_Mask_Measure(hdu_path,
     mag_saturate : float, optional, default 13.5
         Estimate of magnitude at which the image is saturated.
         The exact value will be fit.
+    width_ring : float, optional, default 0.5
+        Half-width in pixel of ring used to measure the scaling.
+    width_cross : float, optional, default 4
+        Half-width in pixel of the spike mask when measuring the scaling.
     draw : bool, optional, default True
         Whether to draw diagnostic plots.
     save : bool, optional, default True
@@ -333,7 +342,7 @@ def Match_Mask_Measure(hdu_path,
     patch = crop_image(data, field_bounds,
                        sub_bounds=bounds_list,
                        seg_map=seg_map, draw=draw)
-    
+
     # Crop parent SE catalog
     SE_cat = crop_catalog(SE_cat_full, field_bounds)
 
@@ -374,10 +383,11 @@ def Match_Mask_Measure(hdu_path,
                                                 mag_limit=mag_limit,
                                                 use_PS1_DR2=use_PS1_DR2)
    
+
     # Calculate color correction between PANSTARRS and DF filter
     CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,18],
                               mag_name=mag_name_cat, draw=draw)
-    
+
     catalog_star["MAG_AUTO_corr"] = catalog_star[mag_name] + CT # corrected MAG_AUTO
     tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT
     
@@ -450,11 +460,14 @@ def Match_Mask_Measure(hdu_path,
         tab_norm, res_thumb = measure_Rnorm_all(tab_target_patch, bounds,
                                                 wcs_data, data, seg_map,
                                                 mag_limit=mag_limit,
+                                                mag_saturate=mag_saturate,
                                                 r_scale=r_scale,
-                                                width_cross=int(10/pixel_scale),
+                                                width_cross=width_cross,
+                                                width_ring=width_ring,
                                                 obj_name=obj_name,
                                                 mag_name=mag_name_cat,
                                                 save=save, dir_name=dir_name)
+
         if draw:
             plot_bright_star_profile(tab_target_patch,
                                      tab_norm, res_thumb,
@@ -485,7 +498,7 @@ def Run_PSF_Fitting(hdu_path,
                     n_spline=3,
                     r_core=24,
                     r_out=None,
-                    cutoff=False,
+                    cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
                     core_param={"frac":0.3, "beta":6.},
@@ -566,7 +579,7 @@ def Run_PSF_Fitting(hdu_path,
     r_out : int or [int, int] or None, optional, default None
         Radius (in pix) for the outer mask of [very, medium]
         bright stars. If None, turn off outer mask.
-    cutoff : bool, optional, default False
+    cutoff : bool, optional, default True
         If True, the aureole will be cutoff at theta_cutoff.
     n_cutoff : float, optional, default 4
         Cutoff slope for the aureole model.
@@ -583,7 +596,7 @@ def Run_PSF_Fitting(hdu_path,
     theta_0 : float, optional, default 5
         Flattened radius. Arbitrary but need to be small. in arcsec
     n0_ : float, optional, default None
-        Power index of the first component, use this value if fix_n0=True.
+        Power index of the first component, only used if fix_n0=True.
     fit_n0 : bool, optional, default True
         If True, fit n0 from profiles of bright stars before the Bayesian fitting.
     fix_n0 : bool, optional, default False
@@ -725,6 +738,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.make_mask(stars_b, dir_measure,
                         by=mask_type, r_core=r_core, r_out=None,
                         wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
+                        wid_cross=10,
                         sn_thre=2.5, draw=draw, mask_obj=mask_obj,
                         save=save, save_dir=plot_dir)
 
@@ -745,9 +759,11 @@ def Run_PSF_Fitting(hdu_path,
     else:
         DF_Images.fit_n0(dir_measure,
                          pixel_scale=pixel_scale,
-                         mag_max=12, mag_limit=mag_limit,
-                         r_scale=r_scale, draw=draw,
-                         save=save, save_dir=plot_dir)
+                         fit_range=[20, 40],
+                         mag_max=13.5, mag_limit=mag_limit,
+                         r_scale=r_scale, sky_std=std,
+                         draw=draw, save=save,
+                         save_dir=plot_dir)
         DF_Images.fix_n0 = fit_n0      # if use prefit value, also fix n0
         n0 = np.median(DF_Images.n0)   # initial guess
             
@@ -758,7 +774,7 @@ def Run_PSF_Fitting(hdu_path,
 
     ## PSF Parameters ##
     n_s = np.array([n0, 2.5])    # initial guess of power index
-    theta_s = np.array([theta_0, 10**2.0])
+    theta_s = np.array([theta_0, 10**2.])
                                 # initial guess of transition radius in arcsec
     
     # Core parameters, will be fitted
@@ -771,16 +787,20 @@ def Run_PSF_Fitting(hdu_path,
     image_psf, psf = make_psf_2D(n_s=n_s, theta_s=theta_s,
                                  frac=frac, beta=beta, fwhm=fwhm,
                                  cutoff_param=cutoff_param,
-                                 pixel_scale=pixel_scale, psf_range=1200)
+                                 pixel_scale=pixel_scale,
+                                 psf_range=theta_cutoff)
                          
     # Montage the core and the 1st model component
     fn_psf_satck = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
     psf_stack = fits.getdata(fn_psf_satck)
+
     image_psf = montage_psf_image(psf_stack, image_psf, r=10)
     
     # Fit and update core parameters
-    psf.fit_psf_core_1D(image_psf, save=save, save_dir=plot_dir)
-    
+    psf.fit_psf_core_1D(image_psf,
+                        obj_name=obj_name, band=band,
+                        save=save, save_dir=plot_dir)
+    breakpoint()
     ############################################
     # Set Basement Image
     ############################################
@@ -792,7 +812,7 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=40, theta_out=300,
+                            theta_in=30, theta_out=300,
                             n_min=1.1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
@@ -804,7 +824,7 @@ def Run_PSF_Fitting(hdu_path,
     
     ## (a stop for inspection/developer)
     if stop:
-        print('Pause for check... Does everything look good? [c/exit]')
+        print('Stop for sanity check... Does everything look good?')
         return DF_Images, psf, stars
     
     ############################################
@@ -830,6 +850,7 @@ def Run_PSF_Fitting(hdu_path,
     
         if save:
             # Save outputs
+            core_param = {"frac":psf.frac, "fwhm":fwhm, "beta":psf.beta}
             s.fit_info = {'obj_name':obj_name,
                           'band':band,
                           'date':DateToday(),
@@ -837,7 +858,7 @@ def Run_PSF_Fitting(hdu_path,
                           'bounds':bounds_list[i],
                           'pixel_scale':pixel_scale,
                           'r_scale':r_scale,
-                          'core_param':{"frac":psf.frac, "fwhm":fwhm, "beta":psf.beta},
+                          'core_param':core_param,
                           'fit_n0':fit_n0}
             if cutoff:
                 s.fit_info.update(cutoff_param)

@@ -11,6 +11,9 @@ from .modeling import Stars
 from .utils import background_extraction, crop_pad
 from .image import DF_pixel_scale
 
+
+#mask_param_default = {}
+
 class Mask:
     """ Class for masking sources """
     

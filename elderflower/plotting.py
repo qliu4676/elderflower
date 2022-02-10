@@ -125,8 +125,9 @@ def display(image, mask=None,
         sky = image[(mask==0)]
     else:
         sky = sigma_clip(image, 3)
-    sky_mean, sky_std = np.mean(sky), mad_std(sky)
-    
+    vals = sky[~np.isnan(sky)]
+    sky_mean, sky_std = np.mean(vals), mad_std(vals)
+
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
     ax.imshow(image, cmap="gray_r",
               norm=AsinhNorm(a, vmin=sky_mean-sky_std,
@@ -889,7 +890,7 @@ def plot_bright_star_profile(tab_target, table_norm, res_thumb,
         
         r_rbin, I_rbin, _ = cal_profile_1d(img, cen=cen, mask=ma,
                                            ZP=ZP, sky_mean=bkg_sky, sky_std=std_sky,
-                                           pixel_scale=pixel_scale, dr=1.2,
+                                           pixel_scale=pixel_scale, dr=1,
                                            xunit="pix", yunit="SB", errorbar=errorbar,
                                            core_undersample=False, color=None, lw=lw,
                                            markersize=ms, alpha=alpha)

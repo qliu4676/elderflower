@@ -175,7 +175,7 @@ def find_keyword_header(header, keyword,
                 logger.error(msg)
                 raise ValueError(msg)
         elif default is not None:
-            logger.info(f"Set {keyword} to default value = ", default)
+            logger.info("Set {} to default value = {}".format(keyword, default))
             val = default
         else:
             if raise_error:

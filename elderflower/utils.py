@@ -154,7 +154,7 @@ def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
     
     # Short estimate summary
     mean, med, std = sigma_clipped_stats(data, mask, **kwargs)
-    logger.info("Background stats: mean = %.2f  med = %.2f  std = %.2f"%(mean, med, std))
+    logger.info("Background stats: mean = %.3g  med = %.3g  std = %.3g"%(mean, med, std))
     
     # check header key
     bkg = find_keyword_header(header, bkg_keyname)
@@ -291,7 +291,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         ax.scatter(x_data[clip], y_data[clip], lw=2, s=25,
                     facecolors='none', edgecolors='orange', alpha=0.7)
         ax.plot(x_test, func(x_test, *popt), color='r')
-        
+
         if plt.rcParams['text.usetex']:
             c_lab = c_lab.replace('_','$\_$')
             x_lab = x_lab.replace('_','$\_$')
@@ -305,8 +305,8 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
         invert = lambda lab: ('MAG' in lab) | ('MU' in lab)
         if invert(x_lab): ax.invert_xaxis()
         if invert(y_lab): ax.invert_yaxis()
-        ax.set_xlabel(x_lab)
-        ax.set_ylabel(y_lab)
+#        ax.set_xlabel(x_lab)
+#        ax.set_ylabel(y_lab)
         
     return popt, pcov, clip_func
     
@@ -324,17 +324,17 @@ def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13.5, draw=T
     
     MU_satur_0 = np.quantile(y_data, 0.001) # guess of saturated MU_MAX
     MAG_satur_0 = mag_saturate # guess of saturated MAG_AUTO
-    
+
     # Fit a flattened linear
     logger.info("Fit an empirical relation to exclude extended sources...")
     popt, _, clip_func = iter_curve_fit(x_data, y_data, flattened_linear,
                                         p0=(1, MAG_satur_0, MU_satur_0),
                                         x_max=mag_limit, x_min=max(7,np.min(x_data)),
-                                        draw=draw, c_lab='CLASS_STAR',
                                         color=SE_bright['CLASS_STAR'],
-                                        x_lab='MAG_AUTO',y_lab='MU_MAX')
+                                        x_lab='MAG_AUTO',y_lab='MU_MAX',
+                                        c_lab='CLASS_STAR', draw=draw)
     if draw: plt.show()
-    
+
     mag_saturate = popt[1]
     logger.info("Saturation occurs at mag = {:.2f}".format(mag_saturate))
 
@@ -1124,17 +1124,20 @@ def stack_star_image(table_stack, res_thumb, size=61):
         img_star_ = img_star_ - bkg
         img_star_[mask_star_] = 0
         
-        # cutout
+        # add cutout to canvas
+        dx = abs(shape_star_[0]-canvas.shape[0])//2
+        dy = abs(shape_star_[1]-canvas.shape[1])//2
         if shape_star_[0] > size:
-            dx = (shape_star_[0]-canvas.shape[0])//2
-            dy = (shape_star_[1]-canvas.shape[1])//2
             cutout = img_star_[dx:-dx,dy:-dy]
-        
-            # add to canvas
             canvas += cutout
             footprint += (cutout!=0)
-            i += 1
-        
+        else:
+            cutout = img_star_
+            canvas[dx:-dx,dy:-dy] += cutout
+            footprint[dx:-dx,dy:-dy] += (cutout!=0)
+            
+        i += 1
+
     image_stack = canvas/footprint
     logger.info("   - {:d} Stars used for stacking.".format(i))
 
@@ -1171,7 +1174,7 @@ def make_global_stack_PSF(dir_name, bounds_list, obj_name, band, overwrite=True)
             else:
                 image_stack += image_psf
                 
-        image_stack = image_stack/image_stack.sum()
+        image_stack = image_stack/np.nansum(image_stack)
         
         if i>0:
             logger.info("Read & stack {:} PSF.".format(i+1))
@@ -1261,7 +1264,7 @@ def fit_psf_core_1D(image_psf,
     theta_out : float, optional, default 30
         Max radias in arcsec of the profile.
     d_theta : float, optional, default 1.
-        Radial interval of the profile.
+        Radial interval of the profile in arcsec.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pix
     beta_max : float, optional, default 8.
@@ -1286,7 +1289,8 @@ def fit_psf_core_1D(image_psf,
     cen = ((image_psf.shape[1]-1)/2., (image_psf.shape[0]-1)/2.)
 
     # Set grid points
-    rp = np.arange(1, theta_out+d_theta,d_theta)
+    d_theta = min(d_theta, pixel_scale)
+    rp = np.arange(1, theta_out+d_theta, d_theta)
         
     # Calculate 1D profile
     r_psf, I_psf, _ = cal_profile_1d(image_psf, cen=cen, dr=0.5,
@@ -1318,6 +1322,7 @@ def fit_psf_core_1D(image_psf,
     
     logger.info("   - frac = {:.3f}+/-{:.3f}".format(frac, frac_err))
     logger.info("   - beta = {:.3f}+/-{:.3f}".format(beta, beta_err))
+    logger.info("   - fwhm = {:.3f} from stacking".format(fwhm))
 
     if draw:
         I_fit = make_psf_core_1D(rp, frac, beta)
@@ -1333,7 +1338,7 @@ def fit_psf_core_1D(image_psf,
             fn_plot = f'Fit_core_{obj_name}-{band}.png'
             plt.savefig(os.path.join(save_dir, fn_plot))
         plt.show()
-
+    breakpoint()
     return frac, beta
 
 
@@ -1364,18 +1369,24 @@ def downsample_wcs(wcs_input, scale=0.5):
     header = wcs_input.to_header()
     shape = wcs_input.pixel_shape
     
-    if 'CDELT1' in header.keys(): cdname = 'CDELT'
-    if 'CD1_1' in header.keys(): cdname = 'CD'
+    if 'PC1_1' in header.keys():
+        cdname = 'PC'
+    elif 'CD1_1' in header.keys():
+        cdname = 'CD'
+    elif 'CDELT1' in header.keys():
+        cdname = 'CDELT'
+    else:
+        msg = 'Fits header has no proper coordinate info (CD, PC, CDELT)!'
+        logger.error(msg)
+        raise KeyError(msg)
     
     for axis in [1, 2]:
-        if cdname=='CDELT':
-            cd = 'CDELT{0:d}'.format(axis)
+        if cdname == 'PC':
+            cd = 'PC{0:d}_{0:d}'.format(axis)
         elif cdname == 'CD':
             cd = 'CD{0:d}_{0:d}'.format(axis)
-        else:
-            msg = 'Fits header has no CDELT or CD keywords!'
-            logger.error(msg)
-            raise KeyError(msg)
+        elif cdname=='CDELT':
+            cd = 'CDELT{0:d}'.format(axis)
             
         cp = 'CRPIX{0:d}'.format(axis)
         na = 'NAXIS{0:d}'.format(axis)
@@ -1386,9 +1397,14 @@ def downsample_wcs(wcs_input, scale=0.5):
 
     return wcs.WCS(header)
 
-def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
+def write_downsample_fits(fn, fn_out,
+                          scale=0.5, order=3,
+                          keyword_preserved=['NFRAMES', 'BACKVAL',
+                                             'EXP_EFF', 'FILTNAM'],
+                          wcs_out=None):
     """
-    Write fits data downsampled by factor. Alternatively a target wcs can be provided.
+    Write fits data downsampled by factor.
+    Alternatively a target wcs can be provided.
     
     Parameters
     ----------
@@ -1400,11 +1416,19 @@ def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
         scaling factor
     order: int, optional, default 3 ('bicubic')
         order of interpolation (see docs of reproject)
+    keyword_preserved: str list
+        list of keyword to preserve in the output fits
     wcs_out: wcs, optional, default None
         output target wcs. must have shape info.
         
+    Notes
+    -----
+    If the output image contains all nan, it is likely the reprojection
+    fails, try use lower orders, or replacing the nan values.
+        
     """
     if reproject_install == False:
+        logger.warning('Module reproject not installed.')
         return None
 
     # read fits
@@ -1422,7 +1446,7 @@ def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
 
     # reproject the image by new wcs
     data_rp, _ = reproject_interp((data, wcs_input), wcs_out,
-                                   shape_out=shape_out, order=3)
+                                   shape_out=shape_out, order=order)
 
     # write new header
     header_out = wcs_out.to_header()
@@ -1434,7 +1458,7 @@ def write_downsample_fits(fn, fn_out, scale=0.5, order=3, wcs_out=None):
     
     # write new fits
     fits.writeto(fn_out, data_rp, header=header_out, overwrite=True)
-    logger.info('Resampled image saved to: ', fn_out)
+    logger.info('Resampled image saved to: {}'.format(fn_out))
 
     return True
 
@@ -1657,7 +1681,7 @@ def read_measurement_table(dir_name, bounds0,
     # Do not use flagged measurement
     Iflag = table_norm["Iflag"]
     table_norm = table_norm[Iflag==0]
-    
+
     return table_faint, table_norm
     
 
@@ -1888,7 +1912,7 @@ def fit_n0(dir_measure, bounds,
             num = list(res_thumb.keys())[0]
             img0, ma0, cen0 = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
             cal_profile_1d(img0, cen=cen0, mask=ma0, dr=0.8,
-                           ZP=ZP, sky_mean=BKG, sky_std=2.8,
+                           ZP=ZP, sky_mean=BKG, sky_std=sky_std,
                            xunit="arcsec", yunit="SB", errorbar=True,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
@@ -2026,7 +2050,7 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
                                         piecewise_linear, x_max=15, n_iter=5, k_std=10,
                                         p0=(1, 2, mag_saturate, mag_saturate),
                                         bounds=(0.9, [2, 4, mag_lim, mag_lim]),
-                                        x_lab='MAG_AUTO', y_lab='MAG_AUTO_corr', draw=draw)
+                                        x_lab='MAG_AUTO', y_lab='MAG_AUTO corr', draw=draw)
 
     # Empirical corrected magnitude
     f_corr = lambda x: piecewise_linear(x, *popt)
@@ -2109,8 +2133,13 @@ def calculate_color_term(tab_target,
         plt.axhline(CT, color='k', alpha=0.7)
         plt.ylim(-3,3)
         plt.xlim(mag_range[0]-0.5, mag_range[1]+0.5)
-        plt.xlabel("MAG_AUTO")
-        plt.ylabel("MAG_AUTO - %s"%mag_name)
+        xlab = "MAG_AUTO"
+        ylab = "MAG AUTO - %s"%mag_name
+        if plt.rcParams['text.usetex']:
+            xlab = xlab.replace('_','$\_$')
+            ylab = ylab.replace('_','$\_$')
+        plt.xlabel(xlab)
+        plt.ylabel(ylab)
         plt.show()
         
     logger.info("Average Color Term [SE-%s] = %.5f"%(mag_name, CT))

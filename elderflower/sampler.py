@@ -177,7 +177,8 @@ class Sampler:
             
         results = res['fit_res']
         if 'fit_info' in res.keys():
-            logger.info(f"Read fitting results {filename}\n", res['fit_info'])
+            logger.info(f"Read fitting results {filename}\n")
+            print(res['fit_info'])
             results['fit_info'] = res['fit_info']
         
         return cls(res['container'], run=False, results=results)

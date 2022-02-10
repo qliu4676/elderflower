@@ -291,6 +291,7 @@ class Image(ImageButler):
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds, wcs,
                                                 image, seg_map,
                                                 mag_limit=mag_limit,
+                                                mag_saturate=mag_saturate,
                                                 r_scale=r_scale,
                                                 k_enlarge=2,
                                                 width_cross=width_cross,
@@ -446,14 +447,67 @@ class ImageList(ImageButler):
         for i, (Image, stars) in enumerate(zip(self.Images, stars_all)):
             Image.make_base_image(psf_star, stars)
     
-    def make_mask(self, stars_list, dir_measure='../output/Measure',
+    def make_mask(self, stars_list, dir_measure,
                   by='aper',  r_core=24, r_out=None,
                   sn_thre=2.5, count=None, mask_obj=None,
-                  n_strip=48, wid_strip=30, dist_strip=None,
+                  n_strip=48, wid_strip=24, dist_strip=None,
                   wid_cross=20, dist_cross=180, clean=True,
-                  draw=True, save=False, save_dir='../output/pic', verbose=True):
+                  save=False, save_dir='../output/pic',
+                  draw=True, verbose=True):
         
-        """Make Strip + Cross Mask"""
+        """
+        Make deep mask, object mask, strip mask, and cross mask.
+        
+        The 'deep' mask is based on S/N.
+        The object mask is for masking target sources such as large galaxies.
+        The strip mask is spider-like, used to reduce sample size of pixels
+        at large radii, equivalent to assign lower weights to outskirts.
+        The cross mask is for masking stellar spikes of bright stars.
+        
+        Parameters
+        ----------
+        stars_list: list of modeling.Stars object
+            List of Stars object.
+        dir_measure : str
+            Directory storing the measurement.
+        by : 'aper' or 'brightness', default 'aper'
+            "aper": aperture-like masking
+            "brightness": brightness-limit masking
+        r_core : int or [int, int], optional, default 24
+            Radius (in pix) for the inner mask of [very, medium]
+            bright stars. Default is 1' for Dragonfly.
+        r_out : int or [int, int] or None, optional, default None
+            Radius (in pix) for the outer mask of [very, medium]
+            bright stars. If None, turn off outer mask.
+        sn_thre : float, optional, default 2.5
+            SNR threshold used for deep mask.
+        count : float, optional
+            Absolute count (in ADU) above which is masked
+        mask_obj : str, optional
+            Object mask file name. See mask.make_mask_object
+        wid_strip : int, optional, default 24
+            Width of strip in pixel for masks of very bright stars.
+        n_strip : int, optional, default 48
+            Number of strip for masks of very bright stars.
+        dist_strip : float, optional, default None
+            Furthest range of each strip mask (in arcsec)
+            If not given, use image size.
+        wid_cross : float, optional, default 20
+            Half-width of the spike mask (in arcsec).
+        dist_cross: float, optional, default 180
+            Furthest range of each spike mask (in arcsec) (default: 3 arcmin)
+        clean : bool, optional, default True
+            Whether to remove medium bright stars far from any available
+            pixels for fitting. A new Stars object will be stored in
+            stars_new, otherwise it is simply a copy.
+        draw : bool, optional, default True
+            Whether to draw mask map
+        save :  bool, optional, default True
+            Whether to save the image
+        save_dir : str, optional
+            Path of saving plot, default current.
+        
+        """
         
         from .mask import Mask
         from .utils import crop_image
@@ -532,7 +586,7 @@ class ImageList(ImageButler):
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
             
-            msg = "Estimate of Background: ({0:.3f} +/- {1:.3f}) for "
+            msg = "Estimate of Background: ({0:.3g} +/- {1:.3g}) for "
             msg = msg.format(mu_patch, std_patch) + repr(Image)
             logger.info(msg)
     
