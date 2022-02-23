@@ -28,8 +28,8 @@ from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
     
 from .io import logger
 from .io import save_pickle, load_pickle, check_save_path
-from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .plotting import LogNorm, AsinhNorm, colorbar
+from . import DF_pixel_scale, DF_raw_pixel_scale
 
 try:
     from reproject import reproject_interp
@@ -125,7 +125,7 @@ def calculate_psf_size(n0, theta_0, contrast=1e5, psf_scale=DF_pixel_scale,
 def compute_poisson_noise(data, n_frame=1, header=None, Gain=0.37):
     if header is not None:
         try:
-            n_frame = np.int(header['NFRAMES'])
+            n_frame = np.int32(header['NFRAMES'])
         except KeyError:
             n_frame = 1
     G_effective = Gain * n_frame # effecitve gain: e-/ADU
@@ -154,7 +154,7 @@ def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
     
     # Short estimate summary
     mean, med, std = sigma_clipped_stats(data, mask, **kwargs)
-    logger.info("Background stats: mean = %.3g  med = %.3g  std = %.3g"%(mean, med, std))
+    logger.info("Background stats: mean = %.5g  med = %.5g  std = %.5g"%(mean, med, std))
     
     # check header key
     bkg = find_keyword_header(header, bkg_keyname)
@@ -373,7 +373,7 @@ def clean_isolated_stars(xx, yy, mask, star_pos, pad=0, dist_clean=60):
 def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
                    color="steelblue", xunit="pix", yunit="Intensity",
                    seeing=2.5, pixel_scale=DF_pixel_scale, ZP=27.1,
-                   sky_mean=884, sky_std=3, dr=1,
+                   sky_mean=0, sky_std=3, dr=1,
                    lw=2, alpha=0.7, markersize=5, I_shift=0,
                    core_undersample=False, figsize=None,
                    label=None, plot_line=False, mock=False,
@@ -399,7 +399,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
     rr = np.sqrt((xx - cen[0])**2 + (yy - cen[1])**2)
     r = rr[~mask].ravel()  # radius in pix
     z = img[~mask].ravel()  # pixel intensity
-    r_core = np.int(2 * seeing) # core radius in pix
+    r_core = np.int32(2 * seeing) # core radius in pix
 
     # Decide the outermost radial bin r_max before going into the background
     bkg_cumsum = np.arange(1, len(z)+1, 1) * bkg_val
@@ -428,7 +428,7 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
             n_bin_inner = int(min((r_core/d_r*2), 6))
             bins_inner = np.linspace(0, r_core-d_r, n_bin_inner) - 1e-3
 
-        n_bin_outer = np.max([6, np.min([np.int(r_max/d_r/10), 50])])
+        n_bin_outer = np.max([6, np.min([np.int32(r_max/d_r/10), 50])])
         if r_max > (r_core+d_r):
             bins_outer = np.logspace(np.log10(r_core+d_r),
                                      np.log10(r_max+2*d_r), n_bin_outer)
@@ -866,7 +866,7 @@ def compute_Rnorm_batch(table_target,
             n_win = int(10 * k_win)
         
         # Make thumbnail of the star and mask sources
-        thumb = Thumb_Image(row, wcs, pixel_scale=DF_pixel_scale)
+        thumb = Thumb_Image(row, wcs)
         thumb.extract_star(image, seg_map, n_win=n_win)
         
         # Measure the mean, med and std of intensity at r_scale
@@ -1131,10 +1131,13 @@ def stack_star_image(table_stack, res_thumb, size=61):
             cutout = img_star_[dx:-dx,dy:-dy]
             canvas += cutout
             footprint += (cutout!=0)
-        else:
+        elif shape_star_[0] < size:
             cutout = img_star_
             canvas[dx:-dx,dy:-dy] += cutout
             footprint[dx:-dx,dy:-dy] += (cutout!=0)
+        else:
+            canvas += img_star_
+            footprint += 1
             
         i += 1
 
@@ -1304,7 +1307,7 @@ def fit_psf_core_1D(image_psf,
 
     # Guess and bounds for core params
     p0 = [frac, beta]
-    bounds = [(0, 0.5), (1.1, beta_max)]
+    bounds = [(1e-5, 0.5), (1.2, beta_max)]
     
     logger.info("Fitting core parameters from stacked PSF...")
     # Define the target function for fitting the core
@@ -1338,7 +1341,7 @@ def fit_psf_core_1D(image_psf,
             fn_plot = f'Fit_core_{obj_name}-{band}.png'
             plt.savefig(os.path.join(save_dir, fn_plot))
         plt.show()
-    breakpoint()
+
     return frac, beta
 
 
@@ -1917,9 +1920,10 @@ def fit_n0(dir_measure, bounds,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
+            ax.annotate("Brightest",(3*pixel_scale, I_norm-1.5),fontsize=8)
 
         if draw:
-            ax.set_xlim(5.,4e2)
+            ax.set_xlim(1.5*pixel_scale, 4e2)
             ax.set_ylim(I_norm+6.5,I_norm-7.5)
             ax.axvspan(r1, r2, color='gold', alpha=0.1)
             ax.axvline(r0, ls='--',color='k', alpha=0.9, zorder=1)
@@ -1938,7 +1942,7 @@ def fit_n0(dir_measure, bounds,
         p_log_linear = partial(log_linear, x0=r0, y0=I_norm)
         popt, pcov, clip_func = iter_curve_fit(r_rbin_all, In_rbin_all, p_log_linear,
                                                x_min=r1, x_max=r2, p0=10,
-                                               bounds=(3, 15), n_iter=3,
+                                               bounds=(3, 15), n_iter=3, k_std=10,
                                                x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
                                                draw=draw, fig=fig, ax=ax_ins)
         r_n, I_n = r0, I_norm
@@ -1949,7 +1953,8 @@ def fit_n0(dir_measure, bounds,
                                                x_min=r1, x_max=r2, p0=(10, r0, I_norm),
                                                bounds=([3,r1,I_norm-1], [15,r2,I_norm+1]),
                                                x_lab='R [arcsec]', y_lab='MU [mag/arcsec2]',
-                                               n_iter=3, draw=draw, fig=fig, ax=ax_ins)
+                                               n_iter=3, k_std=10,
+                                               draw=draw, fig=fig, ax=ax_ins)
         r_n, I_n = r0, p_log_linear(r0, *popt)
 
     if draw:
@@ -1984,6 +1989,9 @@ def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
         return tab
         
     logger.info("Adding unmatched bright stars from HLSP ATLAS catalog.")
+    
+    if not os.path.isfile(tab_atlas):
+        logger.error("No ATLAS catalog is found.")
     
     # cross match SE catalog and ATLAS catalog
     coords_atlas = SkyCoord(tab_atlas['RA'], tab_atlas['Dec'], unit=u.deg)
@@ -2031,7 +2039,8 @@ def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
         return tab
     
 
-def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
+def add_supplementary_SE_star(tab, SE_catatlog,
+                              mag_saturate=13, mag_limit=15, draw=True):
     """
     Add unmatched bright (saturated) stars in SE_catatlogas to tab.
     Magnitude is corrected by interpolation from other matched stars.
@@ -2045,11 +2054,10 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     
     # Empirical function to correct MAG_AUTO for saturation
     # Fit a sigma-clipped piecewise linear
-    mag_lim = mag_saturate+2
     popt, _, clip_func = iter_curve_fit(tab['MAG_AUTO'], tab['MAG_AUTO_corr'],
-                                        piecewise_linear, x_max=15, n_iter=5, k_std=10,
+                                        piecewise_linear, x_max=mag_limit, n_iter=5, k_std=10,
                                         p0=(1, 2, mag_saturate, mag_saturate),
-                                        bounds=(0.9, [2, 4, mag_lim, mag_lim]),
+                                        bounds=(0.9, [2, 4, mag_limit, mag_limit]),
                                         x_lab='MAG_AUTO', y_lab='MAG_AUTO corr', draw=draw)
 
     # Empirical corrected magnitude
@@ -2061,8 +2069,8 @@ def add_supplementary_SE_star(tab, SE_catatlog, mag_saturate=13, draw=True):
     if draw:
         plt.scatter(tab[loc_rm]['MAG_AUTO'], tab[loc_rm]['MAG_AUTO_corr'],
                     marker='s', s=40, facecolors='none', edgecolors='lime')
-        plt.xlim(15, tab['MAG_AUTO'].min())
-        plt.ylim(15, tab['MAG_AUTO_corr'].min())
+        plt.xlim(mag_limit, tab['MAG_AUTO'].min())
+        plt.ylim(mag_limit, tab['MAG_AUTO_corr'].min())
         plt.show()
     tab.remove_rows(loc_rm[0])
 

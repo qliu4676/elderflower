@@ -49,9 +49,7 @@ else:
     rand_state = "seed"
 from photutils import CircularAperture
 
-# Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
-DF_pixel_scale = 2.5
-DF_raw_pixel_scale = 2.85
+from . import DF_pixel_scale, DF_raw_pixel_scale
 
 ### Plotting Helpers ###
 
@@ -125,17 +123,17 @@ def display(image, mask=None,
         sky = image[(mask==0)]
     else:
         sky = sigma_clip(image, 3)
-    vals = sky[~np.isnan(sky)]
+    vals = sky[~np.isnan(sky) & (sky!=0)]  # some images has 0 as nan
     sky_mean, sky_std = np.mean(vals), mad_std(vals)
 
     if ax is None: fig, ax = plt.subplots(figsize=(12,8))
     ax.imshow(image, cmap="gray_r",
               norm=AsinhNorm(a, vmin=sky_mean-sky_std,
                                 vmax=sky_mean+k_std*sky_std))
-
+    
 def display_background(image, back):
     """ Display fitted background """
-    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(13,4))
     ax1.imshow(image, aspect="auto", cmap="gray",
                norm=LogNorm(vmin=vmin_Nmad(image, N=3), vmax=vmax_Nsig(image, N=2)))
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
@@ -144,12 +142,12 @@ def display_background(image, back):
                norm=LogNorm(vmin=0., vmax=vmax_Nsig(image - back, N=2)))
     plt.tight_layout()
     
-def display_source(image, segm, mask, random_state=12345):
+def display_source(image, segm, mask, back, random_state=12345):
     """ Display soruce detection and deblend around the target """
     bkg_val = np.median(back)
     vmin, vmax = vmin_Nmad(image, N=3), vmax_Nsig(image)
     
-    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(12,4))
+    fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(13,4))
     ax1.imshow(image, norm=LogNorm(vmin=vmin, vmax=vmax))
     ax1.set_title("target", fontsize=16)
     
@@ -160,7 +158,7 @@ def display_source(image, segm, mask, random_state=12345):
     ax2.set_title("segm", fontsize=16)
 
     image_ma = image.copy()
-    image_ma[star_ma] = -1
+    image_ma[mask] = -1
     ax3.imshow(image_ma, norm=LogNorm(vmin=vmin, vmax=vmax))
     ax3.set_title("extracted", fontsize=16)
     plt.show()

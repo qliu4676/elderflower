@@ -15,10 +15,9 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, Column, join, vstack
 
 from .io import logger
-from .image import DF_pixel_scale, DF_raw_pixel_scale
 from .utils import transform_coords2pixel
 from .utils import crop_catalog, merge_catalog, SE_COLUMNS
-
+from . import DF_pixel_scale, DF_raw_pixel_scale
 
 def query_vizier(catalog_name, radius, columns, column_filters, header=None, coord=None):
     """ Query catalog in Vizier database with the given catalog name,

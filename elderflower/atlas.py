@@ -3,6 +3,7 @@ Query HLSP-Atlas using Casjobs Command Line tool
 """
 
 import os
+import time
 import glob
 import subprocess
 import numpy as np
@@ -13,7 +14,19 @@ from .io import script_dir, config_dir
 default_atlas_config = os.path.join(config_dir, './casjobs.config')
 exe_path = os.path.join(script_dir, 'casjobs.jar')
 
-def query_atlas(ra_range, dec_range, wsid, password, mag_limit=16):
+def query_atlas(ra_range, dec_range,
+                wsid, password,
+                mag_limit=16):
+    """
+    Query ATLAS database.
+    
+    ra_range: list
+    dec_range: list
+    wsid: casjob WSID
+    password: casjob password
+    mag_limit: limiting magnitude
+    
+    """
     
     # make a temp directory and copy atlas command line tool
     os.makedirs('ATLAS', exist_ok=True)
@@ -49,7 +62,9 @@ java -jar $casjobs_path execute -t "mydb" -n "drop query" "drop table atlas"
     os.chdir('../')
     
     # rename
-    table = glob.glob('ATLAS/*.csv')[0]
-    os.rename(table, 'ATLAS/cat_atlas.csv')
+#    fn_out = 'ATLAS/cat_atlas.csv'
+#    time.sleep(0.1)
+#    table = glob.glob('ATLAS/atlas_*.csv')[-1]
+#    os.rename(table, fn_out)
     
     return out

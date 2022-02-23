@@ -10,14 +10,9 @@ from astropy.utils import lazyproperty
 from photutils.segmentation import SegmentationImage
 
 from .io import logger
+from .mask import mask_param_default
 from .plotting import display, AsinhNorm, colorbar
-
-# Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
-DF_pixel_scale = 2.5
-DF_raw_pixel_scale = 2.85
-
-# Gain (e-/ADU) of Dragonfly
-DF_Gain = 0.37
+from . import DF_pixel_scale, DF_raw_pixel_scale
 
 class ImageButler:
     """
@@ -222,6 +217,7 @@ class Image(ImageButler):
                            mag_limit_segm=22,
                            make_segm=False, K=2,
                            catalog_sup='SE',
+                           catalog_sup_atlas=None,
                            use_PS1_DR2=False,
                            subtract_external=True,
                            draw=False,
@@ -277,7 +273,7 @@ class Image(ImageButler):
         catalog_star.write(catalog_star_name, overwrite=True, format='ascii')
         
         if catalog_sup == "ATLAS":
-            tab_target = add_supplementary_atlas(tab_target, catalog_sup, SE_catalog,
+            tab_target = add_supplementary_atlas(tab_target, catalog_sup_atlas, SE_catalog,
                                                  mag_saturate=mag_saturate)
             
         elif catalog_sup == "SE":
@@ -448,10 +444,7 @@ class ImageList(ImageButler):
             Image.make_base_image(psf_star, stars)
     
     def make_mask(self, stars_list, dir_measure,
-                  by='aper',  r_core=24, r_out=None,
-                  sn_thre=2.5, count=None, mask_obj=None,
-                  n_strip=48, wid_strip=24, dist_strip=None,
-                  wid_cross=20, dist_cross=180, clean=True,
+                  mask_param=mask_param_default,
                   save=False, save_dir='../output/pic',
                   draw=True, verbose=True):
         
@@ -461,7 +454,7 @@ class ImageList(ImageButler):
         The 'deep' mask is based on S/N.
         The object mask is for masking target sources such as large galaxies.
         The strip mask is spider-like, used to reduce sample size of pixels
-        at large radii, equivalent to assign lower weights to outskirts.
+         at large radii, equivalent to assign lower weights to outskirts.
         The cross mask is for masking stellar spikes of bright stars.
         
         Parameters
@@ -470,39 +463,42 @@ class ImageList(ImageButler):
             List of Stars object.
         dir_measure : str
             Directory storing the measurement.
-        by : 'aper' or 'brightness', default 'aper'
-            "aper": aperture-like masking
-            "brightness": brightness-limit masking
-        r_core : int or [int, int], optional, default 24
-            Radius (in pix) for the inner mask of [very, medium]
-            bright stars. Default is 1' for Dragonfly.
-        r_out : int or [int, int] or None, optional, default None
-            Radius (in pix) for the outer mask of [very, medium]
-            bright stars. If None, turn off outer mask.
-        sn_thre : float, optional, default 2.5
-            SNR threshold used for deep mask.
-        count : float, optional
-            Absolute count (in ADU) above which is masked
-        mask_obj : str, optional
-            Object mask file name. See mask.make_mask_object
-        wid_strip : int, optional, default 24
-            Width of strip in pixel for masks of very bright stars.
-        n_strip : int, optional, default 48
-            Number of strip for masks of very bright stars.
-        dist_strip : float, optional, default None
-            Furthest range of each strip mask (in arcsec)
-            If not given, use image size.
-        wid_cross : float, optional, default 20
-            Half-width of the spike mask (in arcsec).
-        dist_cross: float, optional, default 180
-            Furthest range of each spike mask (in arcsec) (default: 3 arcmin)
-        clean : bool, optional, default True
-            Whether to remove medium bright stars far from any available
-            pixels for fitting. A new Stars object will be stored in
-            stars_new, otherwise it is simply a copy.
+        mask_param: dict, optional
+            Parameters setting up the mask map.
+            mask_type : 'aper' or 'brightness', default 'aper'
+                "aper": aperture-like masking
+                "brightness": brightness-limit masking
+            r_core : int or [int, int], optional, default 24
+                Radius (in pix) for the inner mask of [very, medium]
+                bright stars. Default is 1' for Dragonfly.
+            r_out : int or [int, int] or None, optional, default None
+                Radius (in pix) for the outer mask of [very, medium]
+                bright stars. If None, turn off outer mask.
+            sn_thre : float, optional, default 2.5
+                SNR threshold used for deep mask.
+            SB_threshold : float, optional, default 24.5
+                Surface brightness upper limit for masking.
+                Only used if mask_type = 'brightness'.
+            mask_obj : str, optional
+                Object mask file name. See mask.make_mask_object
+            wid_strip : int, optional, default 24
+                Width of strip in pixel for masks of very bright stars.
+            n_strip : int, optional, default 48
+                Number of strip for masks of very bright stars.
+            dist_strip : float, optional, default None
+                Range of each strip mask (in arcsec)
+                If not given, use image size.
+            wid_cross : float, optional, default 20
+                Half-width of the spike mask (in arcsec).
+            dist_cross: float, optional, default 180
+                Range of each spike mask (in arcsec) (default: 3 arcmin)
+            clean : bool, optional, default True
+                Whether to remove medium bright stars far from any available
+                pixels for fitting. A new Stars object will be stored in
+                stars_new, otherwise it is simply a copy.
         draw : bool, optional, default True
             Whether to draw mask map
-        save :  bool, optional, default True
+        save : bool, optional, default True
             Whether to save the image
         save_dir : str, optional
             Path of saving plot, default current.
@@ -512,6 +508,30 @@ class ImageList(ImageButler):
         from .mask import Mask
         from .utils import crop_image
         
+        # S/N threshold of deep mask
+        sn_thre = mask_param['sn_thre']
+        
+        # aper mask params
+        mask_type = mask_param['mask_type']
+        r_core = mask_param['r_core']
+        r_out = mask_param['r_out']
+        
+        # strip mask params
+        wid_strip = mask_param['wid_strip']
+        n_strip = mask_param['n_strip']
+        dist_strip = mask_param['dist_strip']
+        
+        # cross mask params
+        wid_cross = mask_param['wid_cross']
+        dist_cross = mask_param['dist_cross']
+        
+        if mask_type=='brightness':
+            from .utils import SB2Intensity
+            count = SB2Intensity(mask_param['SB_threshold'], self.bkg,
+                                 self.ZP, self.pixel_scale)[0]
+        else:
+            count = None
+            
         masks = []
         
         for i, (Image, stars) in enumerate(zip(self.Images, stars_list)):
@@ -523,7 +543,7 @@ class ImageList(ImageButler):
             # Read a map of object masks (e.g. large galaxies) or
             # create a new one with given shape parameters.
             # Note the object mask has full shape as SExtractor outputs
-            mask.make_mask_object(mask_obj, wcs=self.full_wcs)
+            mask.make_mask_object(mask_param['mask_obj'], wcs=self.full_wcs)
             
             if hasattr(mask, 'mask_obj_field'):
                 # Crop the full object mask map into a smaller one
@@ -532,8 +552,11 @@ class ImageList(ImageButler):
                 mask.mask_obj0 = np.zeros(mask.image_shape0, dtype=bool)
 
             # Primary SN threshold mask
-            mask.make_mask_map_deep(dir_measure, by,
-                                    r_core, r_out, count,
+            mask.make_mask_map_deep(dir_measure,
+                                    mask_type,
+                                    r_core, r_out,
+                                    count=count,
+                                    sn_thre=sn_thre,
                                     obj_name=self.obj_name,
                                     band=self.band, 
                                     draw=draw, save=save,
@@ -545,8 +568,8 @@ class ImageList(ImageButler):
                 
             mask.make_mask_advanced(n_strip, wid_strip, dist_strip,
                                     wid_cross, dist_cross, 
-                                    clean=clean, draw=draw,
-                                    save=save, save_dir=save_dir)
+                                    clean=mask_param['clean'],
+                                    draw=draw, save=save, save_dir=save_dir)
 
             masks += [mask]
                 
@@ -705,18 +728,23 @@ class ImageList(ImageButler):
 
 
 class Thumb_Image:
+    """
+    A class for operation and info storing of a thumbnail image.
+    Used for measuring scaling and stacking.
+    
+    row: astropy.table.row.Row
+        Astropy table row.
+    wcs: astropy.wcs.wcs
+        WCS of image.
+    """
 
-    """ A class for operation and info storing of a thumbnail image.
-        Used for measuring scaling and stacking. """
-
-    def __init__(self, row, wcs, pixel_scale=DF_pixel_scale):
+    def __init__(self, row, wcs):
         self.wcs = wcs
         self.row = row
-        self.pixel_scale = pixel_scale
         
     def make_star_thumb(self,
                         image, seg_map=None,
-                        n_win=20, seeing=2.5, max_size=160,
+                        n_win=20, seeing=2.5, max_size=200,
                         origin=1, verbose=False):
         """
         Crop the image and segmentation map into thumbnails.
@@ -731,7 +759,7 @@ class Thumb_Image:
             Enlarge factor (of fwhm) for the thumb size
         seeing : float, optional, default 2.5
             Estimate of seeing FWHM in pixel
-        max_size : int, optional, default 160
+        max_size : int, optional, default 200
             Max thumb size in pixel
         origin : 1 or 0, optional, default 1
             Position of the first pixel. origin=1 for SE convention.
@@ -767,7 +795,7 @@ class Thumb_Image:
         self.img_thumb = image[x_min:x_max, y_min:y_max].copy()
         if seg_map is None:
             self.seg_thumb = None
-            self.mask_thumb = np.zeros_like(image, dtype=bool)
+            self.mask_thumb = np.zeros_like(self.img_thumb, dtype=bool)
         else:
             self.seg_thumb = seg_map[x_min:x_max, y_min:y_max]
             self.mask_thumb = (self.seg_thumb!=0) # mask sources
@@ -847,7 +875,7 @@ class Thumb_Image:
         
         if display:
             from .plotting import display_source
-            display_source(img_thumb, segm_deb, star_ma)
+            display_source(img_thumb, segm_deb, star_ma, back)
             
             
     def compute_Rnorm(self, R=12, **kwargs):
@@ -866,7 +894,8 @@ class Thumb_Image:
         from .utils import compute_Rnorm
         I_mean, I_med, I_std, I_flag = compute_Rnorm(self.img_thumb,
                                                      self.star_ma,
-                                                     self.cen_star, **kwargs)
+                                                     self.cen_star,
+                                                     R=R, **kwargs)
         self.I_mean = I_mean
         self.I_med = I_med
         self.I_std = I_std

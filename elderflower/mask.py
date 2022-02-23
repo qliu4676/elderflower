@@ -9,10 +9,22 @@ import astropy.units as u
 from .io import logger
 from .modeling import Stars
 from .utils import background_extraction, crop_pad
-from .image import DF_pixel_scale
+from . import DF_pixel_scale
 
+mask_param_default = dict(
+    mask_type='aper',
+    r_core=24,
+    r_out=None,
+    sn_thre=2.5,
+    SB_threshold=24.5,
+    mask_obj=None,
+    wid_strip=24,
+    n_strip=48,
+    dist_strip=None,
+    wid_cross=20,
+    dist_cross=180,
+    clean=True)
 
-#mask_param_default = {}
 
 class Mask:
     """ Class for masking sources """
@@ -150,7 +162,7 @@ class Mask:
             return None
                 
         
-    def make_mask_map_deep(self, dir_measure=None, by='aper',
+    def make_mask_map_deep(self, dir_measure=None, mask_type='aper',
                            r_core=None, r_out=None, count=None,
                            draw=True, save=False, save_dir='.', 
                            obj_name='', band='G', *args, **kwargs):
@@ -161,8 +173,8 @@ class Mask:
         
         Parameters
         ----------
-        by : mask type
-            "aper": aperture-like masking
+        mask_type : 'aper' or 'brightness', optional
+            "aper": aperture-like masking (default)
             "brightness": brightness-limit masking
         r_core : core radius of [medium, very bright] stars to be masked
         count : absolute count (in ADU) above which is masked        
@@ -199,7 +211,8 @@ class Mask:
         
         # S/N + Core mask
         mask_deep0, seg_deep0 = make_mask_map_dual(image0, stars, self.xx, self.yy,
-                                                   by=by, pad=pad, seg_base=seg_base0,
+                                                   mask_type=mask_type,
+                                                   pad=pad, seg_base=seg_base0,
                                                    r_core=r_core, r_out=r_out, count=count, 
                                                    n_bright=stars.n_bright, *args, **kwargs)
         
@@ -240,9 +253,9 @@ class Mask:
         ----------
         n_strip : number of each strip mask
         wid_strip : width of each strip mask (in arcsec) (default: 0.5 arcmin)
-        dist_strip : furthest range of each strip mask (in arcsec) (default: 0.5 deg)
+        dist_strip : range of each strip mask (in arcsec) (default: 0.5 deg)
         wid_cross : half-width of spike mask (in arcsec) (default: 20 arcsec)
-        dist_cross: furthest range of each spike mask (in arcsec) (default: 3 arcmin)
+        dist_cross : range of each spike mask (in arcsec) (default: 3 arcmin)
         clean : whether to remove medium bright stars far from any available
                 pixels for fitting. A new Stars object will be stored in
                 stars_new, otherwise it is simply a copy.
@@ -420,7 +433,7 @@ def make_mask_map_core(image_shape, star_pos, r_core=12):
 
 
 def make_mask_map_dual(image, stars,
-                       xx=None, yy=None, by='aper',
+                       xx=None, yy=None, mask_type='aper',
                        pad=0, r_core=24, r_out=None, count=None,
                        seg_base=None, n_bright=25, sn_thre=3, 
                        nlevels=64, contrast=0.001, npix=4, b_size=64):
@@ -437,7 +450,7 @@ def make_mask_map_dual(image, stars,
         
     star_pos = stars.star_pos_bright + pad
     
-    if by == 'aper':
+    if mask_type == 'aper':
         if len(np.unique(r_core)) == 1:
             r_core_A, r_core_B = r_core, r_core
             r_core_s = np.ones(len(star_pos)) * r_core
@@ -494,7 +507,7 @@ def make_mask_map_dual(image, stars,
         
         max_lab = segm_deb.max_label
     
-    if by == 'aper':
+    if mask_type == 'aper':
         # mask core for bright stars out to given radii
         logger.info("Mask core regions: r < %d (VB) /%d (MB) pix"%(r_core_A, r_core_B))
         core_region = np.logical_or.reduce([np.sqrt((xx-pos[0])**2+(yy-pos[1])**2) < r
@@ -507,7 +520,7 @@ def make_mask_map_dual(image, stars,
                                              for (pos,r) in zip(star_pos,r_out_s)])
             mask_star = (mask_star) | (outskirt)
     
-    elif by == 'brightness':
+    elif mask_type == 'brightness':
         # If count is not given, use 5 sigma above background.
         if count is None:
             count = np.mean(back + (5 * back_rms))

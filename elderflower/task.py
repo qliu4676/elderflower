@@ -14,8 +14,8 @@ from astropy.table import Table
 from .io import logger
 from .io import find_keyword_header, check_save_path, clean_pickling_object
 from .detection import default_SE_config, default_conv, default_nnw
-from .image import DF_pixel_scale
-
+from .mask import mask_param_default
+from . import DF_pixel_scale, DF_raw_pixel_scale, DF_Gain
 
 def Run_Detection(hdu_path,
                   obj_name,
@@ -218,8 +218,8 @@ def Match_Mask_Measure(hdu_path,
                        r_scale=12,
                        mag_limit=15,
                        mag_saturate=13.5,
-                       width_ring=0.5,
-                       width_cross=4,
+                       width_ring=1.5,
+                       width_cross=10,
                        draw=True,
                        save=True,
                        use_PS1_DR2=False,
@@ -270,10 +270,10 @@ def Match_Mask_Measure(hdu_path,
     mag_saturate : float, optional, default 13.5
         Estimate of magnitude at which the image is saturated.
         The exact value will be fit.
-    width_ring : float, optional, default 0.5
-        Half-width in pixel of ring used to measure the scaling.
-    width_cross : float, optional, default 4
-        Half-width in pixel of the spike mask when measuring the scaling.
+    width_ring : float, optional, default 1.5
+        Half-width in arcsec of ring used to measure the scaling.
+    width_cross : float, optional, default 4 * 2.5
+        Half-width in arcsec of the spike mask when measuring the scaling.
     draw : bool, optional, default True
         Whether to draw diagnostic plots.
     save : bool, optional, default True
@@ -393,7 +393,7 @@ def Match_Mask_Measure(hdu_path,
     
     # Mannually add stars missed in the crossmatch or w/ weird mag to table
     tab_target = add_supplementary_SE_star(tab_target, SE_cat_target,
-                                           mag_saturate, draw=draw)
+                                           mag_saturate, mag_limit, draw=draw)
                                             
     ##################################################
     # Save matched table and catalog
@@ -462,8 +462,8 @@ def Match_Mask_Measure(hdu_path,
                                                 mag_limit=mag_limit,
                                                 mag_saturate=mag_saturate,
                                                 r_scale=r_scale,
-                                                width_cross=width_cross,
-                                                width_ring=width_ring,
+                                                width_cross=(width_cross/pixel_scale),
+                                                width_ring=(width_ring/pixel_scale),
                                                 obj_name=obj_name,
                                                 mag_name=mag_name_cat,
                                                 save=save, dir_name=dir_name)
@@ -489,15 +489,9 @@ def Run_PSF_Fitting(hdu_path,
                     r_scale=12,
                     mag_limit=15,
                     mag_threshold=[13.5,11.],
-                    mask_type='aper',
-                    mask_obj=None,
-                    wid_strip=24,
-                    n_strip=48,
-                    SB_threshold=24.5,
+                    mask_param=mask_param_default,
                     resampling_factor=1,
                     n_spline=3,
-                    r_core=24,
-                    r_out=None,
                     cutoff=True,
                     n_cutoff=4,
                     theta_cutoff=1200,
@@ -558,27 +552,12 @@ def Run_PSF_Fitting(hdu_path,
     mag_threshold : [float, float], default: [14, 11]
         Magnitude theresholds to classify faint stars, medium bright stars and
         very bright stars. The conversion from brightness is using a static PSF.
-    mask_type : 'aper' or 'brightness', optional, default 'aper'
-        "aper": aperture masking
-        "brightness": brightness-limit masking
-    mask_obj : str, optional, default None
-        full path to the target object mask (w/ the same shape with image)
-    wid_strip : int, optional, default 24
-        Width of strip in pixel for masks of very bright stars.
-    n_strip : int, optional, default 48
-        Number of strip for masks of very bright stars.
-    SB_threshold : float, optional, default 24.5
-        Surface brightness upper limit for masking.
-        Only used if mask_type = 'brightness'.
+    mask_param: dict, optional
+        Parameters setting up the mask map.
+        See doc string of image.make_mask for details.
     n_spline : int, optional, default 3
         Number of power-law component for the aureole models.
         The speed goes down as n_spline goes up. Default is 3.
-    r_core : int or [int, int], optional, default 24
-        Radius (in pix) for the inner mask of [very, medium]
-        bright stars. Default is 1' for Dragonfly.
-    r_out : int or [int, int] or None, optional, default None
-        Radius (in pix) for the outer mask of [very, medium]
-        bright stars. If None, turn off outer mask.
     cutoff : bool, optional, default True
         If True, the aureole will be cutoff at theta_cutoff.
     n_cutoff : float, optional, default 4
@@ -588,8 +567,8 @@ def Run_PSF_Fitting(hdu_path,
         Cutoff range (in arcsec) for the aureole model.
         Default is 20' for Dragonfly.
     core_param: dict, optional
-        Estimate of parameters of the PSF core.
-        Will be derived from stacked PSF (does not need to be accurate).
+        Initial estimate of parameters of the PSF core (not needed to be accurate).
+        The values will be fitted from stacked PSF.
         "frac": fraction of aureole
         "beta": moffat beta
         "fwhm": moffat fwhm, in arcsec (optional)
@@ -681,7 +660,8 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     # Read Image and Table
     ############################################
-    from .image import ImageList, DF_Gain
+#    from . import DF_Gain
+    from .image import ImageList
     from .utils import background_stats
     
     # Read quantities from header
@@ -726,21 +706,12 @@ def Run_PSF_Fitting(hdu_path,
     # Masking
     ############################################
     from .mask import Mask
-    
-    if mask_type=='brightness':
-        from .utils import SB2Intensity
-        count = SB2Intensity(SB_threshold, DF_Images.bkg,
-                             DF_Images.ZP, DF_Image.pixel_scale)[0]
-    elif mask_type=='aper':
-        count = None
         
     # Mask faint and centers of bright stars
-    DF_Images.make_mask(stars_b, dir_measure,
-                        by=mask_type, r_core=r_core, r_out=None,
-                        wid_strip=wid_strip, n_strip=n_strip, dist_strip=None,
-                        wid_cross=10,
-                        sn_thre=2.5, draw=draw, mask_obj=mask_obj,
-                        save=save, save_dir=plot_dir)
+    mask_param_default.update(mask_param)
+
+    DF_Images.make_mask(stars_b, dir_measure, mask_param=mask_param_default,
+                        draw=draw, save=save, save_dir=plot_dir)
 
     # Collect stars for fit. Choose if only use brightest stars
     if brightest_only:
@@ -800,7 +771,7 @@ def Run_PSF_Fitting(hdu_path,
     psf.fit_psf_core_1D(image_psf,
                         obj_name=obj_name, band=band,
                         save=save, save_dir=plot_dir)
-    breakpoint()
+
     ############################################
     # Set Basement Image
     ############################################
@@ -812,7 +783,7 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=30, theta_out=300,
+                            theta_in=30, theta_out=360,
                             n_min=1.1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
@@ -890,6 +861,8 @@ def Run_PSF_Fitting(hdu_path,
         s.generate_fit(psf, stars[i], image_base=DF_Images[i].image_base)
             
         if draw:
+            r_core = mask_param['r_core']
+
             s.cornerplot(figsize=(18, 16),
                          save=save, save_dir=plot_dir, suffix=suffix)
 

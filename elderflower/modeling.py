@@ -45,7 +45,7 @@ from .io import logger
 from .utils import fwhm_to_gamma, gamma_to_fwhm
 from .utils import Intensity2SB, SB2Intensity
 from .utils import round_good_fft, calculate_psf_size
-from .image import DF_pixel_scale
+from . import DF_pixel_scale
 
 ############################################
 # Functions for making PSF models
@@ -1698,7 +1698,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
         image_stars_noise = add_image_noise(image_stars, psf_fit.bkg_std)
         noise_image = image_stars_noise - image_stars
         bkg_image = psf_fit.bkg * np.ones((nY, nX))
-        logger.info("   - Background = %.2f +/- %.2f"%(psf_fit.bkg, psf_fit.bkg_std))
+        logger.info("   - Background = %.3g +/- %.3g"%(psf_fit.bkg, psf_fit.bkg_std))
     else:
         noise_image = bkg_image = np.zeros_like(image_stars)
    
@@ -1796,7 +1796,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
         return prior_tf_mof
     
     else:
-        Prior_n0 = stats.truncnorm(a=-3, b=3., loc=n_est, scale=d_n0)
+        Prior_n0 = stats.norm(loc=n_est, scale=d_n0)
         # n0 : N(n, d_n0)
         Prior_logtheta1 = stats.uniform(loc=log_t_in, scale=Dlog_t)
         # log theta1 : log t_in - log t_out  arcsec
@@ -1847,7 +1847,7 @@ def set_prior(n_est, mu_est, std_est, n_spline=2,
 
 
 def prior_tf_sp(u, Priors, n_spline=3,
-                d_n=0.2, n_min=1.1, n_max=4, n_est=3.3, d_n0=0.2,
+                d_n=0.2, n_min=1.2, n_max=3.5, n_est=3.3, d_n0=0.2,
                 leg2d=False, fix_n0=False, flexible=False,
                 fix_theta=False, log_t_s=[90, 180], log_t_out=300,
                 K=1, fit_sigma=True, fit_frac=False):
