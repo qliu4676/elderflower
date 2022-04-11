@@ -871,12 +871,12 @@ def plot_bright_star_profile(tab_target, table_norm, res_thumb,
     ax.set_prop_cycle(plt.cycler('color', cmap))
     
     mag_min, mag_max = tab_target[mag_name].min(), tab_target[mag_name].max()
-    breakpoint()
+
     for i, (num, sky_m, mag) in enumerate(zip(list(res_thumb.keys())[::-1],
                                               sky_mean_s[::-1],tab_target[mag_name][::-1])):
         
         if num in tab_target["NUMBER"]:
-            alpha = min(0.05*(mag_max+2-mag), 0.8) 
+            alpha = min(0.05*(mag_max+2-mag), 0.8)
             errorbar = True if mag<10 else False
             ms = max((15-mag), 0)
             lw = max((12-mag), 1.5)
