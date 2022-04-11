@@ -64,11 +64,11 @@ def HistEqNorm(data):
 
 def vmin_Nmad(img, N=3):
     """ lower limit of visual imshow defined by N mad_std above median """
-    return np.median(img) - N * mad_std(img)
+    return np.nanmedian(img) - N * mad_std(img)
 
-def vmax_Nsig(img, N=2):
-    """ upper limit of visual imshow defined by N sigma above median """
-    return np.median(img) + N * np.std(img)
+def v_Nsig(img, N=2):
+    """ upper/lower limit of visual imshow defined by N sigma above/below median """
+    return np.nanmedian(img) + N * np.nanstd(img)
 
 def colorbar(mappable, pad=0.2, size="5%", loc="right",
              ticks_rot=None, ticks_size=12, color_nan='gray', **args):
@@ -135,17 +135,17 @@ def display_background(image, back):
     """ Display fitted background """
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(13,4))
     ax1.imshow(image, aspect="auto", cmap="gray",
-               norm=LogNorm(vmin=vmin_Nmad(image, N=3), vmax=vmax_Nsig(image, N=2)))
+               norm=LogNorm(vmin=vmin_Nmad(image, N=3), vmax=v_Nsig(image, N=2)))
     im2 = ax2.imshow(back, aspect="auto", cmap='gray')
     colorbar(im2)
     ax3.imshow(image - back, aspect="auto", cmap='gray',
-               norm=LogNorm(vmin=0., vmax=vmax_Nsig(image - back, N=2)))
+               norm=LogNorm(vmin=0., vmax=v_Nsig(image - back, N=2)))
     plt.tight_layout()
     
 def display_source(image, segm, mask, back, random_state=12345):
     """ Display soruce detection and deblend around the target """
     bkg_val = np.median(back)
-    vmin, vmax = vmin_Nmad(image, N=3), vmax_Nsig(image)
+    vmin, vmax = vmin_Nmad(image, N=3), v_Nsig(image)
     
     fig, (ax1,ax2,ax3) = plt.subplots(nrows=1,ncols=3,figsize=(13,4))
     ax1.imshow(image, norm=LogNorm(vmin=vmin, vmax=vmax))

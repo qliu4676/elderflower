@@ -1423,6 +1423,7 @@ def write_downsample_fits(fn, fn_out,
         list of keyword to preserve in the output fits
     wcs_out: wcs, optional, default None
         output target wcs. must have shape info.
+        If given, scale will be overriden.
         
     Notes
     -----
@@ -1442,10 +1443,12 @@ def write_downsample_fits(fn, fn_out,
     if (wcs_out is not None) & hasattr(wcs_out, 'pixel_shape'):
         # use input wcs and shape
         shape_out = wcs_out.pixel_shape
+        logger.warning('Rescaling with given shape: ', shape_out)
     else:
         # make new wcs and shape according to scale factor
         wcs_out = downsample_wcs(wcs_input, scale)
         shape_out = (int(data.shape[0]*scale), int(data.shape[1]*scale))
+        logger.warning('Rescaling with factor: ', scale)
 
     # reproject the image by new wcs
     data_rp, _ = reproject_interp((data, wcs_input), wcs_out,
@@ -1457,8 +1460,6 @@ def write_downsample_fits(fn, fn_out,
         if key in header.keys():
             header_out[key] = header[key]
             
-    header_out['RESCALE'] = scale
-    
     # write new fits
     fits.writeto(fn_out, data_rp, header=header_out, overwrite=True)
     logger.info('Resampled image saved to: {}'.format(fn_out))

@@ -29,6 +29,7 @@ def Run_Detection(hdu_path,
                   pixel_scale=DF_pixel_scale,
                   ref_cat='APASSref.cat',
                   apass_dir=None,
+                  sep_match=2,
                   **SE_kwargs):
                   
     """
@@ -77,6 +78,9 @@ def Run_Detection(hdu_path,
         If not found, it will generate a reference catalog.
     apass_dir : str, optional, default None
         Full path of the diectory of the APASS catalogs.
+    sep_match : float, optional, default 2
+        Maximum separation (in arcsec) for crossmatch with APASS.
+        Not used if ZP is given in the header.
         
     Returns
     -------
@@ -149,19 +153,21 @@ def Run_Detection(hdu_path,
                                         PIXEL_SCALE=pixel_scale,
                                         FILTER_NAME=default_conv,
                                         STARNNW_NAME=default_nnw)
-                                        
+            
             # Load (APASS) reference catalog
             ref_cat = os.path.join(work_dir, "{0}.{1}".format(*os.path.basename(ref_cat).rsplit('.', 1)))
             if os.path.exists(ref_cat):
                 refcat = Table.read(ref_cat, format='ascii')
             else:
                 logger.info("Generate APASS reference catalog... It will take some time.")
-                ra_range = header['CRPIX1'] * header['CD1_1']
-                dec_range = header['CRPIX2'] * header['CD2_2']
-
-                minra, maxra = sorted([header['CRVAL1'] - ra_range, header['CRVAL1'] + ra_range])
-                mindec, maxdec = sorted([header['CRVAL2'] - dec_range, header['CRVAL2'] + dec_range])
+                ra_range = abs(header['NAXIS1'] * header['CD1_1'])
+                dec_range = abs(header['NAXIS2'] * header['CD2_2'])
                 
+                maxra = header['CRVAL1'] - header['CRPIX1'] * header['CD1_1']
+                mindec = header['CRVAL2'] - header['CRPIX2'] * header['CD2_2']
+                minra = maxra - ra_range
+                maxdec = mindec + dec_range
+
                 bounds_cat = [mindec, maxdec, minra, maxra]
                 if apass_dir!=None:
                     if os.path.exists(apass_dir):
@@ -172,8 +178,8 @@ def Run_Detection(hdu_path,
                     raise FileNotFoundError('APASS directory not available.')
 
             # Crossmatch SE catalog with reference catalog
-            imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=2.)
-            
+            imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=sep_match)
+            breakpoint()
             # Get the median ZP from the crossmatched catalog
             ZP = np.median(refcat_match[band] - imagecat_match[band])
             logger.info("Matched median zero-point = {:.3f}".format(ZP))
