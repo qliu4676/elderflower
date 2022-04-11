@@ -227,7 +227,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     
     fig, (ax1,ax2,ax3) = plt.subplots(ncols=3, nrows=1, figsize=(20,6), dpi=100)
     
-    im1 = ax1.imshow(image, cmap='gray', norm=LogNorm(vmin=vmin, vmax=1e4))
+    display(image, fig=fig, ax=ax1)
     ax1.set_title("Image")
     
     n_label = seg_map.max()

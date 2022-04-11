@@ -505,6 +505,7 @@ def Run_PSF_Fitting(hdu_path,
                     theta_0=5,
                     n0_=None,
                     fit_n0=True,
+                    fit_n0_range=[20,40],
                     fix_n0=False,
                     fit_sigma=True,
                     fit_frac=False,
@@ -584,6 +585,8 @@ def Run_PSF_Fitting(hdu_path,
         Power index of the first component, only used if fix_n0=True.
     fit_n0 : bool, optional, default True
         If True, fit n0 from profiles of bright stars before the Bayesian fitting.
+    fit_n0_range : 2-list, optional, default [20, 40]
+        Range for fitting n0 in arcsec
     fix_n0 : bool, optional, default False
         If True, n0 will be fixed to that value in the fitting.
         Only set as True when n0 is known to be proper of for test purpose.
@@ -736,7 +739,7 @@ def Run_PSF_Fitting(hdu_path,
     else:
         DF_Images.fit_n0(dir_measure,
                          pixel_scale=pixel_scale,
-                         fit_range=[20, 40],
+                         fit_range=fit_n0_range,
                          mag_max=13.5, mag_limit=mag_limit,
                          r_scale=r_scale, sky_std=std,
                          draw=draw, save=save,

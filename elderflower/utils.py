@@ -1871,7 +1871,8 @@ def fit_n0(dir_measure, bounds,
 
         tab_fit = tab_norm[tab_norm['MAG_AUTO_corr']<mag_max][:N_fit]
         if len(tab_fit)==0:
-            msg = "No enought bright stars in this region. Include n0 in the fitting."
+            msg = "No enought bright stars in this region.\n"
+            msg += "Use guess n0=3, dn0=0.3. Include n0 in the fitting."
             logger.warning(msg)
             return None, None
             
@@ -1921,7 +1922,7 @@ def fit_n0(dir_measure, bounds,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
-            ax.annotate("Brightest",(3*pixel_scale, I_norm-1.5),fontsize=8)
+            ax.annotate("Brightest",(r0-2*pixel_scale, I_norm+1.5),fontsize=12)
 
         if draw:
             ax.set_xlim(1.5*pixel_scale, 4e2)
@@ -1936,8 +1937,10 @@ def fit_n0(dir_measure, bounds,
                                 bbox_transform=ax.transAxes)
             
     else:
-        logger.warning("r0 is out of fit_range! n0 will be included in the fitting.")
-        return None, None
+        msg = "r0 is out of fit_range! Try change fit_range to include r_scale.\n"
+        msg += "Use guess n0=3, dn0=0.3. n0 will be included in the fitting."
+        logger.warning(msg)
+        return 3, 0.3
 
     if norm=="intp":
         p_log_linear = partial(log_linear, x0=r0, y0=I_norm)
