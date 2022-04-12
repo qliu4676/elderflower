@@ -179,7 +179,7 @@ def Run_Detection(hdu_path,
 
             # Crossmatch SE catalog with reference catalog
             imagecat_match, refcat_match = match_catalogues(SE_catalog, refcat, band, sep_max=sep_match)
-            breakpoint()
+
             # Get the median ZP from the crossmatched catalog
             ZP = np.median(refcat_match[band] - imagecat_match[band])
             logger.info("Matched median zero-point = {:.3f}".format(ZP))
@@ -506,6 +506,7 @@ def Run_PSF_Fitting(hdu_path,
                     n0_=None,
                     fit_n0=True,
                     fit_n0_range=[20,40],
+                    fit_theta0_range=[30,300],
                     fix_n0=False,
                     fit_sigma=True,
                     fit_frac=False,
@@ -587,6 +588,8 @@ def Run_PSF_Fitting(hdu_path,
         If True, fit n0 from profiles of bright stars before the Bayesian fitting.
     fit_n0_range : 2-list, optional, default [20, 40]
         Range for fitting n0 in arcsec
+    fit_theta0_range : 2-list, optional, default [30, 300]
+        Range for fitting theta0 in arcsec
     fix_n0 : bool, optional, default False
         If True, n0 will be fixed to that value in the fitting.
         Only set as True when n0 is known to be proper of for test purpose.
@@ -792,7 +795,7 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
-                            theta_in=30, theta_out=360,
+                            theta0_range=fit_theta0_range,
                             n_min=1.1, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,

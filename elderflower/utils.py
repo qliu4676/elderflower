@@ -1443,12 +1443,12 @@ def write_downsample_fits(fn, fn_out,
     if (wcs_out is not None) & hasattr(wcs_out, 'pixel_shape'):
         # use input wcs and shape
         shape_out = wcs_out.pixel_shape
-        logger.warning('Rescaling with given shape: ', shape_out)
+        logger.info('Rescaling with given shape: {}'.format(shape))
     else:
         # make new wcs and shape according to scale factor
         wcs_out = downsample_wcs(wcs_input, scale)
         shape_out = (int(data.shape[0]*scale), int(data.shape[1]*scale))
-        logger.warning('Rescaling with factor: ', scale)
+        logger.info('Rescaling with factor: {}'.format(scale))
 
     # reproject the image by new wcs
     data_rp, _ = reproject_interp((data, wcs_input), wcs_out,
@@ -1922,7 +1922,7 @@ def fit_n0(dir_measure, bounds,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
-            ax.annotate("Brightest",(r0-2*pixel_scale, I_norm+1.5),fontsize=12)
+            ax.annotate("Brightest",(r0-5*pixel_scale, I_norm+1.5),fontsize=12)
 
         if draw:
             ax.set_xlim(1.5*pixel_scale, 4e2)

@@ -638,8 +638,7 @@ class ImageList(ImageButler):
                       draw_real=True,
                       n_min=1.1,
                       d_n0_min=0.1,
-                      theta_in=50,
-                      theta_out=300,
+                      theta0_range=[50, 300],
                       method='nested',
                       verbose=True):
         """ Container for fit storing prior and likelihood function """
@@ -685,7 +684,9 @@ class ImageList(ImageButler):
                     msg = "   - n0 will not be included in the full fitting."
                     msg += " Adopt fitted value n0 = {:.3f}.".format(n0)
                     logger.info(msg)
-                
+            
+            theta_in, theta_out = theta0_range
+            
             if theta_in is None:
                 theta_in = self.Masks[i].r_core_m * self.pixel_scale
                 
