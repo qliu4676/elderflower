@@ -1,3 +1,4 @@
 include README.md LICENSE
 include *.txt *.yml
+recursive-include docs/source/images elderflower.png Cornerplot2p_test.png subtract_stars_by_psf.png
 recursive-include configs *
