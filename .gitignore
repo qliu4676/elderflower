@@ -108,8 +108,4 @@ ENV/
 .DS_Store
 
 *.pyc
-*.pyc
-elderflower/__pycache__/modeling.cpython-37.pyc
-*.pyc
-*.pyc
-*.pyc
+elderflower/__pycache__/*.pyc

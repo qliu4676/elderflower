@@ -263,7 +263,7 @@ class Image(ImageButler):
                                                     use_PS1_DR2=use_PS1_DR2,
                                                     verbose=False)
         
-        CT = calculate_color_term(tab_target_full, mag_range=[13,18],
+        CT = calculate_color_term(tab_target_full, mag_range=[mag_saturate,mag_limit+2],
                                   mag_name=mag_name_cat, draw=draw)
         
         tab_target["MAG_AUTO_corr"] = tab_target[mag_name_cat] + CT

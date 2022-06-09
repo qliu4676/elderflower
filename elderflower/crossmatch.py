@@ -383,7 +383,7 @@ def cross_match_PS1(band, wcs_data,
     b_name = band.lower()
     
     if sep is None:
-        sep = pixel_scale
+        sep = pixel_scale * u.arcsec
     
     if use_PS1_DR2:
         from urllib.error import HTTPError
@@ -396,7 +396,7 @@ def cross_match_PS1(band, wcs_data,
                                                 SE_cat_target,
                                                 bounds_list,
                                                 pixel_scale=pixel_scale,
-                                                sep=sep * u.arcsec,
+                                                sep=sep,
                                                 mag_limit=mag_limit,
                                                 band=b_name,
                                                 verbose=verbose)
@@ -416,7 +416,7 @@ def cross_match_PS1(band, wcs_data,
                                         SE_cat_target,
                                         bounds_list,
                                         pixel_scale=pixel_scale,
-                                        sep=sep * u.arcsec,
+                                        sep=sep,
                                         mag_limit=mag_limit,
                                         mag_name=mag_name,
                                         verbose=verbose)

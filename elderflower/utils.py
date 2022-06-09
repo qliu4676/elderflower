@@ -1369,7 +1369,7 @@ def transform_table_coordinates(table, filename, scale=0.5):
 def downsample_wcs(wcs_input, scale=0.5):
     """ Downsample the input wcs along an axis using {CDELT, CRPIX} FITS convention """
 
-    header = wcs_input.to_header()
+    header = wcs_input.to_header(relax=True)
     shape = wcs_input.pixel_shape
     
     if 'PC1_1' in header.keys():
@@ -2242,9 +2242,11 @@ def make_segm_from_catalog(catalog_star,
                            mag_name='rmag', mag_limit=22,
                            obj_name='', band='G',
                            ext_cat=None, draw=True,
+                           parallel=False,
                            save=False, dir_name='./Measure'):
     """
-    Make segmentation map from star catalog. Aperture size used is based on SE semg map.
+    Make segmentation map from star catalog.
+    Mask aperture sizes are evaluated from SE segmentation maps.
     
     Parameters
     ----------
@@ -2282,31 +2284,88 @@ def make_segm_from_catalog(catalog_star,
     # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
     
-    # Generate object apertures
-    apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
-             for (X_c,Y_c, r) in zip(catalog['X_CATALOG'], catalog['Y_CATALOG'], R_est)]
-    
-    # Further mask for bright extended sources
-    if ext_cat is not None:
-        if len(ext_cat)>0:
-            for (X_c,Y_c, a, b, theta) in zip(ext_cat['X_IMAGE'],
-                                              ext_cat['Y_IMAGE'],
-                                              ext_cat['A_IMAGE'],
-                                              ext_cat['B_IMAGE'],
-                                              ext_cat['THETA_IMAGE'],):
-                pos = (X_c-Xmin, Y_c-Ymin)
-                theta_ = np.mod(theta, 360) * np.pi/180
-                aper = EllipticalAperture(pos, a*6, b*6, theta_)
-                apers.append(aper)
-            
     # Draw segment map generated from the catalog
     seg_map = np.zeros((nY, nX))
     
-    # Segmentation k sorted by mag of source catalog
-    for (k, aper) in enumerate(apers):
-        star_ma = aper.to_mask(method='center').to_image((nY, nX))
-        if star_ma is not None:
-            seg_map[star_ma.astype(bool)] = k+2
+    def assign_labels_from_apertures(apers, seg_map, label_ini=1):
+        # Segmentation k sorted by mag of source catalog
+        for (k, aper) in enumerate(apers):
+            star_ma = aper.to_mask(method='center').to_image(seg_map.shape)
+            if star_ma is not None:
+                seg_map[star_ma.astype(bool)] = k + label_ini
+        return seg_map
+    
+    if parallel==False:
+        # Generate object apertures
+        apers = [CircularAperture((X_c-Xmin, Y_c-Ymin), r=r)
+                 for (X_c, Y_c, r) in zip(catalog['X_CATALOG'], catalog['Y_CATALOG'], R_est)]
+        
+        # Further mask for bright extended sources
+        if ext_cat is not None:
+            if len(ext_cat)>0:
+                for (X_c,Y_c, a, b, theta) in zip(ext_cat['X_IMAGE'],
+                                                  ext_cat['Y_IMAGE'],
+                                                  ext_cat['A_IMAGE'],
+                                                  ext_cat['B_IMAGE'],
+                                                  ext_cat['THETA_IMAGE'],):
+                    pos = (X_c-Xmin, Y_c-Ymin)
+                    theta_ = np.mod(theta, 360) * np.pi/180
+                    aper = EllipticalAperture(pos, a*6, b*6, theta_)
+                    apers.append(aper)
+        
+        seg_map = assign_labels_from_apertures(apers, seg_map, label_ini=1)
+        
+    else:
+        L_trunk = 1000  # Y size of segment trunk
+        catalog.sort('Y_CATALOG') # sorted by Y_c
+        N_trunk = nY // L_trunk
+        
+        def make_segm_trunk(i_trunk, catalog, radius):
+            seg_map_trunk = np.zeros((nY_trunk, nX))  # SLICE OF SEGM MAP
+            
+            if i_trunk == N_trunk-1:
+                nY_trunk = nY % L_trunk      # mod
+            else:
+                nY_trunk = L_trunk
+                
+            Y_trunk_min = Ymin + i_trunk*L_trunk    # min Y value in the trunk
+            
+            # make Y slice of catalog & radii
+            trunk = abs(catalog['Y_CATALOG']-(Y_trunk_min+L_trunk//2))<=L_trunk//2
+            cat_trunk = catalog[trunk]
+            R_trunk = radius[trunk]
+            
+            apers = [CircularAperture((X_c-Xmin, Y_c-Y_trunk_min), r=r)
+            for (X_c, Y_c, r) in zip(cat_trunk['X_CATALOG'], cat_trunk['Y_CATALOG'], R_trunk)]
+            
+            # Initial label of the trunk segm
+            lab_ini = len(catalog[catalog['Y_CATALOG']<Y_trunk_min]) + 1
+            
+            # Assign labels to segm trunk
+            seg_map_trunk = assign_labels_from_apertures(apers, seg_map_trunk, lab_ini)
+            return seg_map_trunk
+            
+        p_make_segm_trunk = partial(make_segm_trunk, catalog=catalog, radius=R_est)
+
+        results = parallel_compute(np.arange(N_trunk), p_make_segm_trunk,
+                                   lengthy_computation=True, verbose=False)
+#        results = [p_make_segm_trunk(k) for k in range(N_trunk)]
+        seg_map = np.vstack(results)
+        
+        # Further mask for bright extended sources
+        if ext_cat is not None:
+           if len(ext_cat)>0:
+               for (X_c,Y_c, a, b, theta) in zip(ext_cat['X_IMAGE'],
+                                                 ext_cat['Y_IMAGE'],
+                                                 ext_cat['A_IMAGE'],
+                                                 ext_cat['B_IMAGE'],
+                                                 ext_cat['THETA_IMAGE'],):
+                   pos = (X_c-Xmin, Y_c-Ymin)
+                   theta_ = np.mod(theta, 360) * np.pi/180
+                   aper = EllipticalAperture(pos, a*6, b*6, theta_)
+                   apers.append(aper)
+
+        seg_map = assign_labels_from_apertures(apers, seg_map, label_ini=seg_map.max()+1)
     
     if draw:
         from .plotting import make_rand_cmap
