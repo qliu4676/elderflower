@@ -1,0 +1,3 @@
+include README.md LICENSE
+include *.txt *.yml
+recursive-include configs *

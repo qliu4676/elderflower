@@ -106,6 +106,7 @@ ENV/
 .*.swp
 .gitignore~
 .DS_Store
+elderflower/.DS_Store
 
 *.pyc
 elderflower/__pycache__/*.pyc
