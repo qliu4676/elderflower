@@ -3,8 +3,9 @@ from setuptools import setup, find_packages
 
 abspath = os.path.abspath(os.path.dirname(__file__))
 
-with open(os.path.join(abspath, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+def readme():
+    with open('README.md') as f:
+        return f.read()
 
 install_requires = []
 
@@ -23,7 +24,9 @@ setup(
 
     description='Wide-angle PSF modeling for low surface brightness imaging', 
 
-    long_description=long_description,
+    long_description=readme(),
+    
+    long_description_content_type='text/markdown',
 
     url='https://github.com/NGC4676/elderflower', 
 
