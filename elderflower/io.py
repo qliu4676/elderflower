@@ -199,7 +199,7 @@ def AsciiUpper(N):
 def save_pickle(data, filename, name=""):
     """ Save data as pickle file. """
     try:
-        logger.info(f"Saved {name} to {filename}")
+        logger.info(f"Saving {name} to {filename}")
         with open(filename, 'wb') as f:
             pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
     except PicklingError:

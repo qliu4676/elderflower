@@ -1,4 +1,4 @@
-__version__ = "0.3"
+__version__ = "0.3.3"
 
 # Pixel scale (arcsec/pixel) for reduced and raw Dragonfly data
 DF_pixel_scale = 2.5

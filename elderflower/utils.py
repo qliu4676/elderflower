@@ -157,8 +157,10 @@ def background_stats(data, header, mask, bkg_keyname="BACKVAL", **kwargs):
     logger.info("Background stats: mean = %.5g  med = %.5g  std = %.5g"%(mean, med, std))
     
     # check header key
-    bkg = find_keyword_header(header, bkg_keyname)
-    if bkg is None: bkg = med
+    if bkg_keyname in header.keys():
+        bkg = find_keyword_header(header, bkg_keyname)
+    else:
+        bkg = med
     
     return bkg, std
     

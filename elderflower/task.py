@@ -328,8 +328,9 @@ def Match_Mask_Measure(hdu_path,
     if ZP is None: ZP = find_keyword_header(header, "ZP", raise_error=True)
     
     # Get background from header or simple stats
-    bkg, std = background_stats(data, header, mask=(seg_map>0), bkg_keyname="BACKVAL")
-    
+    bkg_, std = background_stats(data, header, mask=(seg_map>0), bkg_keyname="BACKVAL")
+    if bkg is None: bkg = bkg_
+
     # Convert SE measured flux into mag
     flux = SE_cat_full["FLUX_AUTO"]
     mag = -2.5 * np.ma.log10(flux).filled(flux[flux>0].min()) + ZP
@@ -385,7 +386,7 @@ def Match_Mask_Measure(hdu_path,
                                                 SE_cat_target,
                                                 bounds_crossmatch,
                                                 pixel_scale=pixel_scale,
-                                                sep=DF_pixel_scale,
+                                                sep=pixel_scale*u.arcsec,
                                                 mag_limit=mag_limit,
                                                 use_PS1_DR2=use_PS1_DR2)
    
@@ -691,7 +692,8 @@ def Run_PSF_Fitting(hdu_path,
             
     # Get background from header or simple stats
     seg_map = fits.getdata(os.path.join(work_dir, f'{obj_name}-{band}_seg.fits'))
-    bkg, std = background_stats(data, header, mask=(seg_map>0), bkg_keyname="BACKVAL")
+    bkg_, std = background_stats(data, header, mask=(seg_map>0), bkg_keyname="BACKVAL")
+    if bkg is None: bkg = bkg_
     
     # Construct Image List
     DF_Images = ImageList(hdu_path, bounds_list,
@@ -796,7 +798,7 @@ def Run_PSF_Fitting(hdu_path,
     DF_Images.set_container(psf, stars,
                             n_spline=n_spline,
                             theta0_range=theta0_range,
-                            n_min=1.1, leg2d=leg2d,
+                            n_min=1.2, leg2d=leg2d,
                             parallel=parallel,
                             draw_real=draw_real,
                             fit_sigma=fit_sigma,

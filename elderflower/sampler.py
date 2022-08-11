@@ -108,7 +108,12 @@ class Sampler:
             msg += "# of params: {0}".format(self.ndim)
             logger.info(msg)
             
-            results = minimize(self.NLL, self.param0, method='Nelder-Mead',
+            msg = "MLE bounds:"
+            for mle_b in self.MLE_bounds:
+                msg +=  "  [{0:.3f}, {1:.3f}]".format(mle_b[0], mle_b[1])
+            logger.info(msg)
+            
+            results = minimize(self.NLL, self.param0, method='L-BFGS-B',
                                bounds=self.MLE_bounds)
                                
             self.MLE_results = results

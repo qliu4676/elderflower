@@ -232,7 +232,7 @@ def draw_mask_map(image, seg_map, mask_deep, stars,
     
     n_label = seg_map.max()
     ax2.imshow(seg_map, vmin=1, vmax=n_label-2, cmap=make_rand_cmap(n_label))
-    ax2.set_title("Deep Mask")
+    ax2.set_title("Mask")
 
     image2 = image.copy()
     image2[mask_deep] = 0
@@ -314,7 +314,7 @@ def draw_mask_map_strip(image, seg_comb, mask_comb, stars,
     ax3.plot(star_pos_A[:,0], star_pos_A[:,1], "r*",ms=18)
     ax3.set_xlim(0, shape[1])
     ax3.set_ylim(0, shape[0])
-    ax3.set_title("Sky")
+    ax3.set_title("Deep Sky")
     colorbar(im3, pad=0.1, size="2%")
     
     if r_core is not None:

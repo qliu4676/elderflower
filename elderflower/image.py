@@ -542,7 +542,7 @@ class ImageList(ImageButler):
             
             # Read a map of object masks (e.g. large galaxies) or
             # create a new one with given shape parameters.
-            # Note the object mask has full shape as SExtractor outputs
+            # Note the object mask need to have full shape as SExtractor's
             mask.make_mask_object(mask_param['mask_obj'], wcs=self.full_wcs)
             
             if hasattr(mask, 'mask_obj_field'):
@@ -609,7 +609,7 @@ class ImageList(ImageButler):
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
             
-            msg = "Estimate of Background: ({0:.3g} +/- {1:.3g}) for "
+            msg = "Estimate of Background: ({0:.4g} +/- {1:.4g}) for "
             msg = msg.format(mu_patch, std_patch) + repr(Image)
             logger.info(msg)
     
@@ -636,7 +636,7 @@ class ImageList(ImageButler):
                       brightest_only=False,
                       parallel=False,
                       draw_real=True,
-                      n_min=1.1,
+                      n_min=1.2,
                       d_n0_min=0.1,
                       theta0_range=[50, 300],
                       method='nested',
@@ -844,7 +844,7 @@ class Thumb_Image:
         b_size = round(min(shape)//5/25)*25
         
         if shape[0] >= b_size:
-            back, back_rms = background_extraction(img_thumb, b_size=b_size)
+            back, back_rms = background_extraction(img_thumb, mask=mask_thumb, b_size=b_size)
         else:
             im_ = np.ones_like(img_thumb)
             img_thumb_ma = img_thumb[~mask_thumb]
@@ -869,7 +869,7 @@ class Thumb_Image:
         else:
             segm_deb = SegmentationImage(seg_thumb)
             
-        # mask other sources in the thumbnail
+        # star_ma mask other sources in the thumbnail
         star_label = segm_deb.data[round(self.cen_star[1]), round(self.cen_star[0])]
         star_ma = ~((segm_deb.data==star_label) | (segm_deb.data==0))
         self.star_ma = star_ma

@@ -14,10 +14,16 @@ from astropy.io import fits, ascii
 from astropy.modeling import models
 from astropy.utils import lazyproperty
 
-import galsim
-from galsim import GalSimBoundsError
-
 import warnings
+
+try:
+    import galsim
+    from galsim import GalSimBoundsError
+    galsim_installed = True
+except ImportError:
+    warnings.warn("Galsim is not installed. Convolution-based star rendering is not enabled.")
+    galsim_installed = False
+
 from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
 from itertools import combinations
@@ -26,9 +32,7 @@ from functools import partial, lru_cache
 try: 
     from .parallel import parallel_compute
     parallel_enabled = True
-    
 except ImportError:
-    import warnings
     warnings.warn("Joblib / multiprocessing is not installed. Parallelization is not enabled.")
     parallel_enabled = False
 
@@ -85,8 +89,9 @@ class PSF_Model:
         if hasattr(self, 'gamma'):
             self.fwhm  = gamma_to_fwhm(self.gamma, self.beta)
             self.params['fwhm'] = self.fwhm
-            
-        self.gsparams = galsim.GSParams(folding_threshold=1e-10)
+        
+        if galsim_installed:
+            self.gsparams = galsim.GSParams(folding_threshold=1e-10)
         
         if aureole_model == "power":
             self.n0 = params['n0']
@@ -177,10 +182,13 @@ class PSF_Model:
         gamma, beta = self.gamma, self.beta
         self.fwhm = fwhm = gamma * 2. * math.sqrt(2**(1./beta)-1)
         
-        psf_core = galsim.Moffat(beta=beta, fwhm=fwhm,
-                                 flux=1., gsparams=self.gsparams) # in arcsec
-        self.psf_core = psf_core
-        return psf_core
+        if galsim_installed:
+            psf_core = galsim.Moffat(beta=beta, fwhm=fwhm,
+                                     flux=1., gsparams=self.gsparams) # in arcsec
+            self.psf_core = psf_core
+            return psf_core
+        else:
+            raise Exception("Galsim is not installed. Function disabled.")
     
     def generate_aureole(self,
                          contrast=1e6,
@@ -207,7 +215,11 @@ class PSF_Model:
         psf_size: Full image size of PSF used. In pixel.
         
         """
-        
+        if galsim_installed == False:
+            raise Exception("Galsim is not installed. Function disabled.")
+        else:
+            from galsim import Moffat, ImageF, InterpolatedImage
+            
         if psf_scale is None:
             psf_scale = self.pixel_scale
             
@@ -230,8 +242,8 @@ class PSF_Model:
             xx_psf, yy_psf, cen_psf = generate_psf_grid(psf_size)
         
         if self.aureole_model == "moffat":
-            psf_aureole = galsim.Moffat(beta=beta1, scale_radius=gamma1,
-                                        flux=1., gsparams=self.gsparams)
+            psf_aureole = Moffat(beta=beta1, scale_radius=gamma1,
+                                 flux=1., gsparams=self.gsparams)
             
         else:
             if self.aureole_model == "power":
@@ -245,11 +257,11 @@ class PSF_Model:
                                            self.n_s, theta_s_pix, 1, cen=cen_psf)
             
             # Parse the image to Galsim PSF model by interpolation
-            image_psf = galsim.ImageF(psf_model)
-            psf_aureole = galsim.InterpolatedImage(image_psf, flux=1,
-                                                   scale=psf_scale,
-                                                   x_interpolant=interpolant,
-                                                   k_interpolant=interpolant)
+            image_psf = ImageF(psf_model)
+            psf_aureole = InterpolatedImage(image_psf, flux=1,
+                                            scale=psf_scale,
+                                            x_interpolant=interpolant,
+                                            k_interpolant=interpolant)
         self.psf_aureole = psf_aureole
         self.theta_out = max_psf_range
         
@@ -1238,9 +1250,9 @@ def C_mpow1Dto2D(n_s, theta_s):
 ############################################
 
 def get_center_offset(pos):
-# Shift center for the purpose of accuracy (by default galsim round to integer!)
-    # Originally should be x_pos, y_pos = pos + 1 (ref galsim demo)
-    # But origin of star_pos in SE is (1,1) but (0,0) in python
+    """ Shift center for the purpose of accuracy (by default galsim round to integer!)
+        Originally should be x_pos, y_pos = pos + 1 (ref galsim demo)
+        But origin of star_pos in SE is (1,1) but (0,0) in python """
     x_pos, y_pos = pos
     
     x_nominal = x_pos + 0.5
@@ -1256,7 +1268,7 @@ def draw_star(k, star_pos, Flux,
               psf_star, psf_size, full_image,
               pixel_scale=DF_pixel_scale):
     """ Draw star #k at position star_pos[k] with Flux[k], using a combined PSF (psf_star) on full_image"""
-# Function of drawing, practically devised to facilitate parallelization.
+    # Function of drawing, devised to facilitate parallelization.
     stamp, bounds = get_stamp_bounds(k, star_pos, Flux, psf_star, psf_size,
                                      full_image, pixel_scale=pixel_scale)
     full_image[bounds] += stamp[bounds]
@@ -1286,6 +1298,11 @@ def get_stamp_bounds(k, star_pos, Flux,
 
 def add_image_noise(image, noise_std, random_seed=42):
     """ Add Gaussian noise image """
+    if galsim_installed == False:
+        raise Exception("Galsim is not installed. Function disabled.")
+    else:
+        from galsim import ImageF, BaseDeviate, GaussianNoise
+        
     logger.debug("Generate noise background w/ stddev = %.3g"%noise_std)
     
     Image = galsim.ImageF(image)
@@ -1299,6 +1316,12 @@ def add_image_noise(image, noise_std, random_seed=42):
 
 def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=False):
     """ Background images composed of dim stars with fixed PSF psf_base"""
+    
+    if galsim_installed == False:
+        raise Exception("Galsim is not installed. Function disabled.")
+    else:
+        from galsim import ImageF
+        
     if verbose:
         logger.info("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
     
@@ -1344,6 +1367,12 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
                 and 2) plot in real space w/ astropy model. 
 
     """
+    
+    if galsim_installed == False:
+        raise Exception("Galsim is not installed. Function disabled.")
+    else:
+        from galsim import ImageF
+    
     if verbose:
         logger.info("Generate the truth image.")
         start = time.time()
@@ -1571,7 +1600,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         psf_c = psf.psf_core
 
         # Update stellar flux:
-        z_norm[z_norm<=0] = z_norm[z_norm>0].min() # problematic negatives
+        z_norm[z_norm<=0] = np.abs(z_norm).min() # problematic negatives
         Flux = psf.I2Flux(z_norm, r=r_scale)
         stars.update_Flux(Flux) 
         
@@ -1718,7 +1747,7 @@ def generate_image_fit(psf_fit, stars, image_shape, norm='brightness',
 ############################################
 
 def set_prior(n_est, mu_est, std_est, n_spline=2,
-              n_min=1.1, d_n0=0.1, d_n=0.2, std_min=3,
+              n_min=1.2, d_n0=0.1, d_n=0.2, std_min=3,
               theta_in=50, theta_out=300, leg2d=False,
               fix_n0=False, fix_theta=False,
               fit_sigma=True, fit_frac=False):

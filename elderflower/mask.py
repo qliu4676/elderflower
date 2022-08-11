@@ -98,20 +98,25 @@ class Mask:
     def make_mask_object(self, mask_obj=None, file_obj=None,
                          wcs=None, enlarge=3):
         """
-        Read a object mask map or make it with elliptical apertures
-        given measured shape parameters.
+        Read an object mask map (e.g. giant galaxies) or make one
+        using elliptical apertures with shape parameters.
         
         Parameters
         ----------
-        mask_obj : object mask file name
-        file_obj : txt that stores shape measurements
-        wcs: astropy.wcs.WCS, note this is the full wcs not cropped one
-        enlarge : enlargement factor
+        mask_obj : str, default None
+            Object mask file name
+        file_obj : str, default None
+            Ascii file (.txt) that stores shape parameters (wcs is needed).
+        wcs: astropy.wcs.WCS
+            WCS of the image if making new mask.
+            Note this is the full wcs, not cropped one
+        enlarge : int, default 3
+            Enlargement factor
 
         Notes
         -----
-        If mask_obj ({obj_name}_maskobj.fits) exists, use it as the object mask.
-        Otherwise, it looks for file_obj ({obj_name}_shape.txt) and make a new one.
+        If mask_obj (e.g., {obj_name}_maskobj.fits) exists, use it as the object mask.
+        Otherwise, it looks for a file_obj ({obj_name}_shape.txt) and make a new one.
         The txt must have following parameters in each row, starting at line 1:
             pos : turple or array or turples
                 position(s) (x,y) of apertures

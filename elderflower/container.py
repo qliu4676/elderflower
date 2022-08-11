@@ -42,7 +42,7 @@ class Container:
             
         
     def set_prior(self, n_est, mu_est, std_est,
-                  n_min=1.1, d_n0=0.2,
+                  n_min=1.2, d_n0=0.2,
                   theta_in=50, theta_out=300):
                   
         """ Setup priors for Bayesian fitting."""
@@ -75,7 +75,7 @@ class Container:
         self.std_est = std_est
     
     def set_MLE_bounds(self, n_est, mu_est, std_est,
-                       n_min=1.1, d_n0=0.2,
+                       n_min=1.2, d_n0=0.2,
                        theta_in=50, theta_out=300):
         
         """ Setup p0 and bounds for MLE fitting """
@@ -91,23 +91,23 @@ class Container:
         log_t_in, log_t_out = np.log10(theta_in), np.log10(theta_out)
         log_theta_bounds = [(log_t_in, log_t_out) for i in range(n_spline-1)]
         
-        bkg_bounds = ([mu_est-std_est, mu_est+2*std_est])
+        bkg_bounds = [(mu_est-2*std_est, mu_est+2*std_est)]
         
         if n_spline == 2:
             self.param0 = np.array([n0, 2.2, 1.8, mu_est])
-            n_bounds = [(n0-d_n0, n0+d_n0), (n_min, 2.5)]
+            n_bounds = [(n0-d_n0, n0+d_n0), (n_min, 3.)]
         elif n_spline == 3:
             self.param0 = np.array([n0, 2.5, 2., 1.8, 2., mu_est])
-            n_bounds = [(n0-d_n0, n0+d_n0), (2., 2.5), (n_min, 2+d_n0)]
+            n_bounds = [(n0-d_n0, n0+d_n0), (2., 3.), (n_min, 2+d_n0)]
         else:
-            n_guess = np.linspace(2.5, n_min, n_spline-1)
+            n_guess = np.linspace(3., n_min, n_spline-1)
             theta_guess = np.linspace(1.8, log_t_out-0.3, n_spline-1)
             self.param0 = np.concatenate([[n0], n_guess, theta_guess, [mu_est]])
     
             n_bounds = [(n0-d_n0, n0+d_n0), (2., n0-d_n0)] + [(n_min, n0-d_n0) for i in range(n_spline-2)]
             
             logger.warning("Components > 3. The MLE might reach maxiter or maxfev.")
-            
+
         self.MLE_bounds = tuple(n_bounds + log_theta_bounds + bkg_bounds)
 
         self.n_est = n_est
