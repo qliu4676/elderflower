@@ -38,7 +38,6 @@ except ImportError:
 
 try:
     from numba import njit
-    
 except ImportError:
     def njit(*args, **kwargs):
         def dummy_decorator(func, *args, **kwargs):
@@ -1328,7 +1327,7 @@ def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=F
     start = time.time()
     nX0 = image_shape[1] + 2 * pad
     nY0 = image_shape[0] + 2 * pad
-    full_image0 = galsim.ImageF(nX0, nY0)
+    full_image0 = ImageF(nX0, nY0)
     
     star_pos = stars.star_pos_faint + pad
     Flux = stars.Flux_faint
@@ -1389,7 +1388,7 @@ def make_truth_image(psf, stars, image_shape, contrast=1e6,
         
     psf_aureole = psf.psf_aureole
     
-    full_image = galsim.ImageF(nX, nY)
+    full_image = ImageF(nX, nY)
     
     Flux_A = stars.Flux_bright
     star_pos_A = stars.star_pos_bright
@@ -1605,7 +1604,12 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         stars.update_Flux(Flux) 
         
     # Setup the canvas
-    full_image = galsim.ImageF(nX, nY)
+    if galsim_installed == False:
+        brightest_only = True
+        draw_real = True
+        full_image = np.empty((nY, nX), dtype=np.float32)
+    else:
+        full_image = galsim.ImageF(nX, nY)
         
     if not brightest_only:
         # 1. Draw medium bright stars with galsim in Fourier space
@@ -1647,16 +1651,18 @@ def generate_image_by_znorm(psf, stars, xx, yy,
                     full_image[bounds] += stamp[bounds]
                 
     if draw_real:
+    
         # Draw very bright star in real space (high cost in convolution)
         # Note origin of star_pos in SE is (1,1) but (0,0) in python
-        image_gs = full_image.array
         
         if brightest_only:
+            image_gs = 0  # no galsim image
             # Only plot the aureole. A heavy mask is required.
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            I0=I0_verybright)
         else:
-            # Plot core + aureole. 
+            image_gs = full_image.array
+            # Plot core + aureole.
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            Flux=frac * stars.Flux_verybright)
             if draw_core:

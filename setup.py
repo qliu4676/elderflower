@@ -9,18 +9,20 @@ def readme():
 
 install_requires = []
 
-#requirementPath = os.path.join(abspath, 'requirements.txt')
+requirementPath = os.path.join(abspath, 'requirements.txt')
 
-#if os.path.isfile(requirementPath):
-#    with open(requirementPath) as f:
-#        install_requires = f.read().splitlines()
+if os.path.isfile(requirementPath):
+    with open(requirementPath) as f:
+        install_requires = f.read().splitlines()
 
+import elderflower
+version = elderflower.__version__
 
 setup(
 
     name='elderflower', 
 
-    version='0.3.3',  
+    version=version,
 
     description='Wide-angle PSF modeling for low surface brightness imaging', 
 
@@ -38,7 +40,7 @@ setup(
 
     packages=find_packages(include=['elderflower','elderflower.']),
 
-    python_requires='>=3.5',
+    python_requires='>=3.7',
 
     install_requires=install_requires,
 

@@ -8,8 +8,6 @@ try:
     import seaborn as sns
     seaborn_plot = True
 except ImportError:
-    import warnings
-    warnings.warn("Seaborn is not installed. Plot with matplotlib.")
     seaborn_plot = False
 
 import matplotlib.pyplot as plt

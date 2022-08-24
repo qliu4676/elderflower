@@ -102,7 +102,7 @@ def recommend_cpu_cores(num_jobs, requested_cores=None, lengthy_computation=Fals
     requested_cores : unsigned int
         Number of logical cores to use for computation
     """
-    from multiprocessing import cpu_count
+    from multiprocess import cpu_count
     logical_cores = cpu_count()
 
     if min_free_cores is not None:

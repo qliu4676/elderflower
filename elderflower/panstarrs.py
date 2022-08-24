@@ -9,7 +9,6 @@ from astropy.table import Table
 import sys
 import re
 import numpy as np
-import pylab
 import json
 import requests
 

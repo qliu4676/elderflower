@@ -59,7 +59,7 @@ class ImageButler:
         with fits.open(hdu_path) as hdul:
             self.hdu_path = hdu_path
             if verbose: logger.info(f"Read Image: {hdu_path}")
-            self.full_image = hdul[0].data
+            self.image_full = hdul[0].data
             self.header = header = hdul[0].header
             self.full_wcs = wcs.WCS(header)
             
@@ -129,11 +129,11 @@ class Image(ImageButler):
         self.bounds = np.array([patch_Xmin0+pad, patch_Ymin0+pad,
                                 patch_Xmax0-pad, patch_Ymax0-pad])
 
-        self.image0, self.wcs0 = crop_image(self.full_image,
+        self.image0, self.wcs0 = crop_image(self.image_full,
                                             self.bounds0, wcs=full_wcs)
         
         # Cutout with pad
-        self.image, self.wcs = crop_image(self.full_image,
+        self.image, self.wcs = crop_image(self.image_full,
                                           self.bounds, wcs=full_wcs)
         
     def __str__(self):
@@ -282,7 +282,7 @@ class Image(ImageButler):
         self.tab_target = tab_target
         
         # Measure I at r0
-        wcs, image = self.full_wcs, self.full_image
+        wcs, image = self.full_wcs, self.image_full
         width_cross = int(10/self.pixel_scale)
         tab_norm, res_thumb = measure_Rnorm_all(tab_target, bounds, wcs,
                                                 image, seg_map,
