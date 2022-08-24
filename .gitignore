@@ -111,3 +111,4 @@ elderflower/.DS_Store
 *.pyc
 elderflower/__pycache__/*.pyc
 docs/source/.DS_Store
+.DS_Store

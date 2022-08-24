@@ -7,22 +7,29 @@ DF_raw_pixel_scale = 2.85
 # Gain (e-/ADU) of Dragonfly
 DF_Gain = 0.37
 
-from . import io
-from . import utils
-from . import modeling
+try:
+    pass
+except NameError:
+    __SETUP__ = False
+    
 
-from . import image
-from . import mask
-from . import crossmatch
-from . import detection
+if not __SETUP__:
+    from . import io
+    from . import utils
+    from . import modeling
 
-from . import sampler
-from . import container
-from . import task
+    from . import image
+    from . import mask
+    from . import crossmatch
+    from . import detection
 
-from . import plotting
-from . import parallel
+    from . import sampler
+    from . import container
+    from . import task
 
-from . import panstarrs
-from . import atlas
+    from . import plotting
+    from . import parallel
+
+    from . import panstarrs
+    from . import atlas
 

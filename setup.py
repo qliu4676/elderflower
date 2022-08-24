@@ -1,4 +1,5 @@
 import os
+import builtins
 from setuptools import setup, find_packages
 
 abspath = os.path.abspath(os.path.dirname(__file__))
@@ -15,6 +16,7 @@ if os.path.isfile(requirementPath):
     with open(requirementPath) as f:
         install_requires = f.read().splitlines()
 
+builtins.__SETUP__ = True
 import elderflower
 version = elderflower.__version__
 
