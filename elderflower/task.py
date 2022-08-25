@@ -619,6 +619,7 @@ def Run_PSF_Fitting(hdu_path,
     sample_method : {'auto', 'unif', 'rwalk', 'rstagger', 'slice', 'rslice', 'hslice', callable}, optional, default is 'auto'
         Samplimg method in dynesty. If 'auto', the method is 'unif' for ndim < 10,
         'rwalk' for 10 <= ndim <= 20, 'slice' for ndim > 20.
+        'mle': Maximum likelhood evaluation using scipy.
     print_progress : bool, optional, default True
         Whether to turn on the progress bar of dynesty
     draw : bool, optional, default True
@@ -776,15 +777,15 @@ def Run_PSF_Fitting(hdu_path,
                                  psf_range=theta_cutoff)
                          
     # Montage the core and the 1st model component
-    fn_psf_satck = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
-    psf_stack = fits.getdata(fn_psf_satck)
+    fn_psf_stack = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
+    psf_stack = fits.getdata(fn_psf_stack)
 
     image_psf = montage_psf_image(psf_stack, image_psf, r=10)
     
     # Fit and update core parameters
     psf.fit_psf_core_1D(image_psf,
                         obj_name=obj_name, band=band,
-                        save=save, save_dir=plot_dir)
+                        save=save, draw=draw, save_dir=plot_dir)
 
     ############################################
     # Set Basement Image
@@ -897,6 +898,10 @@ def Run_PSF_Fitting(hdu_path,
                 # Draw background
                 s.draw_background(save=save, save_dir=plot_dir,
                                   suffix=suffix)
+        else:
+            pmed, pmean, pcov = s.get_params_fit()
+            print(" - Fitting (mean) : ", np.around(pmean,3))
+            print(" - Fitting (median) : ", np.around(pmed,3))
             
         # Append the sampler
         samplers += [s]

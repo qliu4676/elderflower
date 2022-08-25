@@ -91,7 +91,7 @@ class Container:
         log_t_in, log_t_out = np.log10(theta_in), np.log10(theta_out)
         log_theta_bounds = [(log_t_in, log_t_out) for i in range(n_spline-1)]
         
-        bkg_bounds = [(mu_est-2*std_est, mu_est+2*std_est)]
+        bkg_bounds = [(mu_est-3*std_est, mu_est+3*std_est)]
         
         if n_spline == 2:
             self.param0 = np.array([n0, 2.2, 1.8, mu_est])

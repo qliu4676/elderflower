@@ -23,6 +23,7 @@ try:
 except ImportError:
     warnings.warn("Galsim is not installed. Convolution-based star rendering is not enabled.")
     galsim_installed = False
+    
 
 from copy import deepcopy
 from numpy.polynomial.legendre import leggrid2d
@@ -48,6 +49,7 @@ from .io import logger
 from .utils import fwhm_to_gamma, gamma_to_fwhm
 from .utils import Intensity2SB, SB2Intensity
 from .utils import round_good_fft, calculate_psf_size
+from .utils import NormalizationError
 from . import DF_pixel_scale
 
 ############################################
@@ -185,9 +187,10 @@ class PSF_Model:
             psf_core = galsim.Moffat(beta=beta, fwhm=fwhm,
                                      flux=1., gsparams=self.gsparams) # in arcsec
             self.psf_core = psf_core
-            return psf_core
         else:
-            raise Exception("Galsim is not installed. Function disabled.")
+            psf_core = None
+            
+        return psf_core
     
     def generate_aureole(self,
                          contrast=1e6,
@@ -215,53 +218,55 @@ class PSF_Model:
         
         """
         if galsim_installed == False:
-            raise Exception("Galsim is not installed. Function disabled.")
+            psf_aureole = None
+            psf_size = None
+            
         else:
             from galsim import Moffat, ImageF, InterpolatedImage
             
-        if psf_scale is None:
-            psf_scale = self.pixel_scale
-            
-        if self.aureole_model == "moffat":
-            gamma1, beta1 = self.gamma1, self.beta1
-            
-            if psf_range is None:
-                psf_range = max_psf_range
-            psf_size = round_good_fft(2 * psf_range // psf_scale)   
-    
-        else:
-
-            if psf_range is None:
-                psf_size = calculate_psf_size(self.n0, self.theta_0, contrast,
-                                              psf_scale, min_psf_range, max_psf_range)
+            if psf_scale is None:
+                psf_scale = self.pixel_scale
+                
+            if self.aureole_model == "moffat":
+                gamma1, beta1 = self.gamma1, self.beta1
+                
+                if psf_range is None:
+                    psf_range = max_psf_range
+                psf_size = round_good_fft(2 * psf_range // psf_scale)
+        
             else:
-                psf_size = round_good_fft(psf_range) 
-        
-            # Generate Grid of PSF and plot PSF model in real space onto it
-            xx_psf, yy_psf, cen_psf = generate_psf_grid(psf_size)
-        
-        if self.aureole_model == "moffat":
-            psf_aureole = Moffat(beta=beta1, scale_radius=gamma1,
-                                 flux=1., gsparams=self.gsparams)
+                if psf_range is None:
+                    psf_size = calculate_psf_size(self.n0, self.theta_0, contrast,
+                                                  psf_scale, min_psf_range, max_psf_range)
+                else:
+                    psf_size = round_good_fft(psf_range)
             
-        else:
-            if self.aureole_model == "power":
-                theta_0_pix = self.theta_0 / psf_scale
-                psf_model = trunc_power2d(xx_psf, yy_psf,
-                                          self.n0, theta_0_pix, I_theta0=1, cen=cen_psf)
+                # Generate Grid of PSF and plot PSF model in real space onto it
+                xx_psf, yy_psf, cen_psf = generate_psf_grid(psf_size)
+        
+            if self.aureole_model == "moffat":
+                psf_aureole = Moffat(beta=beta1, scale_radius=gamma1,
+                                     flux=1., gsparams=self.gsparams)
+                
+            else:
+                if self.aureole_model == "power":
+                    theta_0_pix = self.theta_0 / psf_scale
+                    psf_model = trunc_power2d(xx_psf, yy_psf,
+                                              self.n0, theta_0_pix, I_theta0=1, cen=cen_psf)
 
-            elif self.aureole_model == "multi-power":
-                theta_s_pix = self.theta_s / psf_scale
-                psf_model =  multi_power2d(xx_psf, yy_psf,
-                                           self.n_s, theta_s_pix, 1, cen=cen_psf)
+                elif self.aureole_model == "multi-power":
+                    theta_s_pix = self.theta_s / psf_scale
+                    psf_model =  multi_power2d(xx_psf, yy_psf,
+                                               self.n_s, theta_s_pix, 1, cen=cen_psf)
+                
+                # Parse the image to Galsim PSF model by interpolation
+                image_psf = ImageF(psf_model)
+                psf_aureole = InterpolatedImage(image_psf, flux=1,
+                                                scale=psf_scale,
+                                                x_interpolant=interpolant,
+                                                k_interpolant=interpolant)
+            self.psf_aureole = psf_aureole
             
-            # Parse the image to Galsim PSF model by interpolation
-            image_psf = ImageF(psf_model)
-            psf_aureole = InterpolatedImage(image_psf, flux=1,
-                                            scale=psf_scale,
-                                            x_interpolant=interpolant,
-                                            k_interpolant=interpolant)
-        self.psf_aureole = psf_aureole
         self.theta_out = max_psf_range
         
         return psf_aureole, psf_size   
@@ -378,9 +383,12 @@ class PSF_Model:
     @property
     def psf_star(self):
         """ Galsim object of star psf (core+aureole) """
-        frac = self.frac
-        psf_core, psf_aureole = self.psf_core, self.psf_aureole
-        return (1-frac) * psf_core + frac * psf_aureole
+        if galsim_installed:
+            frac = self.frac
+            psf_core, psf_aureole = self.psf_core, self.psf_aureole
+            return (1-frac) * psf_core + frac * psf_aureole
+        else:
+            return None
 
     def plot_PSF_model_galsim(self, contrast=None, save=False, save_dir='.'):
         """ Build and plot Galsim 2D model averaged in 1D """
@@ -420,7 +428,7 @@ class PSF_Model:
             elif Flux is None:
                 I_theta0 = I0
             else:
-                raise MyError("Both Flux and I0 are not given.")
+                raise NormalizationError("Both Flux and I0 are not given.")
                 
             Amps = np.array([moffat2d_I02Amp(alpha1, I0=I0)
                              for I0 in I_theta0])
@@ -440,7 +448,7 @@ class PSF_Model:
             elif Flux is None:
                 I_theta0 = I0
             else:
-                raise MyError("Both Flux and I0 are not given.")
+                raise NormalizationError("Both Flux and I0 are not given.")
             
             f_aureole_2d_s = np.array([lambda xx, yy, cen=pos, I=I:\
                                       trunc_power2d(xx, yy, cen=cen,
@@ -457,7 +465,7 @@ class PSF_Model:
             elif Flux is None:
                 I_theta0 = I0
             else:
-                raise MyError("Both Flux and I0 are not given.")
+                raise NormalizationError("Both Flux and I0 are not given.")
             
             f_aureole_2d_s = np.array([lambda xx, yy, cen=pos, I=I:\
                                       multi_power2d(xx, yy, cen=cen,
@@ -479,7 +487,7 @@ class PSF_Model:
                                      params0=params0,
                                      pixel_scale=self.pixel_scale,
                                      **kwargs)
-        self.frac = frac
+        self.frac = max(1e-7, min(frac,1.0))
         self.beta = beta
 
     
@@ -1135,38 +1143,6 @@ def calculate_external_light_mpow(n_s, theta_s_pix, pos_source, pos_eval, I0_sou
     I_s[(r_s==1e-3)] = 0
     
     return I_s.sum(axis=0)
-    
-# #deprecated
-# def I02I_mpow_2d(n_s, theta_s, r_s, I0=1):
-#     """ Convert Intensity I(r) at multiple r to I at theta_0 with multi-power law.
-#         theata_s and r in pixel
-        
-#         return I (# of I0, # of distance) """
-#     r_inds = np.digitize(r_s, theta_s, right=True) - 1
-#     r_inds_uni, r_inds_inv = np.unique(r_inds, return_inverse=True)
-#     I0 = np.atleast_1d(I0)
-
-#     I0_s = np.repeat(I0[:, np.newaxis], r_s.shape[-1], axis=1) 
-    
-#     I_s = I0_s / r_s**(n_s[r_inds]) / theta_s[0]**(-n_s[0])
-    
-#     factors = np.array([np.prod([theta_s[j+1]**(n_s[j+1]-n_s[j])
-#                                  for j in range(i)]) for i in r_inds_uni])
-#     I_s *= factors[r_inds_inv]
-    
-#     return I_s
-
-# #deprecated
-# def extract_external_light(I_s):
-#     inds = np.arange(I_s.shape[0])
-#     comb_inds = np.array(list(combinations(inds, 2)))
-#     mutual = (comb_inds, inds[:,np.newaxis])
-#     I_sum = np.zeros_like(I_s.shape[0])
-#     for (c_ind, I) in zip(comb_inds,I_s[mutual]):
-#         I_sum[c_ind[0]] += I[1]
-#         I_sum[c_ind[1]] += I[0]
-#     return I_sum
-
 
 def I2Flux_mpow(frac, n_s, theta_s, r, I=1):
     """ Convert Intensity I(r) at r to total flux with fraction of multi-power law.
@@ -1298,7 +1274,8 @@ def get_stamp_bounds(k, star_pos, Flux,
 def add_image_noise(image, noise_std, random_seed=42):
     """ Add Gaussian noise image """
     if galsim_installed == False:
-        raise Exception("Galsim is not installed. Function disabled.")
+        logger.warning("Galsim is not installed. Function disabled.")
+        return np.zeros_like(image)
     else:
         from galsim import ImageF, BaseDeviate, GaussianNoise
         
@@ -1316,10 +1293,10 @@ def add_image_noise(image, noise_std, random_seed=42):
 def make_base_image(image_shape, stars, psf_base, pad=50, psf_size=64, verbose=False):
     """ Background images composed of dim stars with fixed PSF psf_base"""
     
-    if galsim_installed == False:
-        raise Exception("Galsim is not installed. Function disabled.")
-    else:
+    if galsim_installed:
         from galsim import ImageF
+    else:
+        return np.zeros(image_shape)
         
     if verbose:
         logger.info("Generate base image of faint stars (flux < %.2g)."%(stars.F_bright))
@@ -1656,7 +1633,7 @@ def generate_image_by_znorm(psf, stars, xx, yy,
         # Note origin of star_pos in SE is (1,1) but (0,0) in python
         
         if brightest_only:
-            image_gs = 0  # no galsim image
+            image_gs = 0.  # no galsim image
             # Only plot the aureole. A heavy mask is required.
             func_aureole_2d_s = psf.draw_aureole2D_in_real(stars.star_pos_verybright-1,
                                                            I0=I0_verybright)

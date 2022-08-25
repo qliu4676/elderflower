@@ -109,6 +109,6 @@ ENV/
 elderflower/.DS_Store
 
 *.pyc
-elderflower/__pycache__/*.pyc
+elderflower/__pycache__/*
 docs/source/.DS_Store
 .DS_Store

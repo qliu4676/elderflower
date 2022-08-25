@@ -8,7 +8,7 @@ DF_raw_pixel_scale = 2.85
 DF_Gain = 0.37
 
 try:
-    pass
+    __SETUP__ = True
 except NameError:
     __SETUP__ = False
     

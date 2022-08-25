@@ -716,27 +716,26 @@ def plot_fit_PSF1D(results, psf,
     from .sampler import get_params_fit
     
     pixel_scale = psf.pixel_scale
-    
     frac = psf.frac
     
+    # Read and print out fitting results
+    MLE_fit = type(results) == OptimizeResult
+    if MLE_fit:
+        pmed = pmean = results.x
+    else:
+        pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
+        samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
+    
+    print(" - Fitting (mean) : ", np.around(pmean,3))
+    print(" - Fitting (median) : ", np.around(pmed,3))
+    
+    # Canvas
     if figsize is not None:
         fig, ax = plt.subplots(1,1, figsize=figsize)
     
     if truth is not None:
         print("Truth : ", psf.params)
         psf.plot1D(psf_range=900, decompose=False, label='Truth')
-    
-    MLE_fit = type(results) == OptimizeResult
-    # read fitting results
-    if MLE_fit:
-        print("MLE fitting:")
-        pmed = pmean = results.x
-    else:
-        pmed, pmean, pcov, samples_eq = get_params_fit(results, return_sample=True)
-        samples_eq_bs = bootstrap(samples_eq, bootnum=1, samples=n_bootstrap)[0]
-        
-    print(" - Fitting (mean) : ", np.around(pmean,3))
-    print(" - Fitting (median) : ", np.around(pmed,3))
     
     # Number of n and theta in the fitting
     if psf.aureole_model != "moffat":

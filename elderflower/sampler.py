@@ -7,9 +7,14 @@ import multiprocess as mp
 
 from scipy.optimize import minimize
 
-import dynesty
-from dynesty import plotting as dyplot
-from dynesty import utils as dyfunc
+try:
+    import dynesty
+    from dynesty import plotting as dyplot
+    from dynesty import utils as dyfunc
+    dynesty_installed = True
+except ImportError:
+    warnings.warn("dynesty is not installed. Only MLE method is available.")
+    dynesty_installed = False
 
 from .io import logger
 from .io import save_pickle, load_pickle
@@ -25,7 +30,8 @@ class Sampler:
                  
         """ A class for runnning the sampling and plotting results """
                  
-        if sample_method=='mle': run = 'mle'
+        if (sample_method=='mle')|(dynesty_installed==False):
+            run = 'mle'
         
         # run = False if a previous run is read
         self.run = run
@@ -135,7 +141,7 @@ class Sampler:
 
     @property
     def results(self):
-        """ Results of the dynesty dynamic sampler class """
+        """ Results of the dynesty/MLE dynamic sampler class """
         if self.run == 'nested':
             return getattr(self.dsampler, 'results', {})
         elif self.run == 'mle':
@@ -145,7 +151,7 @@ class Sampler:
     
     def get_params_fit(self, return_sample=False):
         if self.run == 'mle':
-            return self.results.x, None, None
+            return self.results.x, self.results.x, None
         else:
             return get_params_fit(self.results, return_sample)
     

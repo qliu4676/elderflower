@@ -28,6 +28,7 @@ from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
     
 from .io import logger
 from .io import save_pickle, load_pickle, check_save_path
+from .modeling import galsim_installed
 from .plotting import LogNorm, AsinhNorm, colorbar
 from . import DF_pixel_scale, DF_raw_pixel_scale
 
@@ -35,7 +36,7 @@ try:
     from reproject import reproject_interp
     reproject_install = True
 except ImportError:
-    warnings.warn("Package reproject is not installed. No rescaling available.")
+    warnings.warn("reproject is not installed. No rescaling available.")
     reproject_install = False
 
 # default SE columns for cross_match
@@ -609,15 +610,16 @@ def make_psf_2D(n_s, theta_s,
 
     # Build grid of image for drawing
     psf.pixelize(pixel_scale)
-
-    # Generate core and aureole PSF
-    psf_c = psf.generate_core()
-    psf_e, psf_size = psf.generate_aureole(contrast=1e6,
-                                           psf_range=psf_range,
-                                           psf_scale=pixel_scale)
-
-    # Plot Galasim 2D model extracted in 1D
-    if plot: psf.plot1D(xunit='arcsec')
+    
+    if galsim_installed:
+        # Generate core and aureole PSF
+        psf_c = psf.generate_core()
+        psf_e, psf_size = psf.generate_aureole(contrast=1e6,
+                                               psf_range=psf_range,
+                                               psf_scale=pixel_scale)
+       
+        # Plot Galasim 2D model extracted in 1D
+        if plot: psf.plot1D(xunit='arcsec')
     
     # Center and grid
     size = int(np.floor(psf_range/pixel_scale) * 2) + 1
@@ -1851,6 +1853,7 @@ def fit_n0(dir_measure, bounds,
     Xmin, Ymin, Xmax, Ymax = bounds
     r1, r2 = fit_range
     r0 = r_scale*pixel_scale
+    print(draw)
 
     if  r1<r0<r2:
         # read result thumbnail and norm table
@@ -1915,7 +1918,7 @@ def fit_n0(dir_measure, bounds,
                                    core_undersample=False, color='steelblue', lw=2,
                                    I_shift=I_norm-I_r0, markersize=0, alpha=0.2)
 
-        if plot_brightest:
+        if plot_brightest & draw:
             num = list(res_thumb.keys())[0]
             img0, ma0, cen0 = res_thumb[num]['image'], res_thumb[num]['mask'], res_thumb[num]['center']
             cal_profile_1d(img0, cen=cen0, mask=ma0, dr=0.8,
@@ -2483,7 +2486,7 @@ def make_psf_from_fit(sampler, psf=None,
     
     _ = psf_fit.generate_core()
     _, _ = psf_fit.generate_aureole(psf_range=psf_range, psf_scale=pixel_scale)
-    
+
     return psf_fit, params_fit
 
 
@@ -2492,12 +2495,12 @@ def calculate_reduced_chi2(fit, data, uncertainty, dof=5):
     logger.info("Reduced Chi^2 = %.5f"%chi2_reduced)
 
 
-class MyError(Exception): 
+class NormalizationError(Exception):
     def __init__(self, message):  self.message = message 
     def __str__(self): return(repr(self.message))
-    def __repr__(self): return 'MyError(%r)'%(str(self))
+    def __repr__(self): return 'Normalization Error(%r)'%(str(self))
 
-class InconvergenceError(MyError): 
+class InconvergenceError(NormalizationError): 
     def __init__(self, message):  self.message = message 
     def __repr__(self):
         return 'InconvergenceError: %r'%self.message

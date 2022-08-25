@@ -2,12 +2,13 @@ pyyaml>=5.3
 matplotlib>=3
 numpy>=1.17
 scipy>=1.2.1
+scikit-image>=0.15.0
 astroquery>=0.3.10
 multiprocess>=0.70.8
 requests>=2.21.0
 astropy>=4.0
-dynesty>=0.9.7
 photutils>=0.7.2
 joblib>=0.14
-tqdm
+numba
+Tqdm
 dill
