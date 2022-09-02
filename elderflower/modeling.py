@@ -86,10 +86,11 @@ class PSF_Model:
         if hasattr(self, 'fwhm'):
             self.gamma = fwhm_to_gamma(self.fwhm, self.beta)
             self.params['gamma'] = self.gamma
-            
-        if hasattr(self, 'gamma'):
+        elif hasattr(self, 'gamma'):
             self.fwhm  = gamma_to_fwhm(self.gamma, self.beta)
             self.params['fwhm'] = self.fwhm
+        else:
+            logger.error('Either fwhm or gamma needs to be given.')
         
         if galsim_installed:
             self.gsparams = galsim.GSParams(folding_threshold=1e-10)
@@ -128,9 +129,16 @@ class PSF_Model:
             exec('self.' + key + ' = val')
             self.params[key] = val
             
-            if ('gamma' in key) | ('theta' in key):
-                val = val / pixel_scale
-                exec('self.' + key + '_pix' + ' = val')
+        if 'fwhm' in params.keys():
+            self.gamma = fwhm_to_gamma(self.fwhm, self.beta)
+            self.params['gamma'] = self.gamma
+        elif 'gamma' in params.keys():
+            self.fwhm  = gamma_to_fwhm(self.gamma, self.beta)
+            self.params['fwhm'] = self.fwhm
+        else:
+            pass
+            
+        self.pixelize(pixel_scale)
                 
     def copy(self):
         """ A deep copy of the object """
@@ -489,6 +497,7 @@ class PSF_Model:
                                      **kwargs)
         self.frac = max(1e-7, min(frac,1.0))
         self.beta = beta
+        self.update({"frac":frac, "beta":beta})
 
     
 class Stars:

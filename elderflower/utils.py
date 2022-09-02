@@ -26,9 +26,16 @@ from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
 from photutils import detect_sources, deblend_sources
 from photutils import CircularAperture, CircularAnnulus, EllipticalAperture
     
+try:
+    import galsim
+    from galsim import GalSimBoundsError
+    galsim_installed = True
+except ImportError:
+    warnings.warn("Galsim is not installed. Convolution-based star rendering is not enabled.")
+    galsim_installed = False
+    
 from .io import logger
 from .io import save_pickle, load_pickle, check_save_path
-from .modeling import galsim_installed
 from .plotting import LogNorm, AsinhNorm, colorbar
 from . import DF_pixel_scale, DF_raw_pixel_scale
 
@@ -345,11 +352,11 @@ def identify_extended_source(SE_catalog, mag_limit=15, mag_saturate=13.5, draw=T
     outlier = clip_func(SE_catalog['MAG_AUTO'], SE_catalog['MU_MAX'])
     
     # identify bright extended sources by:
-    # (1) elliptical object or CLASS_STAR<0.5
-    # (2) brighter than mag_limit
-    # (3) lie out of MU_MAX vs MAG_AUTO relation
+    # (1) elliptical object or CLASS_STAR<0.5 or
+    # or (2) lie out of MU_MAX vs MAG_AUTO relation
+    # and (3) brighter than mag_limit
     is_extend = (SE_catalog['ELLIPTICITY']>0.7) | (SE_catalog['CLASS_STAR']<0.5)
-    is_extend = is_extend & bright & outlier
+    is_extend = (is_extend | outlier) & bright
     
     SE_catalog_extend = SE_catalog[is_extend]
     
@@ -1853,7 +1860,6 @@ def fit_n0(dir_measure, bounds,
     Xmin, Ymin, Xmax, Ymax = bounds
     r1, r2 = fit_range
     r0 = r_scale*pixel_scale
-    print(draw)
 
     if  r1<r0<r2:
         # read result thumbnail and norm table

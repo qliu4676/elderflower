@@ -218,6 +218,7 @@ def Match_Mask_Measure(hdu_path,
                        obj_name,
                        band,
                        pixel_scale=DF_pixel_scale,
+                       ZP_keyname='REFZP',
                        ZP=None,
                        bkg=None,
                        field_pad=50,
@@ -261,6 +262,9 @@ def Match_Mask_Measure(hdu_path,
         Filter name.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel.
+    ZP_keyname : str, optional, default 'REFZP'
+        Keyword names of zero point in the header.
+        If not found, a value can be passed by ZP.
     ZP : float or None, optional, default None
         Zero point value (if None, read ZP from header).
     bkg : float or None, optional, default None
@@ -440,8 +444,8 @@ def Match_Mask_Measure(hdu_path,
     for bounds in bounds_list:
         
         # Catalog bound slightly wider than the region
-        catalog_bounds = (bounds[0]-50, bounds[1]-50,
-                          bounds[2]+50, bounds[3]+50)
+        catalog_bounds = (bounds[0]-field_pad, bounds[1]-field_pad,
+                          bounds[2]+field_pad, bounds[3]+field_pad)
                           
         # Crop the star catalog and matched SE catalog
         catalog_star_patch = crop_catalog(catalog_star, catalog_bounds,
@@ -489,6 +493,7 @@ def Run_PSF_Fitting(hdu_path,
                     obj_name,
                     band,
                     pixel_scale=DF_pixel_scale,
+                    ZP_keyname='REFZP',
                     ZP=None,
                     bkg=None,
                     G_eff=None,
@@ -545,6 +550,9 @@ def Run_PSF_Fitting(hdu_path,
         Filter name
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pixel
+    ZP_keyname : str, optional, default 'REFZP'
+        Keyword names of zero point in the header.
+        If not found, a value can be passed by ZP.
     ZP : float or None, optional, default None
         Zero point value (if None, read ZP from header)
     bkg : float or None, optional, default None
@@ -682,7 +690,7 @@ def Run_PSF_Fitting(hdu_path,
     header = fits.getheader(hdu_path)
     data = fits.getdata(hdu_path)
     
-    if ZP is None: ZP = find_keyword_header(header, "ZP")
+    if ZP is None: ZP = find_keyword_header(header, ZP_keyname)
     if G_eff is None:
         N_frames = find_keyword_header(header, "NFRAMES", default=1e5)
         G_eff = DF_Gain * N_frames
@@ -746,7 +754,8 @@ def Run_PSF_Fitting(hdu_path,
         DF_Images.fit_n0(dir_measure,
                          pixel_scale=pixel_scale,
                          fit_range=fit_n0_range,
-                         mag_max=13.5, mag_limit=mag_limit,
+                         mag_max=mag_limit-2,
+                         mag_limit=mag_limit,
                          r_scale=r_scale, sky_std=std,
                          draw=draw, save=save,
                          save_dir=plot_dir)
