@@ -224,6 +224,7 @@ def Match_Mask_Measure(hdu_path,
                        field_pad=50,
                        r_scale=12,
                        mag_limit=15,
+                       mag_limit_segm=22,
                        mag_saturate=13.5,
                        width_ring=1.5,
                        width_cross=10,
@@ -277,6 +278,8 @@ def Match_Mask_Measure(hdu_path,
         Default is 30" for Dragonfly.
     mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured.
+    mag_limit_segm : float, optional, default 22
+        Magnitude limit to make segmentation
     mag_saturate : float, optional, default 13.5
         Estimate of magnitude at which the image is saturated.
         The exact value will be fit.
@@ -409,11 +412,14 @@ def Match_Mask_Measure(hdu_path,
     ##################################################
     # Save matched table and catalog
     ##################################################
+    from .utils import convert_decimal_string
     if save:
         check_save_path(dir_name, overwrite=True, verbose=False)
         
+        mag_str = convert_decimal_string(mag_limit)
+        
         tab_target_name = os.path.join(dir_name,
-       '%s-catalog_match_%smag%d.txt'%(obj_name, band, mag_limit))
+       '%s-catalog_match_%smag%s.txt'%(obj_name, band, mag_str))
         tab_target.write(tab_target_name,
                          overwrite=True, format='ascii')
 
@@ -461,6 +467,7 @@ def Match_Mask_Measure(hdu_path,
                                           bounds,
                                           estimate_radius,
                                           mag_name=mag_name,
+                                          mag_limit=mag_limit_segm,
                                           obj_name=obj_name,
                                           band=band,
                                           ext_cat=ext_cat,

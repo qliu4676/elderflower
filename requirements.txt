@@ -1,7 +1,7 @@
 pyyaml>=5.3
 matplotlib>=3
 numpy>=1.17
-scipy>=1.2.1
+scipy>=1.6.0
 scikit-image>=0.15.0
 astroquery>=0.3.10
 multiprocess>=0.70.8

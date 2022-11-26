@@ -110,6 +110,11 @@ def counter(i, number):
     if np.mod((i+1), number//4) == 0:
         logger.info("    - completed: %d/%d"%(i+1, number))
 
+def convert_decimal_string(value, n_digit=1):
+    # convert decimal number into string for file save
+    value_int = int(value)
+    value_deci = int(10**n_digit*np.round(value - value_int, n_digit))
+    return "{:d}p{:d}".format(value_int, value_deci)
 
 def round_good_fft(x):
     # Rounded PSF size to 2^k or 3*2^k
@@ -977,10 +982,12 @@ def measure_Rnorm_all(table,
     band = mag_name[0]
     range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
     
-    fn_table_norm = os.path.join(dir_name, '%s-norm_%dpix_%smag%d_%s.txt'\
-                                %(obj_name, r_scale, band, mag_limit, range_str))
-    fn_res_thumb = os.path.join(dir_name, '%s-thumbnail_%smag%d_%s.pkl'\
-                                %(obj_name, band, mag_limit, range_str))
+    mag_str = convert_decimal_string(mag_limit)
+    
+    fn_table_norm = os.path.join(dir_name, '%s-norm_%dpix_%smag%s_%s.txt'\
+                                %(obj_name, r_scale, band, mag_str, range_str))
+    fn_res_thumb = os.path.join(dir_name, '%s-thumbnail_%smag%s_%s.pkl'\
+                                %(obj_name, band, mag_str, range_str))
     
     fn_psf_satck = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
     
@@ -1541,8 +1548,11 @@ def process_resampling(fn, bounds, obj_name, band,
             
             fn_catalog = os.path.join(dir_measure,
                         "%s-catalog_PS_%s_all.txt"%(obj_name_rp, band.lower()))
+                      
+            mag_str = convert_decimal_string(mag_limit)
+            
             fn_norm = os.path.join(dir_measure, "%s-norm_%dpix_%smag%s_%s.txt"\
-                         %(obj_name_rp, r_scale, band.lower(), mag_limit, new_range))
+                         %(obj_name_rp, r_scale, band.lower(), mag_str, new_range))
                         
             transform_table_coordinates(table_faint, fn_catalog, scale)
             transform_table_coordinates(table_norm, fn_norm, scale)
@@ -1680,10 +1690,11 @@ def read_measurement_table(dir_name, bounds0,
     
     ## Read measurement for bright stars
     # Catalog name
+    mag_str = convert_decimal_string(mag_limit)
     range_str = "X[{:d}-{:d}]Y[{:d}-{:d}]"
     range_str = range_str.format(patch_Xmin0, patch_Xmax0, patch_Ymin0, patch_Ymax0)
     fname_norm = os.path.join(dir_name, "%s-norm_%dpix_%smag%s_%s.txt"\
-                            %(obj_name, r_scale, b_name, mag_limit, range_str))
+                            %(obj_name, r_scale, b_name, mag_str, range_str))
     # Check if the file exist before read
     assert os.path.isfile(fname_norm), f"Table {fname_norm} does not exist"
     
@@ -1860,13 +1871,16 @@ def fit_n0(dir_measure, bounds,
     Xmin, Ymin, Xmax, Ymax = bounds
     r1, r2 = fit_range
     r0 = r_scale*pixel_scale
-
+    
     if  r1<r0<r2:
         # read result thumbnail and norm table
         b = band.lower()
+        mag_str = convert_decimal_string(mag_limit)
         range_str = f'X[{Xmin}-{Xmax}]Y[{Ymin}-{Ymax}]'
-        fn_res_thumb = os.path.join(dir_measure, f'{obj_name}-thumbnail_{b}mag{mag_limit}_{range_str}.pkl')
-        fn_tab_norm = os.path.join(dir_measure, f'{obj_name}-norm_{r_scale}pix_{b}mag{mag_limit}_{range_str}.txt')
+        
+        fn_res_thumb = os.path.join(dir_measure, f'{obj_name}-thumbnail_{b}mag{mag_str}_{range_str}.pkl')
+        fn_tab_norm = os.path.join(dir_measure, f'{obj_name}-norm_{r_scale}pix_{b}mag{mag_str}_{range_str}.txt')
+        
         res_thumb = load_pickle(fn_res_thumb)
         tab_norm = Table.read(fn_tab_norm, format='ascii')
 
