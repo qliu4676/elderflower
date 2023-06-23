@@ -75,7 +75,7 @@ def cross_match(wcs_data, SE_catalog, bounds, radius=None,
     
     for j, (cat_name, table_name) in enumerate(catalog.items()):
         # Query from Vizier
-        result = query_vizier(catalog_name=cat_name,
+        result = query_vizier(catalog_name=table_name,
                               radius=radius,
                               columns=columns[cat_name],
                               column_filters=column_filters[cat_name],

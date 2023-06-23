@@ -12,7 +12,7 @@ from photutils.segmentation import SegmentationImage
 from .io import logger
 from .mask import mask_param_default
 from .plotting import display, AsinhNorm, colorbar
-from . import DF_pixel_scale, DF_raw_pixel_scale
+from . import DF_pixel_scale, DF_raw_pixel_scale, DF_Gain
 
 class ImageButler:
     """
@@ -43,8 +43,9 @@ class ImageButler:
     
     def __init__(self, hdu_path,
                  obj_name='', band='G',
-                 pixel_scale=DF_pixel_scale, pad=0,
-                 ZP=None, bkg=None, G_eff=None, verbose=True):
+                 pixel_scale=DF_pixel_scale,
+                 pad=0, ZP=None, bkg=None,
+                 Gain_eff=None, verbose=True):
         from .utils import crop_image
     
         self.verbose = verbose
@@ -65,7 +66,22 @@ class ImageButler:
             
         self.bkg = bkg
         self.ZP = ZP
-        self.G_eff = G_eff
+        self.Gain_eff = Gain_eff
+        
+    @lazyproperty
+    def G_eff(self):
+        """ Effective Gain """
+        if self.Gain_eff is None:
+            N_frames = find_keyword_header(self.header, "NFRAMES", default=1e5)
+            G_eff = DF_Gain * N_frames
+            if self.verbose:
+                if N_frames==1e5:
+                    logger.info("No effective Gain is given. Use sky noise.")
+                else:
+                    logger.info("Effective Gain = %.3f"%G_eff)
+            return G_eff
+        else:
+            return self.Gain_eff
             
     def __str__(self):
         return "An ImageButler Class"
@@ -178,12 +194,15 @@ class Image(ImageButler):
 
     def get_median(self,
                    colname,
-                   mag_range=[14, 16],
+                   mag_range=[14., 18],
                    mag_name="MAG_AUTO_corr"):
         """ Return median value of SE measurements in the image """
         tab = self.table_norm
+        tab_unsatur = tab[tab['FLAGS']<4]
+        mag_range[0] = max(mag_range[0], np.nanmin(tab_unsatur[mag_name]))
+        mag_range[1] = min(mag_range[1], np.nanmax(tab[mag_name]))
         cond = (tab[mag_name]>mag_range[0]) & (tab[mag_name]<mag_range[1])
-        return np.median(tab[cond][colname])
+        return np.nanmedian(tab[cond][colname])
         
     def assign_star_props(self, **kwargs):
         """ Assign position and flux for faint and bright stars from tables. """
@@ -230,8 +249,8 @@ class Image(ImageButler):
                             fit_empirical_aperture,
                             make_segm_from_catalog,
                             add_supplementary_SE_star,
-                            add_supplementary_atlas,
-                            measure_Rnorm_all)
+                            add_supplementary_atlas)
+        from .norm import measure_Rnorm_all
         from .crossmatch import cross_match_PS1
         from .modeling import generate_image_fit
         from .utils import check_save_path
@@ -446,7 +465,7 @@ class ImageList(ImageButler):
     def make_mask(self, stars_list, dir_measure,
                   mask_param=mask_param_default,
                   save=False, save_dir='../output/pic',
-                  draw=True, verbose=True):
+                  draw=True):
         
         """
         Make deep mask, object mask, strip mask, and cross mask.
@@ -465,37 +484,7 @@ class ImageList(ImageButler):
             Directory storing the measurement.
         mask_param: dict, optional
             Parameters setting up the mask map.
-            mask_type : 'aper' or 'brightness', default 'aper'
-                "aper": aperture-like masking
-                "brightness": brightness-limit masking
-            r_core : int or [int, int], optional, default 24
-                Radius (in pix) for the inner mask of [very, medium]
-                bright stars. Default is 1' for Dragonfly.
-            r_out : int or [int, int] or None, optional, default None
-                Radius (in pix) for the outer mask of [very, medium]
-                bright stars. If None, turn off outer mask.
-            sn_thre : float, optional, default 2.5
-                SNR threshold used for deep mask.
-            SB_threshold : float, optional, default 24.5
-                Surface brightness upper limit for masking.
-                Only used if mask_type = 'brightness'.
-            mask_obj : str, optional
-                Object mask file name. See mask.make_mask_object
-            wid_strip : int, optional, default 24
-                Width of strip in pixel for masks of very bright stars.
-            n_strip : int, optional, default 48
-                Number of strip for masks of very bright stars.
-            dist_strip : float, optional, default None
-                Range of each strip mask (in arcsec)
-                If not given, use image size.
-            wid_cross : float, optional, default 20
-                Half-width of the spike mask (in arcsec).
-            dist_cross: float, optional, default 180
-                Range of each spike mask (in arcsec) (default: 3 arcmin)
-            clean : bool, optional, default True
-                Whether to remove medium bright stars far from any available
-                pixels for fitting. A new Stars object will be stored in
-                stars_new, otherwise it is simply a copy.
+            See string doc of wide.mask
         draw : bool, optional, default True
             Whether to draw mask map
         save : bool, optional, default True
@@ -517,12 +506,12 @@ class ImageList(ImageButler):
         r_out = mask_param['r_out']
         
         # strip mask params
-        wid_strip = mask_param['wid_strip']
+        wid_strip = mask_param['width_strip']
         n_strip = mask_param['n_strip']
         dist_strip = mask_param['dist_strip']
         
         # cross mask params
-        wid_cross = mask_param['wid_cross']
+        wid_cross = mask_param['width_cross'] * mask_param['k_mask_cross']
         dist_cross = mask_param['dist_cross']
         
         if mask_type=='brightness':
@@ -535,15 +524,15 @@ class ImageList(ImageButler):
         masks = []
         
         for i, (Image, stars) in enumerate(zip(self.Images, stars_list)):
-            if verbose:
+            if self.verbose:
                 logger.info("Prepare mask for region {}.".format(i+1))
                 
-            mask = Mask(Image, stars)
+            mask = Mask(Image, stars, verbose=self.verbose)
             
             # Read a map of object masks (e.g. large galaxies) or
             # create a new one with given shape parameters.
             # Note the object mask need to have full shape as SExtractor's
-            mask.make_mask_object(mask_param['mask_obj'], wcs=self.full_wcs)
+            mask.make_mask_object(mask_param['mask_obj'])
             
             if hasattr(mask, 'mask_obj_field'):
                 # Crop the full object mask map into a smaller one
@@ -609,9 +598,10 @@ class ImageList(ImageButler):
             self.mu_est[i] = mu_patch
             self.std_est[i] = std_patch
             
-            msg = "Estimate of Background: ({0:.4g} +/- {1:.4g}) for "
-            msg = msg.format(mu_patch, std_patch) + repr(Image)
-            logger.info(msg)
+            if self.verbose:
+                msg = "Estimate of Background: ({0:.4g} +/- {1:.4g}) for "
+                msg = msg.format(mu_patch, std_patch) + repr(Image)
+                logger.info(msg)
     
     def fit_n0(self, dir_measure, N_min_fit=10, **kwargs):
         """ Fit power index of 1st component with bright stars. """
@@ -648,7 +638,7 @@ class ImageList(ImageButler):
         self.containers = []
         
         for i in range(self.N_Image):
-            if verbose:
+            if self.verbose:
                 logger.info("Region {}:".format(i+1))
             image_shape = self.Images[i].image_shape
             
@@ -660,7 +650,7 @@ class ImageList(ImageButler):
             if hasattr(self, 'n0_'):
                 # Use a given fixed n0
                 n0, d_n0 = self.n0_, 0.1
-                if verbose:
+                if self.verbose:
                     msg = "   - n0 is fixed to be a static value = {}.".format(n0)
                     logger.warning(msg)
             else:
@@ -675,12 +665,12 @@ class ImageList(ImageButler):
                 
                 if n0 is None:  n0, d_n0 = psf.n0, 0.3  # rare case
                 
-                if verbose:
+                if self.verbose:
                     logger.info("   - n0 will be included in the full fitting.")
                 
             else:
                 container.fix_n0 = self.fix_n0
-                if verbose:
+                if self.verbose:
                     msg = "   - n0 will not be included in the full fitting."
                     msg += " Adopt fitted value n0 = {:.3f}.".format(n0)
                     logger.info(msg)
@@ -697,7 +687,8 @@ class ImageList(ImageButler):
                     theta_out = int(0.8 * max(image_shape) * self.pixel_scale)
             psf.theta_out = theta_out
             
-            logger.info("theta_in = {:.2f}, theta_out = {:.2f}".format(theta_in, theta_out))
+            if self.verbose:
+                logger.info("theta_in = {:.2f}, theta_out = {:.2f}".format(theta_in, theta_out))
             
             # Set priors (Bayesian) or bounds (MLE)
             prior_kws = dict(n_min=n_min, d_n0=d_n0,
@@ -892,7 +883,7 @@ class Thumb_Image:
             kwargs passed to compute_Rnorm
         
         """
-        from .utils import compute_Rnorm
+        from .norm import compute_Rnorm
         I_mean, I_med, I_std, I_flag = compute_Rnorm(self.img_thumb,
                                                      self.star_ma,
                                                      self.cen_star,

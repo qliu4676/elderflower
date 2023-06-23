@@ -36,6 +36,7 @@ except ImportError:
     
 from .io import logger
 from .io import save_pickle, load_pickle, check_save_path
+from .numeric import log_linear, flattened_linear, piecewise_linear
 from .plotting import LogNorm, AsinhNorm, colorbar
 from . import DF_pixel_scale, DF_raw_pixel_scale
 
@@ -69,14 +70,6 @@ def coord_Array2Im(x_arr, y_arr, origin=1):
     X_IMAGE, Y_IMAGE = y_arr+origin, x_arr+origin
     return X_IMAGE, Y_IMAGE
 
-def fwhm_to_gamma(fwhm, beta):
-    """ in arcsec """
-    return fwhm / 2. / math.sqrt(2**(1./beta)-1)
-
-def gamma_to_fwhm(gamma, beta):
-    """ in arcsec """
-    return gamma / fwhm_to_gamma(1, beta)
-
 def Intensity2SB(Intensity, BKG, ZP, pixel_scale=DF_pixel_scale):
     """ Convert intensity to surface brightness (mag/arcsec^2) given the background value, zero point and pixel scale """
     I = np.atleast_1d(np.copy(Intensity))
@@ -96,19 +89,6 @@ def SB2Intensity(SB, BKG, ZP, pixel_scale=DF_pixel_scale):
     I = 10** ((SB - ZP - 2.5 * math.log10(pixel_scale**2))/ (-2.5)) + BKG
     return I
 
-def cart2pol(x, y):
-    rho = np.sqrt(x**2 + y**2)
-    phi = np.arctan2(y, x)
-    return(rho, phi)
-
-def pol2cart(rho, phi):
-    x = rho * np.cos(phi)
-    y = rho * np.sin(phi)
-    return(x, y)
-
-def counter(i, number):
-    if np.mod((i+1), number//4) == 0:
-        logger.info("    - completed: %d/%d"%(i+1, number))
 
 def convert_decimal_string(value, n_digit=1):
     # convert decimal number into string for file save
@@ -249,14 +229,6 @@ def source_detection(data, sn=2.5, b_size=120,
     return data_ma, segm_sm
 
 
-def flattened_linear(x, k, x0, y0):
-    """ A linear function flattened at (x0,y0) of 1d array """
-    return np.array(list(map(lambda x:k*x + (y0-k*x0) if x>=x0 else y0, x)))
-    
-def piecewise_linear(x, k1, k2, x0, y0):
-    """ A piecewise linear function transitioned at (x0,y0) of 1d array """
-    return np.array(list(map(lambda x:k1*x + (y0-k1*x0) if x>=x0 else k2*x + (y0-k2*x0), x)))
-
 def iter_curve_fit(x_data, y_data, func, p0=None,
                    color=None, x_min=None, x_max=None,
                    x_lab='', y_lab='',c_lab='',
@@ -302,7 +274,7 @@ def iter_curve_fit(x_data, y_data, func, p0=None,
     
     if draw:
         s = ax.scatter(x_data, y_data, c=color,
-                        s=10, cmap='viridis', alpha=0.4)
+                        s=10, alpha=0.4)
         ax.scatter(x_data[clip], y_data[clip], lw=2, s=25,
                     facecolors='none', edgecolors='orange', alpha=0.7)
         ax.plot(x_test, func(x_test, *popt), color='r')
@@ -558,10 +530,11 @@ def cal_profile_1d(img, cen=None, mask=None, back=None, bins=None,
         dz_cum = np.cumsum(dz_rbin)
 
         if plot_line:
-            r_satr = r_rbin[np.argmax(dz_cum<-0.3)] + 1e-3
+            r_satr = r_rbin[np.argmax(dz_cum<-0.5)] + 1e-3
             plt.axvline(r_satr,color="k",ls="--",alpha=0.9)
             plt.axvline(r_core,color="k",ls=":",alpha=0.9)
-            plt.axhline(I_sky,color="gray",ls="-.",alpha=0.7)
+            if yunit == "SB":
+                plt.axhline(I_sky,color="gray",ls="-.",alpha=0.7)
         
     if yunit == "Intensity":
         return r_rbin, z_rbin, logzerr_rbin
@@ -591,7 +564,7 @@ def make_psf_2D(n_s, theta_s,
     cutoff_param : dict, optional
         Parametets controlling the cutoff.
     psf_range : int, optional, default 1200
-        Range of PSF. In arcsec.
+        Range of image_psf. In arcsec.
     pixel_scale : float, optional, default 2.5
         Pixel scale in arcsec/pix
     plot : bool, optional, default False
@@ -599,7 +572,7 @@ def make_psf_2D(n_s, theta_s,
         
     Returns
     -------
-    PSF : 2d array
+    image_psf : 2d array
         Image of the PSF. Normalized to 1.
     psf : eldflower.modeling.PSF_Model
         The PSF model object.
@@ -642,10 +615,10 @@ def make_psf_2D(n_s, theta_s,
     # Draw image of PSF normalized to 1
     PSF_aureole = psf.draw_aureole2D_in_real([cen], Flux=np.array([frac]))[0]
     PSF_core = psf.draw_core2D_in_real([cen], Flux=np.array([1-frac]))[0]
-    PSF = PSF_core(xx,yy) + PSF_aureole(xx,yy)
-    PSF = PSF/PSF.sum()
+    image_psf = PSF_core(xx,yy) + PSF_aureole(xx,yy)
+    image_psf = image_psf/image_psf.sum()
     
-    return PSF, psf
+    return image_psf, psf
 
 def make_psf_1D(n_s, theta_s,
                 frac=0.3, beta=6.6, fwhm=6.,
@@ -733,532 +706,13 @@ def calculate_fit_SB(psf, r=np.logspace(0.03,2.5,100), mags=[15,12,9], ZP=27.1):
     I_tot_s = [Intensity2SB(((1-frac) * comp1 + comp2 * frac) * I,
                             0, ZP, psf.pixel_scale) for I in I_s]
     return I_tot_s
-
-
-### Class & Funcs for measuring scaling ###
-
-def compute_Rnorm(image, mask_field, cen,
-                  R=12, wid_ring=1, wid_cross=4,
-                  mask_cross=True, display=False):
-    """
-    Compute the scaling factor using an annulus.
-    Note the output values include the background level.
     
-    Paramters
-    ---------
-    image : input image for measurement
-    mask_field : mask map with masked pixels = 1.
-    cen : center of the target in image coordiante
-    R : radius of annulus in pix
-    wid_ring : half-width of annulus in pix
-    wid_cross : half-width of spike mask in pix
         
-    Returns
-    -------
-    I_mean: mean value in the annulus
-    I_med : median value in the annulus
-    I_std : std value in the annulus
-    I_flag : 0 good / 1 bad (available pixles < 5)
-    
-    """
-    
-    if image is None:
-        return [np.nan] * 3 + [1]
-    
-    cen = (cen[0], cen[1])
-    anl = CircularAnnulus([cen], R-wid_ring, R+wid_ring)
-    anl_ma = anl.to_mask()[0].to_image(image.shape)
-    in_ring = anl_ma > 0.5        # sky ring (R-wid, R+wid)
-    mask = in_ring & (~mask_field) & (~np.isnan(image))
-        # sky ring with other sources masked
-    
-    # Whether to mask the cross regions, important if R is small
-    if mask_cross:
-        yy, xx = np.indices(image.shape)
-        rr = np.sqrt((xx-cen[0])**2+(yy-cen[1])**2)
-        in_cross = ((abs(xx-cen[0])<wid_cross))|(abs(yy-cen[1])<wid_cross)
-        mask = mask * (~in_cross)
-    
-    if len(image[mask]) < 5:
-        return [np.nan] * 3 + [1]
-    
-    z_ = sigma_clip(image[mask], sigma=3, maxiters=5)
-    z = z_.compressed()
-        
-    I_mean = np.average(z, weights=anl_ma[mask][~z_.mask])
-    I_med, I_std = np.median(z), np.std(z)
-    
-    if display:
-        L = min(100, int(mask.shape[0]))
-        
-        fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9,4))
-        ax1.imshow(mask, cmap="gray", alpha=0.7)
-        ax1.imshow(mask_field, alpha=0.2)
-        ax1.imshow(image, cmap='viridis', alpha=0.7,
-                   norm=AsinhNorm(0.05, vmin=image.min(), vmax=I_med+50*I_std))
-        ax1.plot(cen[0], cen[1], 'r+', ms=10)
-        
-        ax2.hist(z,alpha=0.7)
-        
-        # Label mean value
-        plt.axvline(I_mean, color='k')
-        plt.text(0.5, 0.9, "%.1f"%I_mean,
-                 color='darkorange', ha='center', transform=ax2.transAxes)
-        
-        # Label 20% / 80% quantiles
-        I_20 = np.quantile(z, 0.2)
-        I_80 = np.quantile(z, 0.8)
-        for I, x_txt in zip([I_20, I_80], [0.2, 0.8]):
-            plt.axvline(I, color='k', ls="--")
-            plt.text(x_txt, 0.9, "%.1f"%I, color='orange',
-                     ha='center', transform=ax2.transAxes)
-        
-        ax1.set_xlim(cen[0]-L//4, cen[0]+L//4)
-        ax1.set_ylim(cen[1]-L//4, cen[1]+L//4)
-        
-        plt.show()
-        
-    return I_mean, I_med, I_std, 0
-
-
-def compute_Rnorm_batch(table_target,
-                        image, seg_map, wcs,
-                        r_scale=12, k_win=1,
-                        wid_ring=0.5, wid_cross=4,
-                        display=False, verbose=True):
-                        
-    """
-    Compute scaling factors for objects in the table.
-    Return an array with measurement and a dictionary containing maps and centers.
-    
-    Paramters
-    ---------
-    table_target : astropy.table.Table
-        SExtractor table containing measurements of sources.
-    image : 2d array
-        Full image.
-    seg_map : 2d array
-        Full segmentation map used to mask nearby sources during the measurement.
-    wcs_data : astropy.wcs.wcs
-        WCS of image.
-    r_scale : int, optional, default 12
-        Radius in pixel at which the flux scaling is measured.
-    k_win : int, optional, default 1
-        Enlargement factor for extracting thumbnails.
-    wid_ring : float, optional, default 0.5
-        Half-width in pixel of ring used to measure the scaling.
-    wid_cross : float, optional, default 4
-        Half-width  in pixel of the spike mask when measuring the scaling.
-        
-    Returns
-    -------
-    res_norm : nd array
-        A N x 5 array saving the measurements.
-        [I_mean, I_med, I_std, I_sky, I_flag]
-    res_thumb : dict
-        A dictionary storing thumbnails, mask, background and center of object.
-        
-    """
-    
-    from .image import Thumb_Image
-
-    # Initialize
-    res_thumb = {}
-    res_norm = np.empty((len(table_target), 5))
-    
-    # Iterate rows over the target table
-    for i, row in enumerate(table_target):
-        if verbose: counter(i, len(table_target))
-        num, mag_auto = row['NUMBER'], row['MAG_AUTO']
-        
-        # For brighter sources, use a broader window
-        if mag_auto <= 10.5:
-            n_win = int(40 * k_win)
-        elif 10.5 < mag_auto < 13.5:
-            n_win = int(30 * k_win)
-        elif 13.5 < mag_auto < 15:
-            n_win = int(20 * k_win)
-        else:
-            n_win = int(10 * k_win)
-        
-        # Make thumbnail of the star and mask sources
-        thumb = Thumb_Image(row, wcs)
-        thumb.extract_star(image, seg_map, n_win=n_win)
-        
-        # Measure the mean, med and std of intensity at r_scale
-        thumb.compute_Rnorm(R=r_scale,
-                            wid_ring=wid_ring,
-                            wid_cross=wid_cross,
-                            display=display)
-                            
-        I_flag = thumb.I_flag
-        if (I_flag==1) & verbose: logger.debug("Errorenous measurement: #", num)
-        
-        # Store results as dict (might be bulky)
-        res_thumb[num] = {"image":thumb.img_thumb,
-                          "mask":thumb.star_ma,
-                          "bkg":thumb.bkg,
-                          "center":thumb.cen_star}
-                          
-        # Store measurements to array
-        I_stats = ['I_mean', 'I_med', 'I_std', 'I_sky']
-        res_norm[i] = np.array([getattr(thumb, attr) for attr in I_stats] + [I_flag])
-
-    return res_norm, res_thumb
-
-def measure_Rnorm_all(table,
-                      bounds,
-                      wcs_data,
-                      image,
-                      seg_map=None,
-                      r_scale=12,
-                      mag_limit=15,
-                      mag_saturate=13.5,
-                      mag_name='rmag_PS',
-                      k_enlarge=1,
-                      width_ring=0.5,
-                      width_cross=4,
-                      obj_name="", display=False,
-                      save=True, dir_name='.',
-                      read=False, verbose=True):
-    """
-    Measure intensity at r_scale for bright stars in table.
-
-    Parameters
-    ----------
-    table : astropy.table.Table
-        SExtractor table containing measurements of sources.
-    bounds : 1d array or list
-        Boundaries of the region in the image [Xmin, Ymin, Xmax, Ymax].
-    wcs_data : astropy.wcs.wcs
-        WCS of image.
-    image : 2d array
-        Full image.
-    seg_map : 2d array, optional, default None
-        Full segmentation map used to mask nearby sources during the measurement.
-        If not given, it will be done locally by photutils.
-    r_scale : int, optional, default 12
-        Radius in pixel at which the flux scaling is measured.
-    mag_limit : float, optional, default 15
-        Magnitude upper limit below which are measured.
-    mag_saturate : float, optional, default 13.5
-        Estimate of magnitude at which the image is saturated.
-    mag_name : str, optional, default 'rmag_PS'
-        Column name of magnitude used in the table.
-    k_enlarge : int, optional, default 1
-        Enlargement factor for extracting thumbnails.
-    width_ring : float, optional, default 0.5
-        Half-width in pixel of ring used to measure the scaling.
-    width_cross : float, optional, default 4
-        Half-width  in pixel of the spike mask when measuring the scaling.
-    obj_name : str, optional
-        Object name used as prefix of saved output.
-    save : bool, optional, default True
-        Whether to save output table and thumbnails.
-    dir_name : str, optional
-        Path of saving. Use currrent one as default.
-    read : bool, optional, default False
-        Whether to read existed outputs if available.
-    
-    Returns
-    -------
-    table_norm : astropy.table.Table
-        Table containing measurement results.
-        
-    res_thumb : dict
-        A dictionary storing thumbnails, mask, background and center of object.
-        'image' : image of the object
-        'mask' : mask map from SExtractor with nearby sources masked (masked = 1)
-        'bkg' : estimated local 2d background
-        'center' : 0-based centroid of the object from SExtracror
-        
-    """
-    
-    msg = "Measure intensity at R = {0} ".format(r_scale)
-    msg += "for catalog stars {0:s} < {1:.1f} in ".format(mag_name, mag_limit)
-    msg += "{0}.".format(bounds)
-    logger.info(msg)
-    
-    band = mag_name[0]
-    range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
-    
-    mag_str = convert_decimal_string(mag_limit)
-    
-    fn_table_norm = os.path.join(dir_name, '%s-norm_%dpix_%smag%s_%s.txt'\
-                                %(obj_name, r_scale, band, mag_str, range_str))
-    fn_res_thumb = os.path.join(dir_name, '%s-thumbnail_%smag%s_%s.pkl'\
-                                %(obj_name, band, mag_str, range_str))
-    
-    fn_psf_satck = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
-    
-    if read:
-        table_norm = Table.read(fn_table_norm, format="ascii")
-        res_thumb = load_pickle(fn_res_thumb)
-        
-    else:
-        tab = table[table[mag_name]<mag_limit]
-        
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            res_norm, res_thumb = compute_Rnorm_batch(tab, image,
-                                                      seg_map, wcs_data,
-                                                      r_scale=r_scale,
-                                                      wid_ring=width_ring,
-                                                      wid_cross=width_cross,
-                                                      k_win=k_enlarge,
-                                                      display=display,
-                                                      verbose=verbose)
-        
-        keep_columns = ['NUMBER', 'MAG_AUTO', 'MAG_AUTO_corr', 'MU_MAX', mag_name] \
-                        + [name for name in tab.colnames
-                                if ('IMAGE' in name)|('CATALOG' in name)]
-        for name in keep_columns:
-            if name not in tab.colnames:
-                keep_columns.remove(name)
-        table_norm = tab[keep_columns].copy()
-    
-        for j, colname in enumerate(['Imean','Imed','Istd','Isky','Iflag']):
-            if colname=='Iflag':
-                col = res_norm[:,j].astype(int)
-            else:
-                col = np.around(res_norm[:,j], 5)
-            table_norm[colname] = col
-        
-        if save:  # save star thumbnails
-            check_save_path(dir_name, overwrite=True, verbose=False)
-            save_pickle(res_thumb, fn_res_thumb, 'thumbnail result')
-            table_norm.write(fn_table_norm, overwrite=True, format='ascii')
-    
-    # Stack non-saturated stars to obtain the inner PSF.
-    tab_stack = tab[(tab['FLAGS']<=3) & (tab['MAG_AUTO']>mag_saturate)]
-    psf_stack = stack_star_image(tab_stack, res_thumb, size=5*r_scale+1)
-    
-    if save:
-        fits.writeto(fn_psf_satck, data=psf_stack, overwrite=True)
-        logger.info(f"Saved stacked PSF to {fn_psf_satck}")
-            
-    return table_norm, res_thumb
-
-
-### Stacking PSF functions ###
-
-def resample_thumb(image, mask, center):
-    """
-    Shift and resample the thumb image & mask to have odd dimensions
-    and center at the center pixel.
-    
-    Parameters
-    ----------
-    
-    image : input image, 2d array
-    mask : input mask, 2d bool array (masked =1)
-    center : center of the target, array or turple
-    
-    Returns
-    -------
-    image_ : output image, 2d array
-    mask_ : output mask, 2d bool array (masked =1)
-    center_ : center of the target after the shift
-        
-    """
-
-    from scipy.interpolate import RectBivariateSpline
-
-    X_c, Y_c = center
-    NY, NX = image.shape
-
-    # original grid points
-    Xp, Yp = np.linspace(0, NX-1, NX), np.linspace(0, NY-1, NY)
-
-    rbspl = RectBivariateSpline(Xp, Yp, image, kx=3, ky=3)
-    rbspl_ma = RectBivariateSpline(Xp, Yp, mask, kx=1, ky=1)
-
-    # new NAXIS
-    NY_ = NX_ = int(np.floor(image.shape[0]/2) * 2) - 3
-
-    # shift grid points
-    Xp_ = np.linspace(X_c - NX_//2, X_c + NX_//2, NX_)
-    Yp_ = np.linspace(Y_c - NY_//2, Y_c + NY_//2, NY_)
-
-    # resample image
-    image_ = rbspl(Xp_, Yp_)
-    mask_ = rbspl_ma(Xp_, Yp_) > 0.5
-
-    center_ = np.array([X_c - Xp_[0], Y_c - Yp_[0]])
-    return image_, mask_, center_
-
-def stack_star_image(table_stack, res_thumb, size=61):
-    """
-    Stack images of stars in the table.
-    
-    Parameters
-    ----------
-    table_stack : astropy.table.Table
-        SExtarctor table of stars to stack
-    res_thumb : dict
-        the dict containing the thumbnails, masks and centers
-    size : int, optional, default 61
-        Size of the stacked image in pixel, will be round to odd number.
-    
-    Returns
-    -------
-    image_stack : stacked image
-    
-    """
-    from scipy.ndimage import binary_dilation
-    
-    size = int(size/2) * 2 + 1
-    shape = (size, size)
-    canvas = np.zeros(shape)
-    footprint = np.zeros_like(canvas)
-    
-    i = 0
-    logger.info("Stacking non-staurated stars to obtain the PSF core...")
-    for num in table_stack['NUMBER']:
-
-        # Read image, mask and center
-        img_star = res_thumb[num]['image']
-        mask_star = res_thumb[num]['mask']
-        cen_star = res_thumb[num]['center']
-        
-        # enlarge mask
-        for j in range(3):
-            mask_star = binary_dilation(mask_star)
-        
-        shape_star = img_star.shape
-        
-        if shape_star[0]!=shape_star[1]: continue
-           
-        # meausre local background
-        r_out = min(img_star.shape) * 0.8 //2
-        r_in = r_out - 5
-        bkg = background_annulus(cen_star, img_star, mask_star, r_in=r_in, r_out=r_out, draw=False)
-        
-        # resample thumbnail centroid to center
-        img_star_, mask_star_, cen_star_ = resample_thumb(img_star, mask_star, cen_star)
-        shape_star_ = img_star_.shape
-        
-        # remove nearby sources
-        img_star_ = img_star_ - bkg
-        img_star_[mask_star_] = 0
-        
-        # add cutout to canvas
-        dx = abs(shape_star_[0]-canvas.shape[0])//2
-        dy = abs(shape_star_[1]-canvas.shape[1])//2
-        if shape_star_[0] > size:
-            cutout = img_star_[dx:-dx,dy:-dy]
-            canvas += cutout
-            footprint += (cutout!=0)
-        elif shape_star_[0] < size:
-            cutout = img_star_
-            canvas[dx:-dx,dy:-dy] += cutout
-            footprint[dx:-dx,dy:-dy] += (cutout!=0)
-        else:
-            canvas += img_star_
-            footprint += 1
-            
-        i += 1
-
-    image_stack = canvas/footprint
-    logger.info("   - {:d} Stars used for stacking.".format(i))
-
-    return image_stack
-
-def make_global_stack_PSF(dir_name, bounds_list, obj_name, band, overwrite=True):
-    """
-    Combine the stacked PSF of all regions into one, skip if existed.
-    
-    Parameters
-    ----------
-    dir_name : str
-        path containing the stacked PSF
-    bounds_list : 2D int list / turple
-        List of boundaries of regions to be fit (Nx4)
-        [[X min, Y min, X max, Y max],[...],...]
-    obj_name : str
-        Object name
-    band : str, 'g' 'G' 'r' or 'R'
-        Filter name
-    
-    """
-    
-    fn_stack = os.path.join(dir_name, f'{obj_name}-{band}-PSF_stack.fits')
-    
-    if overwrite or (os.path.isfile(fn_stack)==False):
-        for i, bounds in enumerate(bounds_list):
-            range_str = 'X[{0:d}-{2:d}]Y[{1:d}-{3:d}]'.format(*bounds)
-            fn = os.path.join(dir_name, f'{obj_name}-{band}-psf_stack_{range_str}.fits')
-            image_psf = fits.getdata(fn)
-            
-            if i==0:
-                image_stack = image_psf
-            else:
-                image_stack += image_psf
-                
-        image_stack = image_stack/np.nansum(image_stack)
-        
-        if i>0:
-            logger.info("Read & stack {:} PSF.".format(i+1))
-
-        fits.writeto(fn_stack, data=image_stack, overwrite=True)
-        logger.info("Saved stacked PSF as {:}".format(fn_stack))
-    else:
-        logger.info("{:} existed. Skip Stack.".format(fn_stack))
-        
-def montage_psf_image(image_psf, image_wide_psf, r=10, dr=0.5):
-    """
-    Montage the core of the stacked psf and the wing of the wide psf model.
-    
-    Parameters
-    ----------
-    image_psf : 2d array
-        The image of the inner PSF.
-    image_wide_psf : 2d array
-        The image of the wide-angle PSF.
-    r : int, optional, default 10
-        Radius in pixel at which the PSF is montaged.
-    dr : float, optional, default 0.5
-        Width of annulus for measuring the scaling.
-    
-    Returns
-    -------
-    image_PSF : 2d array
-        The image of the output PSF.
-        
-    """
-
-    image_PSF = image_wide_psf.copy()
-
-    # Wide PSF
-    size = image_wide_psf.shape[0]
-    cen = ((size-1)/2., (size-1)/2.)
-    x_ = y_ = np.linspace(0,size-1,size)
-    xx, yy = np.meshgrid(x_, y_)
-    rr = np.sqrt((yy-cen[0])**2+(xx-cen[1])**2)
-
-    I_wide = np.median(image_wide_psf[(rr<r+dr)&(rr>r-dr)])
-
-    # Stacked PSF
-    size_psf = image_psf.shape[0]
-    cen_psf = ((size_psf-1)/2., (size_psf-1)/2.)
-    x_psf = y_psf = np.linspace(0,size_psf-1,size_psf)
-    xx_psf, yy_psf = np.meshgrid(x_psf, y_psf)
-    rr_psf = np.sqrt((yy_psf-cen_psf[0])**2+(xx_psf-cen_psf[1])**2)
-
-    I_psf = np.median(image_psf[(rr_psf<r+dr)&(rr_psf>r-dr)])
-
-    # Montage
-    image_PSF[rr<r] = image_psf[rr_psf<r]/ I_psf * I_wide
-    image_PSF = image_PSF/image_PSF.sum()
-
-    return image_PSF
-    
-    
 def fit_psf_core_1D(image_psf,
                     params0=DF_default_params,
                     theta_out=30, d_theta=1.,
                     pixel_scale=2.5, beta_max=8.,
-                    obj_name="",band="r",
+                    obj_name="", band="r",
                     draw=True, save=False, save_dir='./'):
     """
     Fit the core parameters from 1D profiles of the input 2D PSF.
@@ -1637,7 +1091,7 @@ def merge_catalog(SE_catalog, table_merge, sep=5 * u.arcsec,
                   RA_key="RAJ2000", DE_key="DEJ2000", keep_columns=None):
     """ Crossmatch and merge two catalogs by coordinates"""
     
-    c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"])
+    c_SE = SkyCoord(ra=SE_catalog["X_WORLD"], dec=SE_catalog["Y_WORLD"], unit=u.deg)
     c_tab = SkyCoord(ra=table_merge[RA_key], dec=table_merge[DE_key])
     
     idx, d2d, d3d = c_SE.match_to_catalog_sky(c_tab)
@@ -1721,8 +1175,8 @@ def assign_star_props(ZP, sky_mean, image_shape, pos_ref,
     from .modeling import Stars
 
     # Positions & Flux (estimate) of bright stars from measured norm
-    star_pos = np.vstack([table_norm["X_CATALOG"],
-                          table_norm["Y_CATALOG"]]).T - pos_ref
+    star_pos = np.vstack([table_norm["X_IMAGE"],
+                          table_norm["Y_IMAGE"]]).T - pos_ref
                          
     mag = table_norm['MAG_AUTO_corr'] if 'MAG_AUTO_corr' in table_norm.colnames else table_norm['MAG_AUTO']
     Flux = 10**((np.array(mag)-ZP)/(-2.5))
@@ -1866,8 +1320,6 @@ def fit_n0(dir_measure, bounds,
     
     """
 
-    from .modeling import log_linear
-
     Xmin, Ymin, Xmax, Ymax = bounds
     r1, r2 = fit_range
     r0 = r_scale*pixel_scale
@@ -1947,7 +1399,7 @@ def fit_n0(dir_measure, bounds,
                            pixel_scale=pixel_scale,
                            core_undersample=False, color='k', lw=3,
                            I_shift=I_norm-I_r0_all[0], markersize=8, alpha=0.9)
-            ax.annotate("Brightest",(r0-5*pixel_scale, I_norm+1.5),fontsize=12)
+            ax.annotate("Brightest",(r0-4.8*pixel_scale, I_norm+1.5),fontsize=12)
 
         if draw:
             ax.set_xlim(1.5*pixel_scale, 4e2)
@@ -2037,8 +1489,7 @@ def add_supplementary_atlas(tab, tab_atlas, SE_catalog,
     SE_catalog_match.sort('gmag_atlas')
     
     # add supplementary stars (bright stars failed to matched)
-    cond_sup = (SE_catalog_match['MAG_AUTO']<mag_saturate) \
-                & (SE_catalog_match['CLASS_STAR']>0.7)
+    cond_sup = (SE_catalog_match['MAG_AUTO']<mag_saturate)
     SE_catalog_sup = SE_catalog_match[cond_sup]
     num_SE_sup = np.setdiff1d(SE_catalog_sup['NUMBER'], tab['NUMBER'])
     
@@ -2266,9 +1717,12 @@ def make_segm_from_catalog(catalog_star,
                            bounds, estimate_radius,
                            mag_name='rmag', mag_limit=22,
                            obj_name='', band='G',
-                           ext_cat=None, draw=True,
+                           ext_cat=None,
+                           k_mask_ext=5,
                            parallel=False,
-                           save=False, dir_name='./Measure'):
+                           save=False,
+                           dir_name='./Measure',
+                           draw=True, verbose=True):
     """
     Make segmentation map from star catalog.
     Mask aperture sizes are evaluated from SE segmentation maps.
@@ -2282,6 +1736,7 @@ def make_segm_from_catalog(catalog_star,
     mag_name : magnitude column name in catalog_star
     mag_limit : magnitude limit to add segmentation
     ext_cat : (bright) extended source catalog to mask
+    k_mask_ext: enlarge factor for a/b of masks of extended sources.
     draw : whether to draw the segm map
     save : whether to save the segm map as fits
     dir_name : path of saving
@@ -2302,9 +1757,11 @@ def make_segm_from_catalog(catalog_star,
         catalog = catalog_star[~np.isnan(catalog_star[mag_name])]
         
     catalog = catalog[catalog[mag_name]<mag_limit]
-    msg = "Make segmentation map based on catalog {:s}: {:d} stars"
-    msg = msg.format(mag_name, len(catalog))
-    logger.info(msg)
+    
+    if verbose:
+        msg = "Make segmentation map based on catalog {:s}: {:d} stars"
+        msg = msg.format(mag_name, len(catalog))
+        logger.info(msg)
     
     # Estimate mask radius
     R_est = np.array([estimate_radius(m) for m in catalog[mag_name]])
@@ -2335,7 +1792,7 @@ def make_segm_from_catalog(catalog_star,
                                                   ext_cat['THETA_IMAGE'],):
                     pos = (X_c-Xmin, Y_c-Ymin)
                     theta_ = np.mod(theta, 360) * np.pi/180
-                    aper = EllipticalAperture(pos, a*6, b*6, theta_)
+                    aper = EllipticalAperture(pos, a*k_mask_ext, b*k_mask_ext, theta_)
                     apers.append(aper)
         
         seg_map = assign_labels_from_apertures(apers, seg_map, label_ini=1)
@@ -2408,7 +1865,8 @@ def make_segm_from_catalog(catalog_star,
         fname = f"{obj_name}-segm_{band}_catalog_{range_str}.fits"
         filename = os.path.join(dir_name, fname)
         hdu_seg.writeto(filename, overwrite=True)
-        logger.info(f"Saved segmentation map made from catalog as {filename}")
+        if verbose:
+            logger.info(f"Saved segmentation map made from catalog as {filename}")
         
     return seg_map
     

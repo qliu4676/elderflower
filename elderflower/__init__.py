@@ -15,6 +15,7 @@ except NameError:
 
 if not __SETUP__:
     from . import io
+    from . import numeric
     from . import utils
     from . import modeling
 
@@ -22,6 +23,8 @@ if not __SETUP__:
     from . import mask
     from . import crossmatch
     from . import detection
+    from . import stack
+    from . import norm
 
     from . import sampler
     from . import container

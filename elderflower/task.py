@@ -226,11 +226,11 @@ def Match_Mask_Measure(hdu_path,
                        mag_limit=15,
                        mag_limit_segm=22,
                        mag_saturate=13.5,
-                       width_ring=1.5,
-                       width_cross=10,
+                       mask_param=mask_param_default,
                        draw=True,
                        save=True,
                        use_PS1_DR2=False,
+                       fn_psf_core=None,
                        work_dir='./'):
                        
     """
@@ -283,10 +283,9 @@ def Match_Mask_Measure(hdu_path,
     mag_saturate : float, optional, default 13.5
         Estimate of magnitude at which the image is saturated.
         The exact value will be fit.
-    width_ring : float, optional, default 1.5
-        Half-width in arcsec of ring used to measure the scaling.
-    width_cross : float, optional, default 4 * 2.5
-        Half-width in arcsec of the spike mask when measuring the scaling.
+    mask_param: dict, optional
+        Parameters setting up the mask map.
+        See doc string of .mask for details.
     draw : bool, optional, default True
         Whether to draw diagnostic plots.
     save : bool, optional, default True
@@ -294,6 +293,8 @@ def Match_Mask_Measure(hdu_path,
     use_PS1_DR2 : bool, optional, default False
         Whether to use PANSTARRS DR2. Crossmatch with DR2 is done by MAST query,
         which could easily fail if a field is too large (> 1 deg^2).
+    fn_psf_core : bool, optional, default None
+        Path of the provided stacked PSF core.
     work_dir : str, optional, default current directory
         Full path of directory for saving.
     
@@ -395,7 +396,8 @@ def Match_Mask_Measure(hdu_path,
                                                 pixel_scale=pixel_scale,
                                                 sep=pixel_scale*u.arcsec,
                                                 mag_limit=mag_limit,
-                                                use_PS1_DR2=use_PS1_DR2)
+                                                use_PS1_DR2=use_PS1_DR2,
+                                                verbose=True)
    
 
     # Calculate color correction between PANSTARRS and DF filter
@@ -435,9 +437,9 @@ def Match_Mask_Measure(hdu_path,
     # Build Mask & Measure Scaling (in selected patch)
     ##################################################
     from .utils import (fit_empirical_aperture,
-                        make_segm_from_catalog,
-                        measure_Rnorm_all,
-                        make_global_stack_PSF)
+                        make_segm_from_catalog)
+    from .norm import measure_Rnorm_all
+    from .stack import make_global_stack_PSF
     from .plotting import plot_bright_star_profile
     
     # Empirical enlarged aperture size from magnitude based on matched SE detection
@@ -446,6 +448,12 @@ def Match_Mask_Measure(hdu_path,
                                              mag_range=[10,22], K=2,
                                              R_max=int(200/pixel_scale),
                                              degree=2, draw=draw)
+    mask_par = mask_param_default.copy()
+    mask_par.update(mask_param)
+    
+    k_mask_ext = mask_par['k_mask_ext']
+    width_cross_pix = mask_par['width_cross']/pixel_scale
+    width_ring_pix = mask_par['width_ring']/pixel_scale
     
     for bounds in bounds_list:
         
@@ -471,20 +479,25 @@ def Match_Mask_Measure(hdu_path,
                                           obj_name=obj_name,
                                           band=band,
                                           ext_cat=ext_cat,
+                                          k_mask_ext=k_mask_ext,
                                           draw=draw,
                                           save=save,
-                                          dir_name=dir_name)
+                                          dir_name=dir_name,
+                                          verbose=True)
         
-        tab_norm, res_thumb = measure_Rnorm_all(tab_target_patch, bounds,
-                                                wcs_data, data, seg_map,
+        tab_norm, res_thumb = measure_Rnorm_all(hdu_path,
+                                                tab_target_patch,
+                                                bounds,
+                                                seg_map=seg_map,
                                                 mag_limit=mag_limit,
                                                 mag_saturate=mag_saturate,
                                                 r_scale=r_scale,
-                                                width_cross=(width_cross/pixel_scale),
-                                                width_ring=(width_ring/pixel_scale),
+                                                width_cross=width_cross_pix,
+                                                width_ring=width_ring_pix,
                                                 obj_name=obj_name,
                                                 mag_name=mag_name_cat,
-                                                save=save, dir_name=dir_name)
+                                                save=save, dir_name=dir_name,
+                                                verbose=True)
 
         if draw:
             plot_bright_star_profile(tab_target_patch,
@@ -492,7 +505,7 @@ def Match_Mask_Measure(hdu_path,
                                      bkg_sky=bkg, std_sky=std, ZP=ZP,
                                      pixel_scale=pixel_scale)
                                      
-    make_global_stack_PSF(dir_name, bounds_list, obj_name, band)
+    make_global_stack_PSF(dir_name, bounds_list, obj_name, band, verbose=True)
         
         
 def Run_PSF_Fitting(hdu_path,
@@ -506,8 +519,9 @@ def Run_PSF_Fitting(hdu_path,
                     G_eff=None,
                     pad=50,
                     r_scale=12,
+                    r_montage=10,
                     mag_limit=15,
-                    mag_threshold=[13.5,11.],
+                    mag_threshold=[14,12.],
                     mask_param=mask_param_default,
                     resampling_factor=1,
                     n_spline=3,
@@ -536,6 +550,7 @@ def Run_PSF_Fitting(hdu_path,
                     stop=False,
                     clean_measure=True,
                     use_PS1_DR2=False,
+                    fn_psf_core=None,
                     work_dir='./'):
     
     """
@@ -571,6 +586,8 @@ def Run_PSF_Fitting(hdu_path,
     r_scale : int, optional, default 12
         Radius (in pix) at which the brightness is measured.
         Default is 30" for Dragonfly.
+    r_montage : int, optional, default 10
+        Montage Radius for core and outer wings
     mag_limit : float, optional, default 15
         Magnitude upper limit below which are measured
     mag_threshold : [float, float], default: [14, 11]
@@ -578,7 +595,7 @@ def Run_PSF_Fitting(hdu_path,
         very bright stars. The conversion from brightness is using a static PSF.
     mask_param: dict, optional
         Parameters setting up the mask map.
-        See doc string of image.make_mask for details.
+        See doc string of .mask for details.
     n_spline : int, optional, default 3
         Number of power-law component for the aureole models.
         The speed goes down as n_spline goes up. Default is 3.
@@ -647,6 +664,8 @@ def Run_PSF_Fitting(hdu_path,
         Whether to use PANSTARRS DR2.
         Crossmatch with DR2 is done by MAST query, which might fail
         if a field is too large (> 1 deg^2)
+    fn_psf_core : bool, optional, default None
+        Path of the provided stacked PSF core.
     work_dir : str, optional, default current directory
         Full Path of directory for saving
         
@@ -772,7 +791,8 @@ def Run_PSF_Fitting(hdu_path,
     ############################################
     # Setup PSF and Fit the Core
     ############################################
-    from .utils import (make_psf_2D, montage_psf_image)
+    from .utils import make_psf_2D
+    from .stack import montage_psf_image
 
     ## PSF Parameters ##
     n_s = np.array([n0, 2.5])    # initial guess of power index
@@ -793,10 +813,13 @@ def Run_PSF_Fitting(hdu_path,
                                  psf_range=theta_cutoff)
                          
     # Montage the core and the 1st model component
-    fn_psf_stack = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
+    if fn_psf_core is None:
+        fn_psf_stack = os.path.join(dir_measure, f'{obj_name}-{band}-PSF_stack.fits')
+    else:
+        fn_psf_stack = fn_psf_core
     psf_stack = fits.getdata(fn_psf_stack)
 
-    image_psf = montage_psf_image(psf_stack, image_psf, r=10)
+    image_psf = montage_psf_image(psf_stack, image_psf, r=r_montage)
     
     # Fit and update core parameters
     psf.fit_psf_core_1D(image_psf,
@@ -983,6 +1006,8 @@ class berry:
                  band,
                  work_dir='./',
                  config_file=None):
+                 
+        from .io import config_kwargs, default_config, load_config
         
         self.hdu_path = hdu_path
         self.bounds_list = bounds_list
@@ -995,10 +1020,10 @@ class berry:
             hdul.close()
         
         self.work_dir = work_dir
-        self.config = config_file
         
-        from .io import config_kwargs, default_config
-        if config_file is None: config_file = default_config
+        if config_file is None:
+            config_file = default_config
+        self.config = load_config(config_file)
         self.config_func = partial(config_kwargs, config_file=config_file)
 
     @property
