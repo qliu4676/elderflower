@@ -185,7 +185,7 @@ def Run_Detection(hdu_path,
             logger.info("Matched median zero-point = {:.3f}".format(ZP))
             
     else:
-        ZP = np.float(header[ZP_keyname])
+        ZP = float(header[ZP_keyname])
         logger.info("Read zero-point from header : ZP = {:.3f}".format(ZP))
     logger.info("Pixel scale = {:.2f}".format(pixel_scale))
     logger.info("Detection threshold = {:.1f}".format(threshold))

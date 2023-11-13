@@ -162,14 +162,14 @@ def find_keyword_header(header, keyword,
         Accept a value by input if keyword is not found. """
         
     try:
-        val = np.float(header[keyword])
+        val = float(header[keyword])
      
     except KeyError:
         logger.info(f"Keyname {keyword} missing in the header .")
         
         if input_val:
             try:
-                val = np.float(input(f"Input a value of {keyword} :"))
+                val = float(input(f"Input a value of {keyword} :"))
             except ValueError:
                 msg = f"Invalid {keyword} values!"
                 logger.error(msg)

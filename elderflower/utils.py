@@ -202,9 +202,9 @@ def background_extraction(field, mask=None, return_rms=True,
         return back
 
 def source_detection(data, sn=2.5, b_size=120,
-                     k_size=3, fwhm=3, smooth=True, 
+                     k_size=None, fwhm=3, smooth=True, 
                      sub_background=True, mask=None):
-    from astropy.convolution import Gaussian2DKernel
+    from astropy.convolution import Gaussian2DKernel, convolve_fft
     from photutils import detect_sources, deblend_sources
     
     if sub_background:
@@ -213,15 +213,16 @@ def source_detection(data, sn=2.5, b_size=120,
     else:
         back = np.zeros_like(data)
         threshold = np.nanstd(data)
+        
     if smooth:
         sigma = fwhm * gaussian_fwhm_to_sigma 
         kernel = Gaussian2DKernel(sigma, x_size=k_size, y_size=k_size)
         kernel.normalize()
+        data = convolve_fft(data, kernel)
     else:
         kernel=None
         
-    segm_sm = detect_sources(data, threshold, npixels=5,
-                            filter_kernel=kernel, mask=mask)
+    segm_sm = detect_sources(data, threshold, npixels=5, mask=mask)
 
     data_ma = data.copy() - back
     data_ma[segm_sm.data!=0] = np.nan
