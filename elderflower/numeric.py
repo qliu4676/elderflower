@@ -4,6 +4,8 @@ from scipy.integrate import quad
 from scipy.spatial import distance
 from scipy.special import gamma as Gamma
 
+from astropy.modeling import models
+
 try:
     from numba import njit
 except ImportError:

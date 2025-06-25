@@ -200,7 +200,8 @@ def draw_scale_bar(ax, X_bar=200, Y_bar=150, y_text=100,
     
     ax.plot([X_bar-L_bar/2, X_bar+L_bar/2], [Y_bar,Y_bar],
             color=color, alpha=alpha, lw=lw,
-            path_effects=[PathEffects.SimpleLineShadow(), PathEffects.Normal()])
+            path_effects=[PathEffects.SimpleLineShadow(), PathEffects.withStroke(linewidth=lw+2.5, foreground="k", alpha=alpha), PathEffects.Normal()])
+    
 
     ax.text(X_bar, y_text, '{0:{1}} {2}'.format(scale.value, format, scale.unit),
             color=color, alpha=alpha, fontsize=fontsize,

@@ -610,32 +610,69 @@ def make_mask_map_dual(image, stars,
     return mask_deep, segmap
 
 
-def make_mask_strip(stars, xx, yy, pad=0, n_strip=24,
+def make_mask_strip(star_pos, xx, yy, n_strip=24,
                     wid_strip=12, dist_strip=720,
-                    wid_cross=8, dist_cross=72, verbose=True):
-    """ Make mask map in strips with width *in pixel unit* """
-    if verbose:
-        logger.info("Making sky strips crossing very bright stars...")
+                    wid_cross=0, dist_cross=72, phi0=0):
+    """ Make mask map in strips with width in pixel unit
+        This is an optimized version using spatial partitioning. """
     
-    if stars.n_verybright>0:
-        mask_strip_s = np.empty((stars.n_verybright, xx.shape[0], xx.shape[1]))
-        mask_cross_s = np.empty_like(mask_strip_s)
-    else:
-        return None, None
+    if len(star_pos) == 0:
+        return np.zeros_like(xx, dtype=bool), np.zeros_like(xx, dtype=bool)
     
-    star_pos = stars.star_pos_verybright + pad
-    
-    phi_s = np.linspace(-90, 90, n_strip+1)
+    # Pre-compute angles and slopes
+    phi_s = np.linspace(-90+phi0, 90+phi0, n_strip+1)
     a_s = np.tan(phi_s*np.pi/180)
+    sqrt_factors = np.sqrt(1 + a_s**2)
     
-    for k, (x_b, y_b) in enumerate(star_pos):
-        m_s = (y_b-a_s*x_b)
-        mask_strip = np.logical_or.reduce([abs((yy-a*xx-m)/math.sqrt(1+a**2)) < wid_strip 
-                                           for (a, m) in zip(a_s, m_s)])
-        mask_cross = np.logical_or.reduce([abs(yy-y_b)<wid_cross, abs(xx-x_b)<wid_cross])
-        dist_map1 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_strip
-        dist_map2 = np.sqrt((xx-x_b)**2+(yy-y_b)**2) < dist_cross
-        mask_strip_s[k] = mask_strip & dist_map1
-        mask_cross_s[k] = mask_cross & dist_map2
-
-    return mask_strip_s, mask_cross_s
+    mask_strip_all = np.zeros_like(xx, dtype=bool)
+    mask_cross_all = np.zeros_like(xx, dtype=bool)
+    
+    star_pos = np.array(star_pos)
+    
+    # Process each star with spatial bounds to limit computation
+    for x_star, y_star in star_pos:
+        # Define bounding box for this star
+        max_dist = max(dist_strip, dist_cross if wid_cross > 0 else 0)
+        
+        # Find pixel bounds
+        x_min = max(0, int(x_star - max_dist))
+        x_max = min(xx.shape[1], int(x_star + max_dist) + 1)
+        y_min = max(0, int(y_star - max_dist))
+        y_max = min(xx.shape[0], int(y_star + max_dist) + 1)
+        
+        if x_min >= x_max or y_min >= y_max:
+            continue
+            
+        # Extract local region
+        xx_local = xx[y_min:y_max, x_min:x_max]
+        yy_local = yy[y_min:y_max, x_min:x_max]
+        
+        # Compute distances once for this region
+        dist_map = np.sqrt((xx_local - x_star)**2 + (yy_local - y_star)**2)
+        
+        # Strip mask
+        strip_region = dist_map < dist_strip
+        if np.any(strip_region):
+            # Vectorized strip computation
+            m_s = y_star - a_s * x_star
+            
+            # Use broadcasting for all strips at once
+            xx_expanded = xx_local[:, :, np.newaxis]  # Shape: (h, w, 1)
+            yy_expanded = yy_local[:, :, np.newaxis]  # Shape: (h, w, 1)
+            
+            # Broadcasting with strips
+            strip_distances = np.abs((yy_expanded - a_s * xx_expanded - m_s) / sqrt_factors)
+            within_any_strip = np.any(strip_distances < wid_strip, axis=2)
+            
+            local_strip_mask = within_any_strip & strip_region
+            mask_strip_all[y_min:y_max, x_min:x_max] |= local_strip_mask
+        
+        # Cross mask
+        if wid_cross > 0:
+            cross_region = dist_map < dist_cross
+            if np.any(cross_region):
+                local_cross_mask = ((np.abs(yy_local - y_star) < wid_cross) |
+                                   (np.abs(xx_local - x_star) < wid_cross)) & cross_region
+                mask_cross_all[y_min:y_max, x_min:x_max] |= local_cross_mask
+    
+    return mask_strip_all, mask_cross_all
